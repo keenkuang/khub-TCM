@@ -1,6 +1,7 @@
 import os
 
-from .extractors import parse_meta
+from .extractors import extract_text, parse_meta
+from .models import CanonicalDoc
 from .storage import ManagedLibrary
 
 
@@ -16,3 +17,23 @@ def register_ebook(store, library, src_path, move=False):
     title = meta.get("title") or os.path.splitext(os.path.basename(src_path))[0]
     store.add_ebook(canonical_id, title, ext, sha, dest, meta)
     return canonical_id
+
+
+def ingest_ebook(store, canonical_id):
+    """入库：抽取正文 → 建版本 → FTS 索引 → 标记 ingested。不向量化/封面（后续阶段）。"""
+    doc = store.get_document(canonical_id)
+    if doc is None:
+        raise ValueError(f"unknown ebook: {canonical_id}")
+    frow = store.conn.execute(
+        "SELECT path, format FROM files WHERE sha256=?",
+        (doc["file_hash"],)).fetchone()
+    if frow is None:
+        raise ValueError(f"no file registered for {canonical_id}")
+    text = extract_text(frow["path"])
+    cd = CanonicalDoc(
+        canonical_id=canonical_id, title=doc["title"], content=text,
+        source="library", source_id=frow["path"], doc_type="ebook",
+        format=frow["format"], origin="hub")
+    version_id = store.store_document(cd)
+    store.mark_ingested(canonical_id, version_id)
+    return version_id

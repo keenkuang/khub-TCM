@@ -43,3 +43,20 @@ def parse_meta(path):
     if ident:
         meta["isbn"] = ident
     return meta
+
+
+def extract_text(path):
+    try:
+        with zipfile.ZipFile(path) as z:
+            htmls = [n for n in z.namelist()
+                     if n.endswith((".xhtml", ".html", ".htm"))]
+            parts = []
+            for n in htmls:
+                data = z.read(n).decode("utf-8", "ignore")
+                plain = re.sub(r"<[^>]+>", " ", data)
+                plain = re.sub(r"\s+", " ", plain).strip()
+                if plain:
+                    parts.append(plain)
+            return "\n".join(parts)
+    except (zipfile.BadZipFile, OSError):
+        return ""

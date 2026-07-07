@@ -54,7 +54,8 @@ class Store:
             canonical_id TEXT PRIMARY KEY, author TEXT, isbn TEXT, lang TEXT,
             page_count INTEGER, publisher TEXT, published_date TEXT,
             cover_path TEXT, toc_json TEXT);
-        CREATE VIRTUAL TABLE IF NOT EXISTS docs_fts USING fts5(doc_id, title, content);
+        CREATE VIRTUAL TABLE IF NOT EXISTS docs_fts USING fts5(
+            doc_id, title, content, tokenize='trigram');
         """)
         self._migrate()
         self.conn.commit()
@@ -129,9 +130,12 @@ class Store:
         self.conn.commit()
 
     def search(self, text: str):
-        rows = self.conn.execute(
-            "SELECT doc_id, title, snippet(docs_fts, 2, '[', ']', '...', 10) AS snip "
-            "FROM docs_fts WHERE docs_fts MATCH ?", (text,)).fetchall()
+        try:
+            rows = self.conn.execute(
+                "SELECT doc_id, title, snippet(docs_fts, 2, '[', ']', '...', 10) AS snip "
+                "FROM docs_fts WHERE docs_fts MATCH ?", (text,)).fetchall()
+        except sqlite3.OperationalError:
+            return []
         return [(r["doc_id"], r["title"], r["snip"]) for r in rows]
 
     def list_conflicts(self):
@@ -177,3 +181,9 @@ class Store:
             "FROM documents d LEFT JOIN ebook_meta e ON d.canonical_id=e.canonical_id "
             "WHERE d.doc_type='ebook' ORDER BY d.title").fetchall()
         return [dict(r) for r in rows]
+
+    def mark_ingested(self, canonical_id: str, version_id: int):
+        self.conn.execute(
+            "UPDATE documents SET ingested=1, current_version=? WHERE canonical_id=?",
+            (version_id, canonical_id))
+        self.conn.commit()
