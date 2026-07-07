@@ -78,7 +78,7 @@ def _fake_urlopen(req_or_url, timeout=None):
     # --- get_knowledge_list ---
     if "get_knowledge_list" in url:
         body_obj = json.loads(body) if body else {}
-        if body_obj.get("folder_id") == "f1":
+        if "folder_sub" in body_obj.get("folder_id", ""):
             payload = {
                 "code": 0,
                 "data": {
@@ -86,8 +86,7 @@ def _fake_urlopen(req_or_url, timeout=None):
                         {
                             "title": "金匮要略",
                             "media_id": "m2",
-                            "file_info": {"file_name": "金匮要略.md", "file_size": 500},
-                            "doc_type": 1,
+                            "media_type": 7,
                         }
                     ],
                     "is_end": True,
@@ -101,14 +100,12 @@ def _fake_urlopen(req_or_url, timeout=None):
                         {
                             "title": "伤寒论",
                             "media_id": "m1",
-                            "file_info": {"file_name": "伤寒论.txt", "file_size": 1000},
-                            "doc_type": 1,
+                            "media_type": 7,
                         },
                         {
                             "title": "子目录",
-                            "media_id": "",
-                            "doc_type": 2,
-                            "folder_id": "f1",
+                            "media_id": "folder_sub",
+                            "media_type": 99,
                         },
                     ],
                     "is_end": True,
