@@ -88,8 +88,11 @@ def build_parser():
     po.add_argument("vault_path")
     po.add_argument("--no-recursive", dest="recursive", action="store_false", default=True)
 
-    pima = sub.add_parser("ima-sync", help="从腾讯 IMA 知识库拉取文档入库")
+    pima = sub.add_parser("ima-sync", help="与腾讯 IMA 知识库同步（双向）")
     pima.add_argument("--kb-id", default="", help="指定知识库 ID（不指定则同步全部）")
+    pima.add_argument("--direction", default="pull",
+                      choices=["pull", "push", "both"],
+                      help="同步方向：pull=拉取 push=推送 both=双向（默认 pull）")
 
     psc = sub.add_parser("schedule", help="运行定时调度器，按配置周期执行 khub 命令")
     psc.add_argument("--config", default=os.path.expanduser("~/.khub/tasks.yaml"),
@@ -178,19 +181,30 @@ def main(argv=None):
         ingested, skipped = import_vault(store, args.vault_path, recursive=args.recursive)
         print(f"Obsidian 导入完成：入库 {ingested}，跳过 {skipped}")
     elif args.cmd == "ima-sync":
-        from .ima import sync_knowledge_base, sync_all
-        cid = os.environ.get("IMA_CLIENT_ID", "")
-        akey = os.environ.get("IMA_API_KEY", "")
-        if not cid or not akey:
-            print("错误：请设置 IMA_CLIENT_ID 和 IMA_API_KEY 环境变量", file=sys.stderr)
-            return 1
+        from .sync_engine import TwoWaySyncEngine
+        from .ima import sync_adapter
+        engine = TwoWaySyncEngine(store)
         if args.kb_id:
-            res = sync_knowledge_base(store, args.kb_id)
-            print(f"IMA 同步完成：入库 {res['ingested']}，跳过 {res['skipped']}")
+            adapter = sync_adapter(store, args.kb_id)
+            res = engine.sync(f"ima:{args.kb_id}", adapter,
+                              direction=args.direction)
+            print(f"IMA {args.kb_id[:20]}... 同步完成: "
+                  f"pull {res.get('pull',{}).get('ingested',0)}"
+                  f" / push {res.get('push',{}).get('pushed',0)}")
         else:
-            results = sync_all(store)
-            total = sum(r["ingested"] for r in results)
-            print(f"IMA 同步完成：{len(results)} 个知识库，共入库 {total} 篇")
+            from .ima import list_knowledge_bases
+            kbs = list_knowledge_bases()
+            total_pull = total_push = 0
+            for kb in kbs:
+                adapter = sync_adapter(store, kb["id"])
+                res = engine.sync(f"ima:{kb['id']}", adapter,
+                                  direction=args.direction)
+                p = res.get('pull',{}).get('ingested',0)
+                pu = res.get('push',{}).get('pushed',0)
+                total_pull += p; total_push += pu
+                print(f"  {kb['name']}: pull={p} push={pu}")
+            print(f"IMA 同步完成：{len(kbs)} 个库，"
+                  f"共拉取 {total_pull} / 推送 {total_push} 篇")
     elif args.cmd == "schedule":
         from .scheduler import read_tasks, run_tasks
         tasks = read_tasks(args.config)

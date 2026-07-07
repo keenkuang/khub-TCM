@@ -151,3 +151,66 @@ def sync_all(store, verbose=True):
         if verbose:
             print(f"入库 {res['ingested']}")
     return results
+
+
+# ---------- 写回 IMA 知识库（双向同步） ----------
+
+def sync_adapter(store, kb_id):
+    """返回一个 TwoWaySyncAdapter，供 TwoWaySyncEngine 使用。
+    调用方传 kb_id 来指定推送到哪个知识库。"""
+    from .sync_engine import TwoWaySyncAdapter
+    adapter = TwoWaySyncAdapter()
+    adapter.name = f"ima:{kb_id}"
+    adapter.direction = "both"
+    adapter.pull = lambda s: _browse_for_sync(s, kb_id)
+    adapter.push = lambda s, doc_id, content, title: _push_doc(s, kb_id, content, title)
+    adapter.delete = lambda s, source_id: _delete_doc(s, kb_id, source_id)
+    return adapter
+
+def _browse_for_sync(store, kb_id):
+    """供 engine 使用的 pull 函数，返回 [{source_id, title, content, hash}]。"""
+    ingested = []
+    _browse(store, kb_id, "", ingested)
+    items = []
+    for cid in ingested:
+        doc = store.get_document(cid)
+        if doc:
+            vers = store.get_versions(cid)
+            h = vers[-1]["hash"] if vers else ""
+            items.append({
+                "source_id": cid,
+                "title": doc["title"],
+                "content": vers[-1]["content"] if vers else "",
+                "hash": h,
+            })
+    return items
+
+def _push_doc(store, kb_id, content, title):
+    """推送一篇文档到指定 IMA 知识库。用 add_knowledge 接口。
+    返回 media_id。"""
+    ext = "txt"
+    body_bytes = content.encode("utf-8")
+    create_data = _req("create_media", {
+        "file_name": title + "." + ext,
+        "file_size": len(body_bytes),
+        "content_type": "text/plain",
+        "knowledge_base_id": kb_id,
+        "file_ext": ext,
+    })
+    media_id = create_data.get("media_id", "")
+    if not media_id:
+        raise RuntimeError("create_media 未返回 media_id")
+    add_data = _req("add_knowledge", {
+        "media_id": media_id,
+        "title": title,
+        "knowledge_base_id": kb_id,
+        "file_info": {"file_name": title + "." + ext, "file_size": len(body_bytes)},
+    })
+    return add_data.get("media_id", media_id)
+
+def _delete_doc(store, kb_id, source_id):
+    """删除 IMA 知识库中的文档（暂未找到 IMA 删除 API，留空）。
+    返回 True 表示成功。"""
+    import warnings
+    warnings.warn(f"IMA 删除暂未实现: {source_id}")
+    return False

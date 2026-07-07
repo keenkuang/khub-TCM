@@ -67,6 +67,15 @@ class Store:
                          ("file_hash", "TEXT")]:
             if col not in cols:
                 self.conn.execute(f"ALTER TABLE documents ADD COLUMN {col} {ddl}")
+        # 迁移：追加 direction 列到 sync_states（安全幂等）
+        try:
+            sc = {r["name"] for r in
+                  self.conn.execute("PRAGMA table_info(sync_states)")}
+            if "direction" not in sc:
+                self.conn.execute(
+                    "ALTER TABLE sync_states ADD COLUMN direction TEXT DEFAULT 'pull'")
+        except Exception:
+            pass  # 列已存在
 
     def store_document(self, doc: CanonicalDoc, parent_version: Optional[int] = None) -> int:
         cur = self.conn
@@ -123,6 +132,39 @@ class Store:
         return self.conn.execute(
             "SELECT * FROM sync_states WHERE source_id=? AND doc_id=?",
             (source_id, doc_id)).fetchone()
+
+    def upsert_sync_state(self, source_id, doc_id, etag="", hash="", direction="pull"):
+        """插入或更新同步状态。direction: pull/push/both。"""
+        self.conn.execute("""
+            INSERT INTO sync_states(source_id, doc_id, last_sync_at, etag, hash, direction)
+            VALUES(?,?,?,?,?,?)
+            ON CONFLICT(source_id, doc_id) DO UPDATE SET
+            last_sync_at=excluded.last_sync_at, etag=excluded.etag,
+            hash=excluded.hash, direction=excluded.direction
+        """, (source_id, doc_id, time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime()),
+              etag, hash, direction))
+        self.conn.commit()
+
+    def list_pending_push(self, source_name, limit=200):
+        """列出从 kHUB 推送到远端源的上次 pull 后 hash 变了的文档。"""
+        rows = self.conn.execute("""
+            SELECT d.canonical_id, d.title, v.content, v.hash
+            FROM documents d
+            JOIN document_versions v ON v.version_id = d.current_version
+            WHERE d.source_ids LIKE ?
+        """, (f'%{source_name}%',)).fetchall()
+        out = []
+        for r in rows:
+            st = self.get_sync_state(source_name, r["canonical_id"])
+            if st is None or st["hash"] != r["hash"]:
+                out.append(dict(r))
+        return out[:limit]
+
+    def list_pending_pull(self):
+        """列出所有已记录 sync_states 的源（用于 CLI）。"""
+        rows = self.conn.execute(
+            "SELECT DISTINCT source_id FROM sync_states").fetchall()
+        return [r["source_id"] for r in rows]
 
     def mark_conflict(self, doc_id: str, flag: bool = True):
         self.conn.execute("UPDATE documents SET conflict=? WHERE canonical_id=?",
