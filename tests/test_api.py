@@ -49,6 +49,58 @@ def test_api_register_then_ingest_then_search():
     assert code == 200 and obj and obj[0]["doc_id"] == cid
 
 
+def test_api_documents_requires_title_and_content():
+    app, _, _ = _app()
+    code, obj = app.dispatch("POST", "/documents", {"title": "x"})
+    assert code == 400 and "必填" in obj["error"]
+    code, obj = app.dispatch("POST", "/documents", {"content": "y"})
+    assert code == 400 and "必填" in obj["error"]
+
+
+def test_api_documents_ingest_and_searchable():
+    app, _, _ = _app()
+    payload = {
+        "title": "桂枝汤证治",
+        "content": "太阳病，头痛发热，汗出恶风者，桂枝汤主之。",
+        "source": "KZOCR",
+        "source_id": "kzocr-abc",
+        "format": "markdown",
+        "metadata": {"book": "伤寒论", "page": 12},
+    }
+    code, obj = app.dispatch("POST", "/documents", payload)
+    assert code == 201
+    assert obj["doc_id"] == "kzocr-abc"
+    assert obj["version_id"] >= 1
+
+    code, obj = app.dispatch("GET", "/search?q=" + "桂枝汤")
+    assert code == 200 and obj and obj[0]["doc_id"] == "kzocr-abc"
+
+    # metadata 应被序列化为 note 字段落库（存于 document_versions.note）
+    import json
+    ver = app.store.get_versions("kzocr-abc")[0]
+    assert json.loads(ver["note"])["book"] == "伤寒论"
+
+
+def test_api_documents_auto_id_when_missing_source_id():
+    app, _, _ = _app()
+    code, obj = app.dispatch("POST", "/documents",
+                             {"title": "无源编号", "content": "正文内容"})
+    assert code == 201
+    assert obj["doc_id"].startswith("kzocr-")
+    assert app.store.get_document(obj["doc_id"]) is not None
+
+
+def test_api_short_query_search_fallback():
+    # trigram 不支持 <3 字符，短查询（如方剂名“麻黄”）应退回 LIKE 命中
+    app, _, _ = _app()
+    app.dispatch("POST", "/documents",
+                 {"title": "麻黄汤证治",
+                  "content": "太阳病，头痛发热，身疼腰痛，恶风无汗而喘者，麻黄汤主之。",
+                  "source_id": "kzocr-mahuang"})
+    code, obj = app.dispatch("GET", "/search?q=" + "麻黄")
+    assert code == 200 and obj and obj[0]["doc_id"] == "kzocr-mahuang"
+
+
 def test_api_not_found():
     app, _, _ = _app()
     code, _ = app.dispatch("GET", "/nope")

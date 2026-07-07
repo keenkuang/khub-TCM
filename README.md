@@ -26,6 +26,7 @@ export KHUB_LIBRARY=~/.khub/library
 khub add path/to/book.epub            # 注册到受管库（不入库，仅目录+元数据）
 khub list                             # 列出已注册电子书
 khub ingest ebook:<sha256>            # 入库：抽正文 + 建 FTS 索引
+khub doc-add --title 伤寒论 --file 产出.md --source-id kzocr-xxx   # 直接入库一份文档（KZOCR/OCR 产出）
 khub patient-add p1 张三 --gender 男 --born 1980-01-01
 khub record-add p1 --diagnosis 太阳病 --prescription 桂枝汤
 khub consult-add p1 --chief 发热 --diff 表虚
@@ -42,7 +43,8 @@ khub serve --port 8000               # 启动 REST API（默认 127.0.0.1）
 | GET  | `/ebooks` | 列出电子书 |
 | POST | `/ebooks/register` `{path, move?}` | 注册一本 |
 | POST | `/ebooks/{cid}/ingest` | 入库（抽文本+索引） |
-| GET  | `/search?q=关键词` | 全文检索（中文子串） |
+| GET  | `/search?q=关键词` | 全文检索（中文子串；<3 字符自动退回 LIKE） |
+| POST | `/documents` `{title, content, source?, source_id?, format?, metadata?}` | 直接入库一份文档（KZOCR/OCR 产出，不依赖原始文件） |
 | POST | `/exam/questions` | 新增考题 |
 | GET  | `/exam/questions?kind=` | 列出考题 |
 | POST | `/exam/generate` `{topic}` | 生成考题（占位） |
@@ -91,6 +93,8 @@ docs/
 | LLMProvider | ✅ 抽象 | NoOp 占位；真实实现待接 |
 | 考试/孪生/运营 | 🟡 骨架 | 表结构 + CRUD + LLM 占位，待接真实模型 |
 | 封面/向量化入库 | ⬜ 待做 | M2 收尾 |
+| KZOCR 入库链路 | ✅ 完成 | `/documents` 端点 + `doc-add` CLI + KZOCR 推送客户端打通 |
+| 短查询检索 | ✅ 完成 | <3 字符（如方剂名"麻黄"）自动 LIKE 回退 |
 | ANN 向量检索 | ⬜ 待做 | 升级 sqlite-vec / 向量库 |
 
 ## 安全

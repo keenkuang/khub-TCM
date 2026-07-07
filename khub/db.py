@@ -130,13 +130,40 @@ class Store:
         self.conn.commit()
 
     def search(self, text: str):
+        q = (text or "").strip()
+        if not q:
+            return []
+        # trigram 需 >=3 字符；中文方剂名(麻黄/桂枝)与英文短词退回 LIKE，否则查不到
+        if len(q) < 3:
+            return self._search_like(q)
         try:
             rows = self.conn.execute(
                 "SELECT doc_id, title, snippet(docs_fts, 2, '[', ']', '...', 10) AS snip "
-                "FROM docs_fts WHERE docs_fts MATCH ?", (text,)).fetchall()
+                "FROM docs_fts WHERE docs_fts MATCH ?", (q,)).fetchall()
         except sqlite3.OperationalError:
-            return []
+            return self._search_like(q)
         return [(r["doc_id"], r["title"], r["snip"]) for r in rows]
+
+    def _search_like(self, q: str):
+        like = f"%{q}%"
+        rows = self.conn.execute(
+            "SELECT d.canonical_id, d.title, v.content FROM documents d "
+            "JOIN document_versions v ON v.version_id = d.current_version "
+            "WHERE d.title LIKE ? OR v.content LIKE ?", (like, like)).fetchall()
+        return [(r["canonical_id"], r["title"], self._snippet(r["content"], q))
+                for r in rows]
+
+    @staticmethod
+    def _snippet(content, q, width=20):
+        if not content:
+            return ""
+        i = content.find(q)
+        if i < 0:
+            return content[:width * 2]
+        start = max(0, i - width)
+        end = min(len(content), i + len(q) + width)
+        return ("..." if start > 0 else "") + content[start:end] + \
+               ("..." if end < len(content) else "")
 
     def list_conflicts(self):
         rows = self.conn.execute("SELECT canonical_id FROM documents WHERE conflict=1").fetchall()

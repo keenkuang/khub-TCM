@@ -1,8 +1,11 @@
 import argparse
+import json
 import os
+import time
 
 from .api import serve
 from .db import Store
+from .models import CanonicalDoc
 from .exam.generator import generate
 from .clinical.patients import add_patient
 from .clinical.records import add_record
@@ -58,6 +61,16 @@ def build_parser():
 
     pt = sub.add_parser("twin-summary", help="生成患者数字孪生摘要")
     pt.add_argument("patient_id")
+
+    pd = sub.add_parser("doc-add", help="直接入库一份文档（KZOCR/OCR 产出，不依赖原始文件）")
+    pd.add_argument("--title", required=True)
+    src = pd.add_mutually_exclusive_group(required=True)
+    src.add_argument("--file", help="从文件读取正文（markdown 等）")
+    src.add_argument("--content", help="直接传入正文")
+    pd.add_argument("--source-id", default="", dest="source_id")
+    pd.add_argument("--source", default="KZOCR")
+    pd.add_argument("--format", default="markdown")
+    pd.add_argument("--metadata", default="", help="JSON 字符串，附加元数据")
     return ap
 
 
@@ -98,5 +111,27 @@ def main(argv=None):
         print(aid)
     elif args.cmd == "twin-summary":
         print(build_summary(store, args.patient_id))
+    elif args.cmd == "doc-add":
+        content = args.content
+        if args.file:
+            with open(args.file, encoding="utf-8") as f:
+                content = f.read()
+        metadata = json.loads(args.metadata) if args.metadata else {}
+        doc = CanonicalDoc(
+            canonical_id=args.source_id or f"kzocr-{int(time.time()*1000)}",
+            title=args.title,
+            content=content,
+            source=args.source,
+            source_id=args.source_id or "",
+            origin="kzocr",
+            format=args.format,
+            note=json.dumps(metadata, ensure_ascii=False),
+        )
+        vid = store.store_document(doc)
+        print(f"{doc.canonical_id} -> version {vid}")
     else:
         build_parser().print_help()
+
+
+if __name__ == "__main__":
+    main()

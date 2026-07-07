@@ -1,10 +1,12 @@
 import json
+import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Optional
 from urllib.parse import parse_qs, urlparse
 
 from .db import Store
 from .ingest import ingest_ebook, register_ebook
+from .models import CanonicalDoc
 from .storage import ManagedLibrary
 
 
@@ -41,6 +43,26 @@ class App:
             q = qs.get("q", [""])[0]
             return 200, [{"doc_id": d, "title": t, "snippet": s}
                          for d, t, s in self.store.search(q)]
+
+        # ---- OCR / KZOCR 文档入库（直接收内容，不依赖原始文件） ----
+        if method == "POST" and path == "/documents":
+            if not body.get("title") or not body.get("content"):
+                return 400, {"error": "title 与 content 必填"}
+            doc = CanonicalDoc(
+                canonical_id=body.get("source_id") or f"kzocr-{int(time.time()*1000)}",
+                title=body["title"],
+                content=body["content"],
+                source=body.get("source", "KZOCR"),
+                source_id=body.get("source_id") or "",
+                origin="kzocr",
+                format=body.get("format", "markdown"),
+                updated_at=time.strftime("%Y-%m-%dT%H:%M:%S"),
+                note=json.dumps(body.get("metadata") or {}, ensure_ascii=False),
+                doc_type=body.get("doc_type", "raw"),
+            )
+            version_id = self.store.store_document(doc)
+            return 201, {"status": "ok", "doc_id": doc.canonical_id,
+                         "version_id": version_id, "message": "document ingested"}
 
         # ---- Exam subsystem ----
         if method == "POST" and path == "/exam/questions":
