@@ -36,8 +36,8 @@ def list_knowledge_bases():
     while True:
         data = _req("search_knowledge_base", {"query": "", "cursor": cursor, "limit": 20})
         for i in data.get("info_list", []):
-            kb = i.get("knowledge_base", {})
-            items.append({"id": kb.get("knowledge_base_id", ""), "name": kb.get("name", ""), "file_count": kb.get("file_count", 0)})
+            items.append({"id": i.get("kb_id", ""), "name": i.get("kb_name", ""),
+                          "file_count": int(i.get("content_count", 0))})
         if data.get("is_end", True):
             break
         cursor = data.get("next_cursor", "")
@@ -48,8 +48,9 @@ def get_knowledge_base(kb_id):
     """获取单个知识库详情。"""
     data = _req("get_knowledge_base", {"ids": [kb_id]})
     infos = data.get("infos", {})
-    kb = infos.get(kb_id, {}).get("knowledge_base", {})
-    return {"id": kb.get("knowledge_base_id", ""), "name": kb.get("name", ""), "file_count": kb.get("file_count", 0)}
+    kb = infos.get(kb_id, {})
+    return {"id": kb.get("id", ""), "name": kb.get("name", ""),
+            "file_count": 0}
 
 
 def _browse(store, kb_id, folder_id, client_id, api_key, ingested):

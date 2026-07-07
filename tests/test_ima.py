@@ -39,22 +39,18 @@ def _fake_urlopen(req_or_url, timeout=None):
                 {
                     "code": 0,
                     "data": {
-                        "info_list": [
-                            {
-                                "knowledge_base": {
-                                    "knowledge_base_id": "kb1",
-                                    "name": "中医库",
-                                    "file_count": 2,
-                                }
-                            },
-                            {
-                                "knowledge_base": {
-                                    "knowledge_base_id": "kb2",
-                                    "name": "西医库",
-                                    "file_count": 5,
-                                }
-                            },
-                        ],
+                    "info_list": [
+                        {
+                            "kb_id": "kb1",
+                            "kb_name": "中医库",
+                            "content_count": "2",
+                        },
+                        {
+                            "kb_id": "kb2",
+                            "kb_name": "西医库",
+                            "content_count": "5",
+                        },
+                    ],
                         "is_end": True,
                     },
                 }
@@ -70,11 +66,8 @@ def _fake_urlopen(req_or_url, timeout=None):
                     "data": {
                         "infos": {
                             "kb1": {
-                                "knowledge_base": {
-                                    "knowledge_base_id": "kb1",
-                                    "name": "中医库",
-                                    "file_count": 2,
-                                }
+                                "id": "kb1",
+                                "name": "中医库",
                             }
                         }
                     },
@@ -203,7 +196,6 @@ def test_get_knowledge_base(monkeypatch):
     result = get_knowledge_base("kb1")
     assert result["id"] == "kb1"
     assert result["name"] == "中医库"
-    assert result["file_count"] == 2
 
 
 def test_sync_all(monkeypatch, store):
