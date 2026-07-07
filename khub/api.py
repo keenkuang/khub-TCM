@@ -27,10 +27,11 @@ class App:
         body = body or {}
 
         if method == "GET" and path == "/health":
+            uptime = round(time.time() - self._started, 1) if self._started else 0
             return 200, {"status": "ok", "version": __version__,
                          "documents": self.store.conn.execute(
                              "SELECT count(*) FROM documents").fetchone()[0],
-                         "uptime_sec": round(getattr(self, "_started", 0), 1)}
+                         "uptime_sec": uptime}
 
         if method == "GET" and path == "/ebooks":
             return 200, self.store.list_ebooks()

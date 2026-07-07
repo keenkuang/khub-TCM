@@ -183,7 +183,6 @@ def main(argv=None):
         print(f"调度器启动，{len(tasks)} 个任务")
         run_tasks(store, tasks, blocking=True)
     elif args.cmd == "desktop":
-        from .api import serve
         port = args.port
         t = threading.Thread(target=serve, args=(store, lib, "127.0.0.1", port), daemon=True)
         t.start()
