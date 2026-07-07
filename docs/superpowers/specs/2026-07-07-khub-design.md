@@ -137,11 +137,24 @@ sources:
 - **M2**
   - ima 适配器、Quip 适配器（read-only 抢救，全量归档）
   - OCR 入库接口完善（监听目录 / 可选 HTTP）
+  - **轻量本地 Web UI**（浏览 / 全文检索 / 冲突处理，仅监听 127.0.0.1）
 - **M3**
   - Obsidian 完整适配器（安装后）、Confluence 适配器、通用适配器
   - 定时调度（cron / 内置 scheduler）
 - **M4**
   - 填 `embeddings`，向量检索，接本地 `llama.cpp` 做语义问答/RAG
+- **M5**
+  - **桌面 GUI**（Electron / Tauri 等，可选）：在 Web UI 之上包壳，提供原生体验。视需求与精力再上，不阻塞前序阶段。
+
+## 12. 界面形态（CLI / Web / GUI，分步实现）
+
+用户确认三者都要，但分步落地：
+
+- **CLI（M1）**：首选交互与自动化入口，`sync` / `query` / `ingest` / `ls` / `conflicts` / `version`。脚本、cron、OCR 系统都走 CLI。
+- **Web UI（M2）**：轻量本地服务（FastAPI/Flask + 极简前端），浏览器访问，提供：文档浏览/树、全文检索结果与片段、冲突清单与版本对比、写回触发。只读浏览+检索为主，复杂写回仍由 CLI/适配器完成。仅监听 `127.0.0.1`，不外暴露。
+- **桌面 GUI（M5）**：在 Web UI 之上套壳（Electron/Tauri），原生窗口体验。可选、最后做。
+
+设计原则：内核（Sync 引擎 + SQLite + 适配器）与界面解耦——所有界面都只是调用同一套 CLI/内部 API，不在 UI 层重复业务逻辑。
 
 ## 9. 测试策略
 
