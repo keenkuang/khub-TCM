@@ -1,8 +1,21 @@
+import hashlib
 import os
 
-from .extractors import extract_text, parse_meta
+from .extractors import extract_text, extract_cover, parse_meta
 from .models import CanonicalDoc
 from .storage import ManagedLibrary
+
+
+def _cover_ext(data):
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return ".png"
+    if data[:3] == b"\xff\xd8\xff":
+        return ".jpg"
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        return ".gif"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return ".webp"
+    return ".img"
 
 
 def register_ebook(store, library, src_path, move=False):
@@ -36,4 +49,21 @@ def ingest_ebook(store, canonical_id):
         format=frow["format"], origin="hub")
     version_id = store.store_document(cd)
     store.mark_ingested(canonical_id, version_id)
+
+    cover = extract_cover(frow["path"])
+    if cover:
+        ext = _cover_ext(cover)
+        cdir = os.path.dirname(frow["path"])
+        cname = f"{doc['file_hash']}_cover{ext}"
+        cpath = os.path.join(cdir, cname)
+        with open(cpath, "wb") as cf:
+            cf.write(cover)
+        store.conn.execute(
+            "UPDATE ebook_meta SET cover_path=? WHERE canonical_id=?",
+            (cpath, canonical_id))
+        chash = hashlib.sha256(cover).hexdigest()
+        store.conn.execute(
+            "INSERT INTO attachments(doc_id, version_id, kind, path, hash) VALUES(?,?,?,?,?)",
+            (canonical_id, version_id, "cover", cpath, chash))
+        store.conn.commit()
     return version_id

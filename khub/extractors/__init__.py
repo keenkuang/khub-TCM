@@ -19,3 +19,12 @@ def extract_text(path):
     if ext == ".pdf":
         return pdf.extract_text(path)
     return ""
+
+
+def extract_cover(path):
+    ext = os.path.splitext(path)[1].lower()
+    if ext == ".epub":
+        return epub.extract_cover(path)
+    if ext == ".pdf":
+        return pdf.extract_cover(path)
+    return None
