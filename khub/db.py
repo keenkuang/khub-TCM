@@ -1,6 +1,7 @@
 import sqlite3
 import hashlib
 import json
+import os
 import time
 from typing import Optional
 from .models import CanonicalDoc
@@ -17,6 +18,10 @@ def _now() -> str:
 class Store:
     def __init__(self, path=":memory:"):
         self.path = path
+        if path != ":memory:":
+            parent = os.path.dirname(os.path.abspath(path))
+            if parent:
+                os.makedirs(parent, exist_ok=True)
         self.conn = sqlite3.connect(path)
         self.conn.row_factory = sqlite3.Row
         self.init_schema()
