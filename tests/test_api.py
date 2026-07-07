@@ -46,7 +46,7 @@ def test_api_register_then_ingest_then_search():
     assert code == 200 and obj[0]["ingested"] == 1
 
     code, obj = app.dispatch("GET", "/search?q=" + "太阳病")
-    assert code == 200 and obj and obj[0]["doc_id"] == cid
+    assert code == 200 and obj["hits"] and obj["hits"][0]["doc_id"] == cid
 
 
 def test_api_documents_requires_title_and_content():
@@ -73,7 +73,7 @@ def test_api_documents_ingest_and_searchable():
     assert obj["version_id"] >= 1
 
     code, obj = app.dispatch("GET", "/search?q=" + "桂枝汤")
-    assert code == 200 and obj and obj[0]["doc_id"] == "kzocr-abc"
+    assert code == 200 and obj["hits"] and obj["hits"][0]["doc_id"] == "kzocr-abc"
 
     # metadata 应被序列化为 note 字段落库（存于 document_versions.note）
     import json
@@ -131,7 +131,7 @@ def test_api_short_query_search_fallback():
                   "content": "太阳病，头痛发热，身疼腰痛，恶风无汗而喘者，麻黄汤主之。",
                   "source_id": "kzocr-mahuang"})
     code, obj = app.dispatch("GET", "/search?q=" + "麻黄")
-    assert code == 200 and obj and obj[0]["doc_id"] == "kzocr-mahuang"
+    assert code == 200 and obj["hits"] and obj["hits"][0]["doc_id"] == "kzocr-mahuang"
 
 
 def test_api_multi_token_search():
@@ -146,12 +146,12 @@ def test_api_multi_token_search():
     # 两个词都命中
     code, obj = app.dispatch("GET", "/search?q=" + "麻黄 桂枝")
     assert code == 200
-    ids = [d["doc_id"] for d in obj]
+    ids = [d["doc_id"] for d in obj["hits"]]
     assert "mt-1" in ids
     assert "mt-2" not in ids  # 方二不包含"麻黄"
     # 1 个词
     code, obj = app.dispatch("GET", "/search?q=" + "桂枝")
-    assert code == 200 and len(obj) == 2
+    assert code == 200 and len(obj["hits"]) == 2
 
 
 def test_api_list_documents_and_conflicts():

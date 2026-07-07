@@ -1,4 +1,5 @@
 import json
+import os
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Optional
@@ -33,6 +34,31 @@ class App:
                              "SELECT count(*) FROM documents").fetchone()[0],
                          "uptime_sec": uptime}
 
+        if method == "GET" and path == "/stats":
+            cur = self.store.conn
+            total = cur.execute("SELECT count(*) FROM documents").fetchone()[0]
+            sources = {}
+            for row in cur.execute("SELECT source_ids FROM documents").fetchall():
+                ids = row["source_ids"] or "[]"
+                for src in ("obsidian", "ima", "imanote", "quip", "kzocr", "library"):
+                    if f'"{src}"' in ids:
+                        sources[src] = sources.get(src, 0) + 1
+                        break
+            today = time.strftime("%Y-%m-%d")
+            today_count = cur.execute(
+                "SELECT count(*) FROM documents WHERE updated_at >= ?",
+                (today,)).fetchone()[0]
+            recent = cur.execute(
+                "SELECT canonical_id, title, updated_at FROM documents "
+                "ORDER BY updated_at DESC LIMIT 5").fetchall()
+            return 200, {
+                "total": total,
+                "sources": sources,
+                "today": today_count,
+                "recent": [{"id": r["canonical_id"], "title": r["title"], "at": r["updated_at"]}
+                           for r in recent],
+            }
+
         if method == "GET" and path == "/ebooks":
             return 200, self.store.list_ebooks()
 
@@ -51,8 +77,13 @@ class App:
 
         if method == "GET" and path == "/search":
             q = qs.get("q", [""])[0]
-            return 200, [{"doc_id": d, "title": t, "snippet": s}
-                         for d, t, s in self.store.search(q)]
+            page = int(qs.get("page", ["0"])[0])
+            per = int(qs.get("per", ["50"])[0])
+            source = qs.get("source", [""])[0]
+            hits, total = self.store.search(q, page=page, per_page=per, source=source)
+            return 200, {"hits": [{"doc_id": d, "title": t, "snippet": s}
+                                   for d, t, s in hits],
+                         "total": total, "page": page, "per_page": per}
 
         if method == "GET" and path == "/documents":
             rows = self.store.conn.execute(
@@ -227,21 +258,31 @@ class App:
 <body>
 <header>kHUB · 个人知识中枢</header>
 <div class="wrap">
+  <div id="stats" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px"></div>
   <div class="bar">
     <input id="q" type="text" placeholder="全文检索（中文子串，如 桂枝汤 / 麻黄）">
     <button onclick="search()">检索</button>
     <button class="ghost" onclick="semantic()">语义</button>
     <button class="ghost" onclick="loadAll()">全部文档</button>
     <button class="ghost" onclick="loadConflicts()">冲突</button>
+    <select id="sourceFilter" style="padding:6px 8px;border:1px solid #ccd;border-radius:6px;font-size:13px">
+      <option value="">所有来源</option>
+      <option value="obsidian">秘方</option>
+      <option value="ima">IMA</option>
+      <option value="imanote">IMA笔记</option>
+      <option value="quip">Quip</option>
+      <option value="kzocr">KZOCR</option>
+    </select>
   </div>
   <div id="results"></div>
 </div>
 <script>
 const box=document.getElementById('results');
-function card(d, clickable=true){
+let currentPage=0;const PER_PAGE=20;
+function card(d, clickable=true, highlightTerm=''){
   const el=document.createElement('div');el.className='card';
-  el.innerHTML=`<h3>${esc(d.title||d.doc_id||'')}</h3>`+
-    (d.snippet?`<div class="snip">${esc(d.snippet)}</div>`:'')+
+  el.innerHTML=`<h3>${highlight(d.title||d.doc_id||'', highlightTerm)}</h3>`+
+    (d.snippet?`<div class="snip">${highlight(d.snippet, highlightTerm)}</div>`:'')+
     `<div class="meta">${esc(d.doc_id||'')}${d.updated_at?' · '+esc(d.updated_at):''}`+
     `${d.conflict?` <span class="tag">冲突</span>`:''}</div>`;
   if(clickable && d.doc_id){
@@ -251,6 +292,11 @@ function card(d, clickable=true){
   return el;
 }
 function esc(s){return (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+function highlight(s,term){
+  s=esc(s);if(!term)return s;
+  const re=new RegExp(esc(term).replace(/[.*+?^${}()|[\\]\\\\]/g,'\\$&'),'gi');
+  return s.replace(re,m=>'<mark>'+m+'</mark>');
+}
 async function loadDoc(id, title){
   box.innerHTML=`<h2>${esc(title||id)}</h2><p class="meta">加载中...</p>`;
   try{
@@ -270,12 +316,21 @@ async function loadDoc(id, title){
   }catch(e){box.innerHTML=`<p class="meta">加载失败: ${esc(e.message)}</p>`;}
 }
 async function search(){
+  currentPage=0;
   const q=document.getElementById('q').value.trim();if(!q)return;
   box.innerHTML='';
-  const r=await fetch('/search?q='+encodeURIComponent(q)).then(x=>x.json());
-  if(!r.length){box.innerHTML='<p class="meta">无结果</p>';return;}
-  const h=document.createElement('h2');h.textContent=`命中 ${r.length} 篇`;box.appendChild(h);
-  r.forEach(d=>box.appendChild(card(d)));
+  const source=document.getElementById('sourceFilter').value;
+  const r=await fetch(`/search?q=${encodeURIComponent(q)}&page=${currentPage}&per=${PER_PAGE}&source=${encodeURIComponent(source)}`).then(x=>x.json());
+  if(!r.total){box.innerHTML='<p class="meta">无结果</p>';return;}
+  const from = currentPage * PER_PAGE + 1;
+  const to = Math.min((currentPage+1)*PER_PAGE, r.total);
+  const h=document.createElement('h2');h.textContent=`命中 ${r.total} 篇（第${from}-${to}篇）`;box.appendChild(h);
+  r.hits.forEach(d=>box.appendChild(card(d, true, q)));
+  if((currentPage + 1) * PER_PAGE < r.total){
+    const btn=document.createElement('button');btn.textContent='下一页 →';btn.style.margin='10px auto';btn.style.display='block';
+    btn.onclick=()=>{currentPage++;search();};
+    box.appendChild(btn);
+  }
 }
 async function semantic(){
   const q=document.getElementById('q').value.trim();if(!q)return;
@@ -303,6 +358,21 @@ async function loadConflicts(){
   if(!r.length){box.innerHTML+='<p class="meta">无冲突</p>';return;}
   r.forEach(d=>box.appendChild(card(d)));
 }
+async function loadStats(){
+  const s=document.getElementById('stats');
+  try{
+    const r=await fetch('/stats').then(x=>x.json());
+    let html=`<div class="stat-card" style="background:#e8f5e9;padding:8px 14px;border-radius:8px;text-align:center;min-width:70px"><div style="font-size:20px;font-weight:700">${r.total}</div><div style="font-size:11px;color:#555">总计</div></div>`;
+    const srcMap={'obsidian':'秘方','ima':'IMA','imanote':'IMA笔记','quip':'Quip','library':'电子书'};
+    for(const [k,v] of Object.entries(srcMap)){
+      const cnt=r.sources[k]||0;
+      if(cnt>0) html+=`<div class="stat-card" style="background:#e3f2fd;padding:8px 14px;border-radius:8px;text-align:center;min-width:60px"><div style="font-size:16px;font-weight:700">${cnt}</div><div style="font-size:11px;color:#555">${v}</div></div>`;
+    }
+    html+=`<div class="stat-card" style="background:#fff3e0;padding:8px 14px;border-radius:8px;text-align:center;min-width:60px"><div style="font-size:16px;font-weight:700">${r.today}</div><div style="font-size:11px;color:#555">今日</div></div>`;
+    s.innerHTML=html;
+  }catch(e){s.innerHTML='';}
+}
+loadStats();
 document.getElementById('q').addEventListener('keydown',e=>{if(e.key==='Enter')search();});
 loadAll();
 </script>
@@ -359,4 +429,13 @@ def make_handler(app: App):
 def serve(store: Store, library: ManagedLibrary, host: str = "127.0.0.1", port: int = 8000):
     app = App(store, library)
     httpd = HTTPServer((host, port), make_handler(app))
+    import signal
+
+    def _stop(*a):
+        print("\n收到停止信号，正在关闭...")
+        httpd.shutdown()
+
+    signal.signal(signal.SIGTERM, _stop)
+    signal.signal(signal.SIGINT, _stop)
+    print(f"kHUB API → http://{host}:{port}  (pid={os.getpid()})")
     httpd.serve_forever()

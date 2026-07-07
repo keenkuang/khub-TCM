@@ -72,7 +72,7 @@ class TestQuipPull:
         assert skipped == 0, f"expected 0 skipped, got {skipped}"
 
         # Verify FTS search works
-        results = store.search("正文1")
+        results = store.search_old("正文1")
         assert len(results) >= 1, "should find document containing '正文1'"
         found_ids = {r[0] for r in results}
         assert "quip:T1" in found_ids

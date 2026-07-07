@@ -244,6 +244,148 @@ class Store:
         rows = self.conn.execute("SELECT canonical_id FROM documents WHERE conflict=1").fetchall()
         return [r["canonical_id"] for r in rows]
 
+    # ---- 搜索（旧接口，保持兼容） ----
+    def search_old(self, text: str) -> list:
+        """旧版 search，返回 list。仅用于向后兼容。"""
+        q = (text or "").strip()
+        if not q:
+            return []
+        tokens = [t for t in q.split() if t]
+        if len(tokens) > 1:
+            return self._search_multitoken_old(tokens, q)
+        return self._search_single_old(tokens[0] if tokens else q)
+
+    def _search_single_old(self, q: str):
+        """旧版单关键词搜索。"""
+        if len(q) < 3:
+            return self._search_like_old(q)
+        try:
+            rows = self.conn.execute(
+                "SELECT doc_id, title, snippet(docs_fts, 2, '[', ']', '...', 10) AS snip "
+                "FROM docs_fts WHERE docs_fts MATCH ? "
+                "ORDER BY rank", (q,)).fetchall()
+        except sqlite3.OperationalError:
+            return self._search_like_old(q)
+        return [(r["doc_id"], r["title"], r["snip"]) for r in rows]
+
+    def _search_multitoken_old(self, tokens: list[str], raw_query: str):
+        """旧版多词联合搜索。"""
+        conditions = []
+        params = []
+        for t in tokens:
+            like = f"%{t}%"
+            conditions.append("(d.title LIKE ? OR v.content LIKE ?)")
+            params.extend([like, like])
+        sql = (
+            "SELECT d.canonical_id, d.title, v.content FROM documents d "
+            "JOIN document_versions v ON v.version_id = d.current_version "
+            "WHERE " + " AND ".join(conditions))
+        rows = self.conn.execute(sql, params).fetchall()
+        return [(r["canonical_id"], r["title"],
+                 self._snippet(r["content"], raw_query, width=15))
+                for r in rows[:50]]
+
+    def _search_like_old(self, q: str):
+        like = f"%{q}%"
+        rows = self.conn.execute(
+            "SELECT d.canonical_id, d.title, v.content FROM documents d "
+            "JOIN document_versions v ON v.version_id = d.current_version "
+            "WHERE d.title LIKE ? OR v.content LIKE ?", (like, like)).fetchall()
+        return [(r["canonical_id"], r["title"], self._snippet(r["content"], q))
+                for r in rows]
+
+    # ---- 搜索（新版，支持分页与来源过滤） ----
+    def search(self, text: str, page: int = 0, per_page: int = 50,
+               source: str = "") -> tuple:
+        """返回 (hits: list, total: int)。支持分页和来源过滤。"""
+        q = (text or "").strip()
+        if not q:
+            return [], 0
+        tokens = [t for t in q.split() if t]
+        if len(tokens) > 1:
+            return self._search_multitoken(tokens, q, page, per_page, source)
+        return self._search_single_paged(tokens[0] if tokens else q,
+                                         page, per_page, source)
+
+    def _search_single_paged(self, q: str, page: int = 0, per_page: int = 50,
+                             source: str = ""):
+        """单关键词搜索：>=3 字符走 trigram MATCH，短词走 LIKE。支持分页与来源过滤。"""
+        if len(q) < 3:
+            return self._search_like(q, page, per_page, source)
+        params = [q]
+        source_where = ""
+        if source:
+            source_where = " AND d.source_ids LIKE ?"
+            params.append(f'%"{source}"%')
+        try:
+            total = self.conn.execute(
+                "SELECT count(*) FROM docs_fts f"
+                " JOIN documents d ON d.canonical_id = f.doc_id"
+                " WHERE f.docs_fts MATCH ?" + source_where,
+                params).fetchone()[0]
+            rows = self.conn.execute(
+                "SELECT f.doc_id, f.title,"
+                " snippet(f.docs_fts, 2, '[', ']', '...', 10) AS snip"
+                " FROM docs_fts f"
+                " JOIN documents d ON d.canonical_id = f.doc_id"
+                " WHERE f.docs_fts MATCH ?" + source_where
+                + " ORDER BY rank LIMIT ? OFFSET ?",
+                params + [per_page, page * per_page]).fetchall()
+        except sqlite3.OperationalError:
+            return self._search_like(q, page, per_page, source)
+        return ([(r["doc_id"], r["title"], r["snip"]) for r in rows], total)
+
+    def _search_multitoken(self, tokens: list[str], raw_query: str,
+                           page: int = 0, per_page: int = 50,
+                           source: str = ""):
+        """多词联合搜索（AND）：对每个 token 搜 LIKE，取交集。支持分页与来源过滤。"""
+        conditions = []
+        params = []
+        for t in tokens:
+            like = f"%{t}%"
+            conditions.append("(d.title LIKE ? OR v.content LIKE ?)")
+            params.extend([like, like])
+        if source:
+            conditions.append("d.source_ids LIKE ?")
+            params.append(f'%"{source}"%')
+        where_clause = " AND ".join(conditions)
+        total = self.conn.execute(
+            "SELECT count(*) FROM documents d"
+            " JOIN document_versions v ON v.version_id = d.current_version"
+            " WHERE " + where_clause,
+            params).fetchone()[0]
+        rows = self.conn.execute(
+            "SELECT d.canonical_id, d.title, v.content FROM documents d"
+            " JOIN document_versions v ON v.version_id = d.current_version"
+            " WHERE " + where_clause
+            + " ORDER BY d.updated_at DESC LIMIT ? OFFSET ?",
+            params + [per_page, page * per_page]).fetchall()
+        return ([(r["canonical_id"], r["title"],
+                  self._snippet(r["content"], raw_query, width=15))
+                 for r in rows], total)
+
+    def _search_like(self, q: str, page: int = 0, per_page: int = 50,
+                     source: str = ""):
+        like = f"%{q}%"
+        params = [like, like]
+        source_where = ""
+        if source:
+            source_where = " AND d.source_ids LIKE ?"
+            params.append(f'%"{source}"%')
+        total = self.conn.execute(
+            "SELECT count(*) FROM documents d"
+            " JOIN document_versions v ON v.version_id = d.current_version"
+            " WHERE (d.title LIKE ? OR v.content LIKE ?)" + source_where,
+            params).fetchone()[0]
+        rows = self.conn.execute(
+            "SELECT d.canonical_id, d.title, v.content FROM documents d"
+            " JOIN document_versions v ON v.version_id = d.current_version"
+            " WHERE (d.title LIKE ? OR v.content LIKE ?)" + source_where
+            + " ORDER BY d.updated_at DESC LIMIT ? OFFSET ?",
+            params + [per_page, page * per_page]).fetchall()
+        return ([(r["canonical_id"], r["title"], self._snippet(r["content"], q))
+                 for r in rows], total)
+
     def upsert_file(self, sha256: str, path: str, size: int, fmt: str):
         self.conn.execute(
             "INSERT INTO files(sha256, path, size, format, stored_at) VALUES(?,?,?,?,?) "

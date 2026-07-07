@@ -1,0 +1,36 @@
+import tempfile
+from khub.api import App
+from khub.db import Store
+from khub.storage import ManagedLibrary
+from khub.models import CanonicalDoc
+
+
+def test_stats_endpoint():
+    d = tempfile.mkdtemp()
+    store = Store(":memory:")
+    lib = ManagedLibrary(d + "/lib")
+    app = App(store, lib)
+    # 添加几篇不同来源的文档
+    store.store_document(
+        CanonicalDoc(
+            canonical_id="o1",
+            title="o",
+            content="",
+            source="obsidian",
+            source_id="o1",
+        )
+    )
+    store.store_document(
+        CanonicalDoc(
+            canonical_id="i1",
+            title="i",
+            content="",
+            source="ima",
+            source_id="i1",
+        )
+    )
+    code, obj = app.dispatch("GET", "/stats")
+    assert code == 200
+    assert obj["total"] == 2
+    assert "sources" in obj
+    assert "obsidian" in obj["sources"]

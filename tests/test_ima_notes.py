@@ -126,5 +126,5 @@ def test_sync_all(monkeypatch):
     res = sync_all(store, verbose=False)
     assert len(res) == 1
     assert res[0]["ingested"] >= 1
-    doc = store.search("桂枝汤")
+    doc = store.search_old("桂枝汤")
     assert len(doc) >= 1

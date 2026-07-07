@@ -207,9 +207,9 @@ def test_sync_all(monkeypatch, store):
     assert len(results) == 2
 
     # Verify documents are searchable
-    hits = store.search("太阳病")
+    hits = store.search_old("太阳病")
     assert len(hits) >= 1
-    hits2 = store.search("金匮要略")
+    hits2 = store.search_old("金匮要略")
     assert len(hits2) >= 1
 
 

@@ -128,7 +128,6 @@ def main(argv=None):
         vid = ingest_ebook(store, args.canonical_id)
         print(f"{args.canonical_id} -> version {vid}")
     elif args.cmd == "serve":
-        print(f"khub API on http://{args.host}:{args.port}")
         serve(store, lib, args.host, args.port)
     elif args.cmd == "exam-gen":
         q = generate(args.topic, source_doc=args.source_doc)

@@ -30,7 +30,7 @@ def test_import_vault():
         assert skipped == 0, f"expected 0 skipped, got {skipped}"
 
         # --- 验证全文搜索 ---
-        results = store.search("太阳病")
+        results = store.search_old("太阳病")
         assert len(results) >= 1, "search should find '太阳病'"
         found = any("伤寒论" in r[1] for r in results)
         assert found, "search result should include 伤寒论"

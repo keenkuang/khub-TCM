@@ -23,7 +23,7 @@ def test_watch_ingests_new_md():
     assert len(rows) == 1
     assert rows[0]["title"] == "伤寒论"
     # FTS 可检索
-    assert store.search("太阳病")
+    assert store.search_old("太阳病")
 
 
 def test_watch_skips_unchanged():

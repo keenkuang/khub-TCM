@@ -15,7 +15,7 @@ def test_store_document_creates_version_and_fts():
     assert vid >= 1
     ver = s.conn.execute("SELECT * FROM document_versions WHERE version_id=?", (vid,)).fetchone()
     assert ver["content"] == "hello world"
-    assert s.search("hello")[0][0] == "d1"
+    assert s.search_old("hello")[0][0] == "d1"
 
 def test_second_version_is_new_row_not_overwrite():
     s = Store(":memory:")

@@ -41,7 +41,7 @@ def test_ingest_ebook_indexes_text():
     # 有正文版本
     assert len(store.get_versions(cid)) == 1
     # FTS 可检索正文关键词
-    hits = store.search("阴阳平衡")
+    hits = store.search_old("阴阳平衡")
     assert hits and hits[0][0] == cid
     # 向量化入库：embeddings 表写入了本版本文档的向量
     emb = store.conn.execute(

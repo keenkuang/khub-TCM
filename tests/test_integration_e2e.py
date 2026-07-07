@@ -72,9 +72,9 @@ def test_e2e_full_chain():
     assert code == 200 and obj["version_id"] >= 1
 
     # ── 6. 全文检索 ──
-    code, hits = app.dispatch("GET", "/search?q=" + "温病条辨")
+    code, obj = app.dispatch("GET", "/search?q=" + "温病条辨")
     assert code == 200
-    assert any(cid == h["doc_id"] for h in hits)
+    assert any(cid == h["doc_id"] for h in obj["hits"])
 
     # ── 7. KZOCR 文档推送 ──
     code, obj = app.dispatch("POST", "/documents",
@@ -83,8 +83,8 @@ def test_e2e_full_chain():
                               "source_id": "kzocr-e2e-001",
                               "metadata": {"book": "临证指南医案", "page": 15}})
     assert code == 201 and obj["doc_id"] == "kzocr-e2e-001"
-    code, hits = app.dispatch("GET", "/search?q=" + "咳逆")
-    assert code == 200 and hits and hits[0]["doc_id"] == "kzocr-e2e-001"
+    code, obj = app.dispatch("GET", "/search?q=" + "咳逆")
+    assert code == 200 and obj["hits"] and obj["hits"][0]["doc_id"] == "kzocr-e2e-001"
 
     # ── 8. 语义检索（ANN / 暴力余弦） ──
     code, hits = app.dispatch("GET", "/semantic?q=" + "温病")
@@ -176,12 +176,12 @@ def test_e2e_short_query_like():
     assert code == 201
 
     # 2 字符查询
-    code, hits = app.dispatch("GET", "/search?q=" + "桂枝")
-    assert code == 200 and hits and hits[0]["doc_id"] == "kzocr-gz"
+    code, obj = app.dispatch("GET", "/search?q=" + "桂枝")
+    assert code == 200 and obj["hits"] and obj["hits"][0]["doc_id"] == "kzocr-gz"
 
     # 1 字符查询
-    code, hits = app.dispatch("GET", "/search?q=" + "桂")
-    assert code == 200 and hits and hits[0]["doc_id"] == "kzocr-gz"
+    code, obj = app.dispatch("GET", "/search?q=" + "桂")
+    assert code == 200 and obj["hits"] and obj["hits"][0]["doc_id"] == "kzocr-gz"
 
     # 语义检索也支持短词
     code, hits = app.dispatch("GET", "/semantic?q=" + "桂枝")
