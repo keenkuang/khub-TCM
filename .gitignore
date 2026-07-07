@@ -8,4 +8,5 @@ htmlcov/
 bandit_report.json
 pii.key
 desktop/node_modules/
+ssl/
 .CODE.xcconfig
