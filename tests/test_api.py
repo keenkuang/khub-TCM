@@ -95,6 +95,25 @@ def test_api_document_url_encoded():
     assert code == 200 and obj["title"] == "麻黄汤"
 
 
+def test_api_document_format_field():
+    """文档详情应返回 format 字段。"""
+    import os, tempfile, zipfile
+    from khub.api import App
+    from khub.db import Store
+    from khub.storage import ManagedLibrary
+    d = tempfile.mkdtemp()
+    store = Store(":memory:")
+    lib = ManagedLibrary(os.path.join(d, "lib"))
+    app = App(store, lib)
+    app.dispatch("POST", "/documents",
+                 {"title": "格式化测试", "content": "<p>HTML内容</p>",
+                  "source_id": "fmt-test"})
+    code, obj = app.dispatch("GET", "/documents/fmt-test")
+    assert code == 200
+    assert "format" in obj
+    assert obj["format"] in ("html", "markdown", "plain")
+
+
 def test_api_documents_auto_id_when_missing_source_id():
     app, _, _ = _app()
     code, obj = app.dispatch("POST", "/documents",

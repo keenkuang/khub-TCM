@@ -1,6 +1,5 @@
 import json
 import os
-import re
 import time
 import urllib.error
 import urllib.request
@@ -11,23 +10,6 @@ from .models import CanonicalDoc
 
 BASE = "https://ima.qq.com/openapi/wiki/v1"
 _API_DELAY = 0.5  # 每次 API 调用间隔（秒），避免触发频率限制
-
-
-def _html_to_text(html: str) -> str:
-    """把 HTML 转成纯文本（移除标签、解码实体、合并空白）。"""
-    # 移除 style/script 块
-    text = re.sub(r'(?is)<style[^>]*>.*?</style>', '', html)
-    text = re.sub(r'(?is)<script[^>]*>.*?</script>', '', text)
-    # 把块级标签替换为换行
-    text = re.sub(r'(?is)</?(?:p|div|br|tr|li|h[1-6]|blockquote|section|article|table)[^>]*>', '\n', text)
-    # 移除其余标签
-    text = re.sub(r'<[^>]+>', '', text)
-    # HTML 实体解码
-    text = text.replace('&nbsp;', ' ').replace('&amp;', '&').replace('&lt;', '<').replace('&gt;', '>')
-    text = text.replace('&quot;', '"').replace('&#39;', "'")
-    # 压缩多余空白行
-    text = re.sub(r'\n{3,}', '\n\n', text)
-    return text.strip()
 
 
 def _get_client_id():
@@ -117,25 +99,22 @@ def _browse(store, kb_id, folder_id, ingested, _depth=0):
             cid = f"ima:{media_id}"
             if store.get_document(cid):
                 continue
-                try:
-                    media_data = _req("get_media_info", {"media_id": media_id})
-                    url_info = media_data.get("url_info", {})
-                    file_url = url_info.get("url", "")
-                    if not file_url:
-                        continue
-                    dl = urllib.request.Request(file_url)
-                    with urllib.request.urlopen(dl, timeout=60) as resp:
-                        content_bytes = resp.read()
-                    text = content_bytes.decode("utf-8", errors="replace")
-                    # 如果内容是 HTML，剥离标签
-                    if text.strip().startswith("<") and ">" in text[:50]:
-                        text = _html_to_text(text)
-                    doc = CanonicalDoc(
-                        canonical_id=cid, title=title, content=text,
+            try:
+                media_data = _req("get_media_info", {"media_id": media_id})
+                url_info = media_data.get("url_info", {})
+                file_url = url_info.get("url", "")
+                if not file_url:
+                    continue
+                dl = urllib.request.Request(file_url)
+                with urllib.request.urlopen(dl, timeout=60) as resp:
+                    content_bytes = resp.read()
+                text = content_bytes.decode("utf-8", errors="replace")
+                doc = CanonicalDoc(
+                    canonical_id=cid, title=title, content=text,
                     source="ima", source_id=media_id, origin="ima")
                 store.store_document(doc)
                 ingested.append(cid)
-                time.sleep(_API_DELAY)  # 每次下载后也延迟
+                time.sleep(_API_DELAY)
             except Exception as exc:
                 warnings.warn(f"IMA 跳过 {title}({media_id}): {exc}")
         if data.get("is_end", True):

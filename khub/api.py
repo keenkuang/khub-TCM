@@ -75,6 +75,7 @@ class App:
                 "source_ids": doc["source_ids"],
                 "created_at": doc["created_at"],
                 "updated_at": doc["updated_at"],
+                "format": vers[-1]["format"] if (vers and "format" in vers[-1]) else "plain",
             }
 
         if method == "GET" and path == "/conflicts":
@@ -255,9 +256,15 @@ async function loadDoc(id, title){
   try{
     const r=await fetch('/documents/'+encodeURIComponent(id)).then(x=>x.json());
     if(r.error){box.innerHTML=`<p class="meta">${esc(r.error)}</p>`;return;}
-    box.innerHTML=`<h2>${esc(r.title||id)}</h2><p class="meta">${esc(r.canonical_id)} · ${r.version_count} 版本 · ${r.updated_at||''}</p>`+
-      `<div style="white-space:pre-wrap;font-size:14px;line-height:1.7;background:#fafafa;padding:12px;border-radius:8px;margin-top:8px;overflow-x:auto">${esc(r.content)}</div>`+
-      '<p style="margin-top:8px"><a href="#" onclick="loadAll();return false">← 返回列表</a></p>';
+    box.innerHTML=`<h2>${esc(r.title||id)}</h2><p class="meta">${esc(r.canonical_id)} · ${r.version_count} 版本 · ${r.updated_at||''} · 格式: ${esc(r.format||'')}</p>`;
+    let contentDiv;
+    if(r.format === 'html'){
+      const safe = (r.content||'').replace(/<script[\\s\\S]*?<\\/script>/gi,'');
+      contentDiv = `<div style="line-height:1.7;padding:12px;border-radius:8px;margin-top:8px;overflow-x:auto">${safe}</div>`;
+    } else {
+      contentDiv = `<div style="white-space:pre-wrap;font-size:14px;line-height:1.7;background:#fafafa;padding:12px;border-radius:8px;margin-top:8px;overflow-x:auto">${esc(r.content)}</div>`;
+    }
+    box.innerHTML += contentDiv + '<p style="margin-top:8px"><a href="#" onclick="loadAll();return false">← 返回列表</a></p>';
   }catch(e){box.innerHTML=`<p class="meta">加载失败: ${esc(e.message)}</p>`;}
 }
 async function search(){

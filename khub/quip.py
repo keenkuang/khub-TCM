@@ -1,7 +1,6 @@
 """Quip adapter — pull documents from Quip via REST API v2 and ingest into store."""
 
 import json
-import re
 import urllib.request
 import warnings
 
@@ -9,13 +8,6 @@ from khub.db import Store, compute_hash
 from khub.models import CanonicalDoc
 
 API_BASE = "https://platform.quip.com/1"
-
-_HTML_TAG_RE = re.compile(r"<[^>]+>")
-
-
-def _html_to_text(html: str) -> str:
-    """Strip HTML tags via simple regex."""
-    return _HTML_TAG_RE.sub("", html)
 
 
 def _quip_get(path: str, access_token: str) -> dict:
@@ -78,7 +70,7 @@ def _traverse_folder(
             thread = tdata.get("thread", {})
             html = tdata.get("html", "")
             title = thread.get("title", "")
-            content = _html_to_text(html) if html else ""
+            content = html
 
             doc = CanonicalDoc(
                 canonical_id=canonical_id,
@@ -87,7 +79,7 @@ def _traverse_folder(
                 source="quip",
                 source_id=f"quip/{thread_id}",
                 origin="quip",
-                format="markdown",
+                format="html",
                 hash=compute_hash(content),
                 doc_type="raw",
             )
