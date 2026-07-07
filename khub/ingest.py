@@ -33,7 +33,7 @@ def register_ebook(store, library, src_path, move=False):
 
 
 def ingest_ebook(store, canonical_id):
-    """入库：抽取正文 → 建版本 → FTS 索引 → 标记 ingested。不向量化/封面（后续阶段）。"""
+    """入库：抽取正文 → 建版本 → FTS 索引 → 向量索引 → 标记 ingested。"""
     doc = store.get_document(canonical_id)
     if doc is None:
         raise ValueError(f"unknown ebook: {canonical_id}")
@@ -66,4 +66,10 @@ def ingest_ebook(store, canonical_id):
             "INSERT INTO attachments(doc_id, version_id, kind, path, hash) VALUES(?,?,?,?,?)",
             (canonical_id, version_id, "cover", cpath, chash))
         store.conn.commit()
+    # 向量化入库（离线 LocalEmbedder，无需联网）
+    try:
+        from .retrieval import Retriever
+        Retriever(store).index_ebook(canonical_id)
+    except Exception:  # 向量化失败不阻塞入库主流程
+        pass
     return version_id

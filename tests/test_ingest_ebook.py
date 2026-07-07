@@ -43,6 +43,15 @@ def test_ingest_ebook_indexes_text():
     # FTS 可检索正文关键词
     hits = store.search("阴阳平衡")
     assert hits and hits[0][0] == cid
+    # 向量化入库：embeddings 表写入了本版本文档的向量
+    emb = store.conn.execute(
+        "SELECT count(*) AS c FROM embeddings WHERE doc_id=? AND version_id=?",
+        (cid, vid)).fetchone()["c"]
+    assert emb == 1
+    # 向量检索能召回本文档
+    from khub.retrieval import Retriever
+    sim = Retriever(store).search_similar("中医 阴阳", k=3)
+    assert any(d == cid for d, _ in sim)
 
 
 def test_ingest_unknown_raises():

@@ -44,6 +44,20 @@ class App:
             return 200, [{"doc_id": d, "title": t, "snippet": s}
                          for d, t, s in self.store.search(q)]
 
+        if method == "GET" and path == "/documents":
+            rows = self.store.conn.execute(
+                "SELECT canonical_id, title, updated_at, source_ids FROM documents "
+                "ORDER BY updated_at DESC").fetchall()
+            return 200, [dict(r) for r in rows]
+
+        if method == "GET" and path == "/conflicts":
+            rows = self.store.conn.execute(
+                "SELECT canonical_id, title FROM documents WHERE conflict=1").fetchall()
+            return 200, [dict(r) for r in rows]
+
+        if method == "GET" and path == "/":
+            return 200, self._html_page(), "text/html; charset=utf-8"
+
         # ---- OCR / KZOCR 文档入库（直接收内容，不依赖原始文件） ----
         if method == "POST" and path == "/documents":
             if not body.get("title") or not body.get("content"):
@@ -61,6 +75,11 @@ class App:
                 doc_type=body.get("doc_type", "raw"),
             )
             version_id = self.store.store_document(doc)
+            try:
+                from .retrieval import Retriever
+                Retriever(self.store).index_ebook(doc.canonical_id)
+            except Exception:  # 向量化失败不影响入库
+                pass
             return 201, {"status": "ok", "doc_id": doc.canonical_id,
                          "version_id": version_id, "message": "document ingested"}
 
@@ -149,23 +168,99 @@ class App:
 
         return 404, {"error": "not found"}
 
+    @staticmethod
+    def _html_page():
+        return """<!DOCTYPE html>
+<html lang="zh"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>kHUB</title>
+<style>
+ body{font-family:system-ui,"PingFang SC","Microsoft YaHei",sans-serif;margin:0;background:#f6f7f9;color:#222}
+ header{background:#1f2937;color:#fff;padding:12px 20px;font-weight:600}
+ .wrap{max-width:920px;margin:20px auto;padding:0 16px}
+ .bar{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+ input[type=text]{flex:1;min-width:200px;padding:9px 12px;border:1px solid #ccd;border-radius:8px;font-size:15px}
+ button{padding:9px 14px;border:0;border-radius:8px;background:#2563eb;color:#fff;cursor:pointer;font-size:14px}
+ button.ghost{background:#e5e7eb;color:#333}
+ .card{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:12px 14px;margin-bottom:10px}
+ .card h3{margin:0 0 4px;font-size:16px}
+ .snip{color:#555;font-size:14px;line-height:1.5}
+ .meta{color:#999;font-size:12px;margin-top:4px}
+ .tag{display:inline-block;background:#fee2e2;color:#b91c1c;border-radius:6px;padding:1px 7px;font-size:12px}
+ h2{font-size:15px;color:#555;margin:18px 0 8px}
+</style></head>
+<body>
+<header>kHUB · 个人知识中枢</header>
+<div class="wrap">
+  <div class="bar">
+    <input id="q" type="text" placeholder="全文检索（中文子串，如 桂枝汤 / 麻黄）">
+    <button onclick="search()">检索</button>
+    <button class="ghost" onclick="loadAll()">全部文档</button>
+    <button class="ghost" onclick="loadConflicts()">冲突</button>
+  </div>
+  <div id="results"></div>
+</div>
+<script>
+const box=document.getElementById('results');
+function card(d){
+  const el=document.createElement('div');el.className='card';
+  el.innerHTML=`<h3>${esc(d.title||d.doc_id||'')}</h3>`+
+    (d.snippet?`<div class="snip">${esc(d.snippet)}</div>`:'')+
+    `<div class="meta">${esc(d.doc_id||'')}${d.updated_at?' · '+esc(d.updated_at):''}`+
+    `${d.conflict?` <span class="tag">冲突</span>`:''}</div>`;
+  return el;
+}
+function esc(s){return (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+async function search(){
+  const q=document.getElementById('q').value.trim();if(!q)return;
+  box.innerHTML='';
+  const r=await fetch('/search?q='+encodeURIComponent(q)).then(x=>x.json());
+  if(!r.length){box.innerHTML='<p class="meta">无结果</p>';return;}
+  r.forEach(d=>box.appendChild(card(d)));
+}
+async function loadAll(){
+  box.innerHTML='';const h=document.createElement('h2');h.textContent='全部文档';
+  box.appendChild(h);
+  const r=await fetch('/documents').then(x=>x.json());
+  if(!r.length){box.innerHTML+='<p class="meta">暂无文档</p>';return;}
+  r.forEach(d=>box.appendChild(card(d)));
+}
+async function loadConflicts(){
+  box.innerHTML='';const h=document.createElement('h2');h.textContent='冲突文档';
+  box.appendChild(h);
+  const r=await fetch('/conflicts').then(x=>x.json());
+  if(!r.length){box.innerHTML+='<p class="meta">无冲突</p>';return;}
+  r.forEach(d=>box.appendChild(card(d)));
+}
+document.getElementById('q').addEventListener('keydown',e=>{if(e.key==='Enter')search();});
+loadAll();
+</script>
+</body></html>"""
+
 
 def make_handler(app: App):
     class Handler(BaseHTTPRequestHandler):
-        def _send(self, code, obj):
-            data = json.dumps(obj, ensure_ascii=False).encode("utf-8")
+        def _send(self, code, obj, ctype="application/json; charset=utf-8"):
+            if ctype.startswith("application/json"):
+                data = json.dumps(obj, ensure_ascii=False).encode("utf-8")
+            else:
+                data = obj.encode("utf-8") if isinstance(obj, str) else obj
             self.send_response(code)
-            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
             self.wfile.write(data)
 
         def do_GET(self):
             try:
-                code, obj = app.dispatch("GET", self.path)
+                res = app.dispatch("GET", self.path)
+                if len(res) == 3:
+                    code, obj, ctype = res
+                else:
+                    code, obj, ctype = res[0], res[1], "application/json; charset=utf-8"
             except Exception as e:  # noqa: BLE001
                 return self._send(500, {"error": str(e)})
-            self._send(code, obj)
+            self._send(code, obj, ctype)
 
         def do_POST(self):
             length = int(self.headers.get("Content-Length", 0) or 0)
@@ -175,10 +270,14 @@ def make_handler(app: App):
             except json.JSONDecodeError:
                 return self._send(400, {"error": "bad json"})
             try:
-                code, obj = app.dispatch("POST", self.path, body)
+                res = app.dispatch("POST", self.path, body)
+                if len(res) == 3:
+                    code, obj, ctype = res
+                else:
+                    code, obj, ctype = res[0], res[1], "application/json; charset=utf-8"
             except Exception as e:  # noqa: BLE001
                 return self._send(500, {"error": str(e)})
-            self._send(code, obj)
+            self._send(code, obj, ctype)
 
         def log_message(self, *args):
             pass

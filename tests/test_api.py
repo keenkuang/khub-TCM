@@ -101,6 +101,26 @@ def test_api_short_query_search_fallback():
     assert code == 200 and obj and obj[0]["doc_id"] == "kzocr-mahuang"
 
 
+def test_api_list_documents_and_conflicts():
+    app, _, _ = _app()
+    app.dispatch("POST", "/documents",
+                 {"title": "清单文档", "content": "正文", "source_id": "kzocr-list"})
+    code, obj = app.dispatch("GET", "/documents")
+    assert code == 200
+    assert any(d["canonical_id"] == "kzocr-list" for d in obj)
+
+    code, obj = app.dispatch("GET", "/conflicts")
+    assert code == 200 and obj == []
+
+
+def test_api_root_serves_html_ui():
+    app, _, _ = _app()
+    res = app.dispatch("GET", "/")
+    assert len(res) == 3
+    code, html, ctype = res
+    assert code == 200 and "text/html" in ctype and "kHUB" in html
+
+
 def test_api_not_found():
     app, _, _ = _app()
     code, _ = app.dispatch("GET", "/nope")

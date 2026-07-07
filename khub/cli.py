@@ -71,6 +71,10 @@ def build_parser():
     pd.add_argument("--source", default="KZOCR")
     pd.add_argument("--format", default="markdown")
     pd.add_argument("--metadata", default="", help="JSON 字符串，附加元数据")
+
+    pw = sub.add_parser("watch", help="监听目录，KZOCR 产出 .md 落盘即自动入库")
+    pw.add_argument("dir")
+    pw.add_argument("--interval", type=float, default=3.0, help="轮询间隔（秒）")
     return ap
 
 
@@ -128,7 +132,15 @@ def main(argv=None):
             note=json.dumps(metadata, ensure_ascii=False),
         )
         vid = store.store_document(doc)
+        try:
+            from .retrieval import Retriever
+            Retriever(store).index_ebook(doc.canonical_id)
+        except Exception:
+            pass
         print(f"{doc.canonical_id} -> version {vid}")
+    elif args.cmd == "watch":
+        from .watch import watch_and_ingest
+        watch_and_ingest(store, args.dir, interval=args.interval)
     else:
         build_parser().print_help()
 
