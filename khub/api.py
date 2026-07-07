@@ -284,7 +284,8 @@ async function semantic(){
   const docs=await fetch('/documents').then(x=>x.json());
   const titles={};docs.forEach(d=>titles[d.canonical_id]=d.title);
   r.forEach(d=>{const el=document.createElement('div');el.className='card';
-    el.innerHTML=`<h3>${esc(titles[d.doc_id]||d.doc_id)}</h3><div class="meta">${esc(d.doc_id)} · 相似度 ${d.score}</div>`;box.appendChild(el);});
+    el.innerHTML=`<h3>${esc(titles[d.doc_id]||d.doc_id)}</h3><div class="meta">${esc(d.doc_id)} · 相似度 ${d.score}</div>`;
+    el.style.cursor='pointer';el.onclick=()=>loadDoc(d.doc_id, titles[d.doc_id]||d.doc_id);box.appendChild(el);});
 }
 async function loadAll(){
   box.innerHTML='';const h=document.createElement('h2');h.textContent='全部文档';
