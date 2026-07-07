@@ -234,6 +234,7 @@ async function search(){
   box.innerHTML='';
   const r=await fetch('/search?q='+encodeURIComponent(q)).then(x=>x.json());
   if(!r.length){box.innerHTML='<p class="meta">无结果</p>';return;}
+  const h=document.createElement('h2');h.textContent=`命中 ${r.length} 篇`;box.appendChild(h);
   r.forEach(d=>box.appendChild(card(d)));
 }
 async function semantic(){

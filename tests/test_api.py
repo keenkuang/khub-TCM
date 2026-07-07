@@ -91,7 +91,7 @@ def test_api_documents_auto_id_when_missing_source_id():
 
 
 def test_api_short_query_search_fallback():
-    # trigram 不支持 <3 字符，短查询（如方剂名“麻黄”）应退回 LIKE 命中
+    # trigram 不支持 <3 字符，短查询（如方剂名"麻黄"）应退回 LIKE 命中
     app, _, _ = _app()
     app.dispatch("POST", "/documents",
                  {"title": "麻黄汤证治",
@@ -99,6 +99,26 @@ def test_api_short_query_search_fallback():
                   "source_id": "kzocr-mahuang"})
     code, obj = app.dispatch("GET", "/search?q=" + "麻黄")
     assert code == 200 and obj and obj[0]["doc_id"] == "kzocr-mahuang"
+
+
+def test_api_multi_token_search():
+    """多词联合搜索："麻黄 桂枝" 应命中同时包含两者的文档。"""
+    app, _, _ = _app()
+    app.dispatch("POST", "/documents",
+                 {"title": "方一", "content": "麻黄、桂枝、杏仁、甘草。麻黄汤方。",
+                  "source_id": "mt-1"})
+    app.dispatch("POST", "/documents",
+                 {"title": "方二", "content": "桂枝、芍药、生姜、大枣。桂枝汤方。",
+                  "source_id": "mt-2"})
+    # 两个词都命中
+    code, obj = app.dispatch("GET", "/search?q=" + "麻黄 桂枝")
+    assert code == 200
+    ids = [d["doc_id"] for d in obj]
+    assert "mt-1" in ids
+    assert "mt-2" not in ids  # 方二不包含"麻黄"
+    # 1 个词
+    code, obj = app.dispatch("GET", "/search?q=" + "桂枝")
+    assert code == 200 and len(obj) == 2
 
 
 def test_api_list_documents_and_conflicts():

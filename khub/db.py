@@ -133,7 +133,14 @@ class Store:
         q = (text or "").strip()
         if not q:
             return []
-        # trigram 需 >=3 字符；中文方剂名(麻黄/桂枝)与英文短词退回 LIKE，否则查不到
+        tokens = [t for t in q.split() if t]
+        if len(tokens) > 1:
+            # 多词联合搜索：每个词独立匹配，求交集（AND 语义）
+            return self._search_multitoken(tokens, q)
+        return self._search_single(tokens[0] if tokens else q)
+
+    def _search_single(self, q: str):
+        """单关键词搜索：>=3 字符走 trigram MATCH，短词走 LIKE。"""
         if len(q) < 3:
             return self._search_like(q)
         try:
@@ -143,6 +150,24 @@ class Store:
         except sqlite3.OperationalError:
             return self._search_like(q)
         return [(r["doc_id"], r["title"], r["snip"]) for r in rows]
+
+    def _search_multitoken(self, tokens: list[str], raw_query: str):
+        """多词联合搜索（AND）：对每个 token 搜 LIKE，取交集。"""
+        conditions = []
+        params = []
+        for t in tokens:
+            like = f"%{t}%"
+            conditions.append("(d.title LIKE ? OR v.content LIKE ?)")
+            params.extend([like, like])
+        sql = (
+            "SELECT d.canonical_id, d.title, v.content FROM documents d "
+            "JOIN document_versions v ON v.version_id = d.current_version "
+            "WHERE " + " AND ".join(conditions))
+        rows = self.conn.execute(sql, params).fetchall()
+        # 取前 50 篇避免太长
+        return [(r["canonical_id"], r["title"],
+                 self._snippet(r["content"], raw_query, width=15))
+                for r in rows[:50]]
 
     def _search_like(self, q: str):
         like = f"%{q}%"
@@ -157,11 +182,18 @@ class Store:
     def _snippet(content, q, width=20):
         if not content:
             return ""
-        i = content.find(q)
-        if i < 0:
+        # 对多词查询，找第一个命中的 token 位置
+        tokens = [t for t in q.split() if t]
+        pos = -1
+        for tok in tokens:
+            i = content.find(tok)
+            if i >= 0:
+                pos = i
+                break
+        if pos < 0:
             return content[:width * 2]
-        start = max(0, i - width)
-        end = min(len(content), i + len(q) + width)
+        start = max(0, pos - width)
+        end = min(len(content), pos + len(tokens[0] if tokens else q) + width)
         return ("..." if start > 0 else "") + content[start:end] + \
                ("..." if end < len(content) else "")
 
