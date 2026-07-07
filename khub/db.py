@@ -17,9 +17,9 @@ def _now() -> str:
 
 class Store:
     def __init__(self, path=":memory:"):
-        self.path = path
-        if path != ":memory:":
-            parent = os.path.dirname(os.path.abspath(path))
+        self.path = os.path.expanduser(path)
+        if self.path != ":memory:":
+            parent = os.path.dirname(os.path.abspath(self.path))
             if parent:
                 os.makedirs(parent, exist_ok=True)
         self.conn = sqlite3.connect(path)

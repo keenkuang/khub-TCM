@@ -117,25 +117,27 @@ class Retriever:
             return
         name = f"vec_{self.model}"
         conn = self.store.conn
+        if HAVE_VEC:
+            conn.enable_load_extension(True)
+            sqlite_vec.load(conn)
         meta = conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone()
         if meta:
-            # 维度变化（如更换嵌入模型）则重建
             d = conn.execute("SELECT dim FROM vec_meta WHERE name=?", (name,)).fetchone()
             if d and d["dim"] != dim:
                 conn.execute(f"DROP TABLE IF EXISTS {name}")
                 conn.execute("DELETE FROM vec_meta WHERE name=?", (name,))
-                meta = None
-        if not meta:
+                conn.execute(f"CREATE VIRTUAL TABLE {name} USING vec0(embedding float[{dim}] distance=cosine)")
+                conn.execute("INSERT INTO vec_meta(name, dim) VALUES(?,?)", (name, dim))
+                conn.commit()
+        else:
             if HAVE_VEC:
-                conn.enable_load_extension(True)
-                sqlite_vec.load(conn)
                 conn.execute(
                     f"CREATE VIRTUAL TABLE {name} USING vec0(embedding float[{dim}] distance=cosine)")
                 conn.execute("CREATE TABLE IF NOT EXISTS vec_meta(name TEXT PRIMARY KEY, dim INTEGER)")
                 conn.execute("INSERT INTO vec_meta(name, dim) VALUES(?,?)", (name, dim))
                 conn.commit()
-            self._vec_table = name
+        self._vec_table = name
 
     def index_document(self, doc_id: str, version_id: int, text: str):
         vec = self.provider.embed(text)
@@ -146,6 +148,7 @@ class Retriever:
         cur.execute(
             "INSERT INTO embeddings(doc_id, version_id, model, vector) VALUES(?,?,?,?)",
             (doc_id, version_id, self.model, sqlite3.Binary(_pack(vec))))
+        ann_ok = True
         if self.ann and HAVE_VEC:
             try:
                 self._ensure_vec(len(vec))
@@ -153,9 +156,10 @@ class Retriever:
                 cur.execute(f"DELETE FROM {name} WHERE doc_id=? AND version_id=?", (doc_id, version_id))
                 cur.execute(f"INSERT INTO {name}(doc_id, version_id, embedding) VALUES(?,?,?)",
                             (doc_id, version_id, sqlite_vec.serialize_float32(vec)))  # type: ignore
-                cur.commit()
             except Exception:  # ANN 失败不影响主流程
-                pass
+                ann_ok = False
+        if ann_ok:
+            cur.commit()
 
     def index_ebook(self, canonical_id: str):
         vers = self.store.get_versions(canonical_id)

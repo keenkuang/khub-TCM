@@ -62,4 +62,9 @@ def _import_file(store: Store, vault_path: str, fp: str):
         hash=content_hash,
     )
     store.store_document(doc)
+    try:
+        from .retrieval import Retriever
+        Retriever(store).index_ebook(source_id)
+    except Exception:
+        pass
     return 1, 0  # ingested
