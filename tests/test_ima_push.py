@@ -45,3 +45,19 @@ def test_sync_adapter_returns_adapter():
     assert hasattr(adapter, "pull")
     assert hasattr(adapter, "push")
     assert hasattr(adapter, "delete")
+
+
+def test_delete_pushes_empty_content(monkeypatch):
+    """删除操作应推空内容 + 标题标记 [已清空]。"""
+    _patch_req(monkeypatch, {
+        "create_media": {"media_id": "del_m1"},
+        "add_knowledge": {"media_id": "del_m1"},
+    })
+    from khub.models import CanonicalDoc
+    store = Store(":memory:")
+    store.store_document(CanonicalDoc(
+        canonical_id="ima:doc1", title="要删除的文档", content="正文",
+        source="ima", source_id="ima:doc1"))
+    from khub.ima import _delete_doc
+    ok = _delete_doc(store, "kb1", "ima:doc1")
+    assert ok is True

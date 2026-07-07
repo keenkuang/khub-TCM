@@ -209,8 +209,16 @@ def _push_doc(store, kb_id, content, title):
     return add_data.get("media_id", media_id)
 
 def _delete_doc(store, kb_id, source_id):
-    """删除 IMA 知识库中的文档（暂未找到 IMA 删除 API，留空）。
-    返回 True 表示成功。"""
-    import warnings
-    warnings.warn(f"IMA 删除暂未实现: {source_id}")
+    """IMA 无删除 API → 用空内容替换 + 标题标记 [已清空]，IMA 侧可批量清理空文件。"""
+    doc = store.get_document(source_id)
+    if doc:
+        title = doc["title"]
+        # 推空内容到 IMA，标题加 [已清空] 标记
+        try:
+            _push_doc(store, kb_id, "", f"[已清空] {title}")
+            return True
+        except Exception:
+            import warnings
+            warnings.warn(f"IMA 清空失败 {source_id}")
+            return False
     return False
