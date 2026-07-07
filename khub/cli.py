@@ -102,6 +102,11 @@ def build_parser():
     pdsk.add_argument("--port", type=int, default=8765, help="API 端口（默认 8765）")
     pdsk.add_argument("--electron", action="store_true",
                       help="用 Electron 原生窗口（需先 bash desktop/run.sh 安装 Electron）")
+
+    pp = sub.add_parser("ima-probe", help="探测 IMA API 频率限制规律（持续运行）")
+    pp.add_argument("--interval", type=int, default=3600,
+                    help="探测间隔（秒，默认 3600=1h）")
+    pp.add_argument("--once", action="store_true", help="只执行一次并退出")
     return ap
 
 
@@ -233,6 +238,16 @@ def main(argv=None):
                 time.sleep(1)
         except KeyboardInterrupt:
             print("\n服务停止")
+    elif args.cmd == "ima-probe":
+        from .ima_probe import probe_once, probe_loop
+        if not os.environ.get("IMA_CLIENT_ID") or not os.environ.get("IMA_API_KEY"):
+            print("错误：请设置 IMA_CLIENT_ID 和 IMA_API_KEY 环境变量", file=sys.stderr)
+            return 1
+        if args.once:
+            r = probe_once()
+            print(json.dumps(r, ensure_ascii=False, indent=2))
+        else:
+            probe_loop(interval=args.interval)
     else:
         build_parser().print_help()
 
