@@ -1,0 +1,6 @@
+khub.db
+*.db
+inbox/
+.env
+__pycache__/
+*.pyc
