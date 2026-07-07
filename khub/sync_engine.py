@@ -26,12 +26,16 @@ class TwoWaySyncEngine:
 
     def sync_pull(self, source_name: str, items: list):
         """Phase 1: Pull — 把远端文档入库。
-        items: [{source_id, title, content, hash}]"""
+        items: [{source_id, title, content, hash}]
+        注意：adapter.pull() 可能已经入库，这里跳过已存在的文档。"""
         from .models import CanonicalDoc
         ingested = 0
         for item in items:
             cid = item.get("source_id", "")
             if not cid:
+                continue
+            if self.store.get_document(cid):
+                ingested += 1  # 已有，跳过
                 continue
             content = item.get("content", "")
             title = item.get("title", "")
@@ -48,20 +52,27 @@ class TwoWaySyncEngine:
 
     def sync_push(self, source_name: str, adapter: TwoWaySyncAdapter):
         """Phase 2: Push — 把 kHUB 本地改动推送到远端。"""
-        pending = self.store.list_pending_push(source_name)
+        # 查找同步状态为 pull 但 hash 与当前版本不同的文档
+        rows = self.store.conn.execute("""
+            SELECT d.canonical_id, d.title, v.content, v.hash
+            FROM documents d
+            JOIN document_versions v ON v.version_id = d.current_version
+            JOIN sync_states s ON s.doc_id = d.canonical_id
+            WHERE s.source_id = ? AND s.hash != v.hash
+        """, (source_name,)).fetchall()
         pushed = 0
-        for doc in pending:
+        for r in rows:
             try:
                 remote_id = adapter.push(
-                    self.store, doc["canonical_id"],
-                    doc["content"], doc["title"])
+                    self.store, r["canonical_id"],
+                    r["content"], r["title"])
                 self.store.upsert_sync_state(
-                    source_name, doc["canonical_id"],
-                    hash=doc["hash"], direction="push")
+                    source_name, r["canonical_id"],
+                    hash=r["hash"], direction="push")
                 pushed += 1
             except Exception as e:
                 import warnings
-                warnings.warn(f"push 失败 {doc['canonical_id']}: {e}")
+                warnings.warn(f"push 失败 {r['canonical_id']}: {e}")
         return {"pushed": pushed}
 
     def sync(self, source_name: str, adapter: TwoWaySyncAdapter,
