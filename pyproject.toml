@@ -6,6 +6,7 @@ dependencies = ["PyYAML>=6.0"]
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
 pdf = ["pypdf>=4.0"]
+ann = ["sqlite-vec>=0.1.9"]
 [project.scripts]
 khub = "khub.cli:main"
 [build-system]

@@ -121,6 +121,17 @@ def test_api_root_serves_html_ui():
     assert code == 200 and "text/html" in ctype and "kHUB" in html
 
 
+def test_api_semantic_search():
+    app, _, _ = _app()
+    app.dispatch("POST", "/documents",
+                 {"title": "桂枝汤证治", "content": "太阳病，发热汗出，桂枝汤主之。",
+                  "source_id": "kzocr-sem"})
+    code, obj = app.dispatch("GET", "/semantic?q=" + "桂枝汤")
+    assert code == 200
+    assert any(d["doc_id"] == "kzocr-sem" for d in obj)
+    assert "score" in obj[0]
+
+
 def test_api_not_found():
     app, _, _ = _app()
     code, _ = app.dispatch("GET", "/nope")

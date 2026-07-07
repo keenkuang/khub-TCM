@@ -55,6 +55,13 @@ class App:
                 "SELECT canonical_id, title FROM documents WHERE conflict=1").fetchall()
             return 200, [dict(r) for r in rows]
 
+        if method == "GET" and path == "/semantic":
+            from .retrieval import Retriever
+            q = qs.get("q", [""])[0]
+            k = int(qs.get("k", ["5"])[0] or 5)
+            hits = Retriever(self.store).search_similar(q, k=k)
+            return 200, [{"doc_id": d, "score": round(s, 4)} for d, s in hits]
+
         if method == "GET" and path == "/":
             return 200, self._html_page(), "text/html; charset=utf-8"
 
@@ -195,6 +202,7 @@ class App:
   <div class="bar">
     <input id="q" type="text" placeholder="全文检索（中文子串，如 桂枝汤 / 麻黄）">
     <button onclick="search()">检索</button>
+    <button class="ghost" onclick="semantic()">语义</button>
     <button class="ghost" onclick="loadAll()">全部文档</button>
     <button class="ghost" onclick="loadConflicts()">冲突</button>
   </div>
@@ -217,6 +225,17 @@ async function search(){
   const r=await fetch('/search?q='+encodeURIComponent(q)).then(x=>x.json());
   if(!r.length){box.innerHTML='<p class="meta">无结果</p>';return;}
   r.forEach(d=>box.appendChild(card(d)));
+}
+async function semantic(){
+  const q=document.getElementById('q').value.trim();if(!q)return;
+  box.innerHTML='';
+  const h=document.createElement('h2');h.textContent='语义检索（向量 / ANN）';box.appendChild(h);
+  const r=await fetch('/semantic?q='+encodeURIComponent(q)).then(x=>x.json());
+  if(!r.length){box.innerHTML+='<p class="meta">无结果</p>';return;}
+  const docs=await fetch('/documents').then(x=>x.json());
+  const titles={};docs.forEach(d=>titles[d.canonical_id]=d.title);
+  r.forEach(d=>{const el=document.createElement('div');el.className='card';
+    el.innerHTML=`<h3>${esc(titles[d.doc_id]||d.doc_id)}</h3><div class="meta">${esc(d.doc_id)} · 相似度 ${d.score}</div>`;box.appendChild(el);});
 }
 async function loadAll(){
   box.innerHTML='';const h=document.createElement('h2');h.textContent='全部文档';
