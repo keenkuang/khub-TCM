@@ -88,6 +88,9 @@ def build_parser():
     po.add_argument("vault_path")
     po.add_argument("--no-recursive", dest="recursive", action="store_false", default=True)
 
+    pima = sub.add_parser("ima-sync", help="从腾讯 IMA 知识库拉取文档入库")
+    pima.add_argument("--kb-id", default="", help="指定知识库 ID（不指定则同步全部）")
+
     psc = sub.add_parser("schedule", help="运行定时调度器，按配置周期执行 khub 命令")
     psc.add_argument("--config", default=os.path.expanduser("~/.khub/tasks.yaml"),
                      help="任务配置 YAML 路径")
@@ -174,6 +177,20 @@ def main(argv=None):
         from .obsidian import import_vault
         ingested, skipped = import_vault(store, args.vault_path, recursive=args.recursive)
         print(f"Obsidian 导入完成：入库 {ingested}，跳过 {skipped}")
+    elif args.cmd == "ima-sync":
+        from .ima import sync_knowledge_base, sync_all
+        cid = os.environ.get("IMA_CLIENT_ID", "")
+        akey = os.environ.get("IMA_API_KEY", "")
+        if not cid or not akey:
+            print("错误：请设置 IMA_CLIENT_ID 和 IMA_API_KEY 环境变量", file=sys.stderr)
+            return 1
+        if args.kb_id:
+            res = sync_knowledge_base(store, args.kb_id)
+            print(f"IMA 同步完成：入库 {res['ingested']}，跳过 {res['skipped']}")
+        else:
+            results = sync_all(store)
+            total = sum(r["ingested"] for r in results)
+            print(f"IMA 同步完成：{len(results)} 个知识库，共入库 {total} 篇")
     elif args.cmd == "schedule":
         from .scheduler import read_tasks, run_tasks
         tasks = read_tasks(args.config)

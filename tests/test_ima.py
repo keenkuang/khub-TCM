@@ -2,7 +2,7 @@ import json
 import urllib.request
 import pytest
 from khub.db import Store
-from khub.ima import list_knowledge_bases, sync_knowledge_base
+from khub.ima import list_knowledge_bases, get_knowledge_base, sync_all
 
 
 class _FakeResponse:
@@ -21,7 +21,6 @@ class _FakeResponse:
         pass
 
 
-# Track download calls so we return different content each time
 _dl_counter = [0]
 
 
@@ -62,6 +61,27 @@ def _fake_urlopen(req_or_url, timeout=None):
             ).encode("utf-8")
         )
 
+    # --- get_knowledge_base ---
+    if "get_knowledge_base" in url:
+        return _FakeResponse(
+            json.dumps(
+                {
+                    "code": 0,
+                    "data": {
+                        "infos": {
+                            "kb1": {
+                                "knowledge_base": {
+                                    "knowledge_base_id": "kb1",
+                                    "name": "中医库",
+                                    "file_count": 2,
+                                }
+                            }
+                        }
+                    },
+                }
+            ).encode("utf-8")
+        )
+
     # --- get_knowledge_list ---
     if "get_knowledge_list" in url:
         body_obj = json.loads(body) if body else {}
@@ -73,10 +93,7 @@ def _fake_urlopen(req_or_url, timeout=None):
                         {
                             "title": "金匮要略",
                             "media_id": "m2",
-                            "file_info": {
-                                "file_name": "金匮要略.md",
-                                "file_size": 500,
-                            },
+                            "file_info": {"file_name": "金匮要略.md", "file_size": 500},
                             "doc_type": 1,
                         }
                     ],
@@ -91,10 +108,7 @@ def _fake_urlopen(req_or_url, timeout=None):
                         {
                             "title": "伤寒论",
                             "media_id": "m1",
-                            "file_info": {
-                                "file_name": "伤寒论.txt",
-                                "file_size": 1000,
-                            },
+                            "file_info": {"file_name": "伤寒论.txt", "file_size": 1000},
                             "doc_type": 1,
                         },
                         {
@@ -119,7 +133,7 @@ def _fake_urlopen(req_or_url, timeout=None):
                 "data": {
                     "media_type": 1,
                     "url_info": {
-                        "url": "http://mock/dl",
+                        "url": "http://fake/dl",
                         "file_name": "伤寒论.txt",
                         "file_size": 1000,
                     },
@@ -131,7 +145,7 @@ def _fake_urlopen(req_or_url, timeout=None):
                 "data": {
                     "media_type": 1,
                     "url_info": {
-                        "url": "http://mock/dl",
+                        "url": "http://fake/dl",
                         "file_name": "金匮要略.md",
                         "file_size": 500,
                     },
@@ -140,17 +154,21 @@ def _fake_urlopen(req_or_url, timeout=None):
         return _FakeResponse(json.dumps(payload).encode("utf-8"))
 
     # --- file download ---
-    if url == "http://mock/dl":
+    if url == "http://fake/dl":
         _dl_counter[0] += 1
         if _dl_counter[0] == 1:
-            return _FakeResponse(b"\xe5\xa4\xaa\xe9\x98\xb3\xe7\x97\x85\xef\xbc\x8c"
-                                 b"\xe5\x8f\x91\xe7\x83\xad\xe6\xb1\x97\xe5\x87\xba"
-                                 b"\xef\xbc\x8c\xe6\xa1\x82\xe6\x9e\x9d\xe6\xb1\xa4"
-                                 b"\xe4\xb8\xbb\xe4\xb9\x8b\xe3\x80\x82")
-        return _FakeResponse(b"\xe9\x87\x91\xe5\x8c\xa1\xe8\xa6\x81\xe7\x95\xa5"
-                             b"\xef\xbc\x8c\xe8\x84\x8f\xe8\x85\x91\xe7\xbb\x8f"
-                             b"\xe7\xbb\x9c\xe5\x85\x88\xe5\x90\x8e\xe7\x97\x85"
-                             b"\xe3\x80\x82")
+            return _FakeResponse(
+                b"\xe5\xa4\xaa\xe9\x98\xb3\xe7\x97\x85\xef\xbc\x8c"
+                b"\xe5\x8f\x91\xe7\x83\xad\xe6\xb1\x97\xe5\x87\xba"
+                b"\xef\xbc\x8c\xe6\xa1\x82\xe6\x9e\x9d\xe6\xb1\xa4"
+                b"\xe4\xb8\xbb\xe4\xb9\x8b\xe3\x80\x82"
+            )
+        return _FakeResponse(
+            b"\xe9\x87\x91\xe5\x8c\xa1\xe8\xa6\x81\xe7\x95\xa5"
+            b"\xef\xbc\x8c\xe8\x84\x8f\xe8\x85\x91\xe7\xbb\x8f"
+            b"\xe7\xbb\x9c\xe5\x85\x88\xe5\x90\x8e\xe7\x97\x85"
+            b"\xe3\x80\x82"
+        )
 
     raise RuntimeError(f"Unexpected URL: {url}")
 
@@ -166,19 +184,40 @@ def _reset_dl_counter():
     yield
 
 
+@pytest.fixture(autouse=True)
+def _set_env(monkeypatch):
+    monkeypatch.setenv("IMA_CLIENT_ID", "test")
+    monkeypatch.setenv("IMA_API_KEY", "test")
+
+
 def test_list_knowledge_bases(monkeypatch):
     monkeypatch.setattr(urllib.request, "urlopen", _fake_urlopen)
-    result = list_knowledge_bases("test_client", "test_key")
+    result = list_knowledge_bases()
     assert len(result) == 2
     assert result[0]["name"] == "中医库"
     assert result[1]["name"] == "西医库"
 
 
-def test_sync_knowledge_base(monkeypatch, store):
+def test_get_knowledge_base(monkeypatch):
     monkeypatch.setattr(urllib.request, "urlopen", _fake_urlopen)
-    res = sync_knowledge_base(store, "kb1", "test_client", "test_key")
-    assert res["ingested"] == 2
-    # Verify documents were stored with searchable content
+    result = get_knowledge_base("kb1")
+    assert result["id"] == "kb1"
+    assert result["name"] == "中医库"
+    assert result["file_count"] == 2
+
+
+def test_sync_all(monkeypatch, store):
+    monkeypatch.setattr(urllib.request, "urlopen", _fake_urlopen)
+    results = sync_all(store)
+    # sync_all processes both kb1 and kb2, but both share same media_ids.
+    # kb1 sync finds 2 docs (伤寒论 + 金匮要略 via subfolder), ingests both.
+    # kb2 sync finds same docs already ingested, so skipped.
+    # Total ingested = 2 across both KBs.
+    total = sum(r["ingested"] for r in results)
+    assert total == 2
+    assert len(results) == 2
+
+    # Verify documents are searchable
     hits = store.search("太阳病")
     assert len(hits) >= 1
     hits2 = store.search("金匮要略")
@@ -187,9 +226,11 @@ def test_sync_knowledge_base(monkeypatch, store):
 
 def test_idempotent(monkeypatch, store):
     monkeypatch.setattr(urllib.request, "urlopen", _fake_urlopen)
-    res1 = sync_knowledge_base(store, "kb1", "test_client", "test_key")
-    assert res1["ingested"] == 2
-    # Reset counter so download mock won't overflow
+    results1 = sync_all(store)
+    total1 = sum(r["ingested"] for r in results1)
+    assert total1 == 2
+    # Reset download counter for second pass
     _dl_counter[0] = 0
-    res2 = sync_knowledge_base(store, "kb1", "test_client", "test_key")
-    assert res2["ingested"] == 0
+    results2 = sync_all(store)
+    total2 = sum(r["ingested"] for r in results2)
+    assert total2 == 0
