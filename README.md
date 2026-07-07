@@ -28,6 +28,9 @@ khub list                             # 列出已注册电子书
 khub ingest ebook:<sha256>            # 入库：抽正文 + 建 FTS 索引
 khub doc-add --title 伤寒论 --file 产出.md --source-id kzocr-xxx   # 直接入库一份文档（KZOCR/OCR 产出）
 khub watch /path/to/kzocr-out --interval 3   # 监听目录，KZOCR 产出 .md 落盘即自动入库
+khub quip-sync --token xxx [--root ROOT]    # 从 Quip 拉取文档归档到本地库
+khub obsidian-import /path/to/vault          # 导入 Obsidian vault（.md 目录）
+khub schedule --config tasks.yaml            # 运行定时调度器
 khub patient-add p1 张三 --gender 男 --born 1980-01-01
 khub record-add p1 --diagnosis 太阳病 --prescription 桂枝汤
 khub consult-add p1 --chief 发热 --diff 表虚
@@ -121,6 +124,9 @@ docs/
 | PII 加密落盘 | ✅ 完成 | Fernet 对称加密，覆盖患者姓名/性别/出生/诊断/处方/主诉/辨证/方案等；设 `KHUB_PII_ENCRYPT=1`+`KHUB_PII_KEY` 启用，默认关闭 |
 | 访问审计 | ✅ 完成 | `audit_log` 表记录每次临床 PII 读取事件（read_patient/read_records/read_twin 等） |
 | 灾备/热备规划 | ✅ 完成 | `docs/disaster_recovery.md` + `khub/replication.py`（ReplicaTarget 契约 + WALLog + Snapshot + LocalFileReplica 参考实现） |
+| Quip 文档归档 | ✅ 完成 | `khub quip-sync` + `khub/quip.py`：递归拉取 Quip 文档入库；mock 测试覆盖 |
+| Obsidian 导入 | ✅ 完成 | `khub obsidian-import` + `khub/obsidian.py`：.md 目录扫描入库；内容变更检测幂等 |
+| 定时调度 | ✅ 完成 | `khub schedule` + `khub/scheduler.py`：YAML 配置 + 后台循环执行 khub 命令 |
 
 ## 安全
 

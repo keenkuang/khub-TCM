@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+import sys
 import time
 
 from .api import serve
@@ -75,6 +76,18 @@ def build_parser():
     pw = sub.add_parser("watch", help="监听目录，KZOCR 产出 .md 落盘即自动入库")
     pw.add_argument("dir")
     pw.add_argument("--interval", type=float, default=3.0, help="轮询间隔（秒）")
+
+    pq = sub.add_parser("quip-sync", help="从 Quip 拉取文档归档到本地库")
+    pq.add_argument("--token", default="", help="Quip API access_token；默认读 KHUB_QUIP_TOKEN 环境变量")
+    pq.add_argument("--root", default="ROOT", help="起始文件夹 ID（默认用户根目录）")
+
+    po = sub.add_parser("obsidian-import", help="导入 Obsidian vault（.md 目录）到本地库")
+    po.add_argument("vault_path")
+    po.add_argument("--no-recursive", dest="recursive", action="store_false", default=True)
+
+    psc = sub.add_parser("schedule", help="运行定时调度器，按配置周期执行 khub 命令")
+    psc.add_argument("--config", default=os.path.expanduser("~/.khub/tasks.yaml"),
+                     help="任务配置 YAML 路径")
     return ap
 
 
@@ -141,6 +154,26 @@ def main(argv=None):
     elif args.cmd == "watch":
         from .watch import watch_and_ingest
         watch_and_ingest(store, args.dir, interval=args.interval)
+    elif args.cmd == "quip-sync":
+        from .quip import pull_all
+        token = args.token or os.environ.get("KHUB_QUIP_TOKEN", "")
+        if not token:
+            print("错误：需要 --token 参数或 KHUB_QUIP_TOKEN 环境变量", file=sys.stderr)
+            return 1
+        ingested, skipped = pull_all(store, token, args.root)
+        print(f"Quip 同步完成：入库 {ingested}，跳过 {skipped}")
+    elif args.cmd == "obsidian-import":
+        from .obsidian import import_vault
+        ingested, skipped = import_vault(store, args.vault_path, recursive=args.recursive)
+        print(f"Obsidian 导入完成：入库 {ingested}，跳过 {skipped}")
+    elif args.cmd == "schedule":
+        from .scheduler import read_tasks, run_tasks
+        tasks = read_tasks(args.config)
+        if not tasks:
+            print(f"schedule：{args.config} 无有效任务，退出", file=sys.stderr)
+            return 1
+        print(f"调度器启动，{len(tasks)} 个任务")
+        run_tasks(store, tasks, blocking=True)
     else:
         build_parser().print_help()
 
