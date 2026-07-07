@@ -59,13 +59,13 @@ class Store:
             parent = parent_version
         else:
             parent = existing["current_version"]
-        cur.execute(
+        c = cur.execute(
             "INSERT INTO document_versions(doc_id, content, format, origin, author, "
             "updated_at, hash, parent_version, note) VALUES(?,?,?,?,?,?,?,?,?)",
             (doc.canonical_id, doc.content, doc.format, doc.origin, "",
              doc.updated_at or _now(), doc.hash or compute_hash(doc.content),
              parent, doc.note))
-        version_id = cur.lastrowid
+        version_id = c.lastrowid
         cur.execute("UPDATE documents SET current_version=?, title=?, updated_at=? "
                     "WHERE canonical_id=?", (version_id, doc.title,
                      doc.updated_at or _now(), doc.canonical_id))
