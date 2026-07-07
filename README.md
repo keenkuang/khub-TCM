@@ -118,6 +118,9 @@ docs/
 | KZOCR 入库链路 | ✅ 完成 | `/documents` 端点 + `doc-add` CLI + KZOCR 推送客户端打通 |
 | 短查询检索 | ✅ 完成 | <3 字符（如方剂名"麻黄"）自动 LIKE 回退 |
 | ANN 向量检索 | ✅ 完成 | sqlite-vec 虚拟表（余弦），入库自动维护；`KHUB_DISABLE_ANN=1` 退回暴力 |
+| PII 加密落盘 | ✅ 完成 | Fernet 对称加密，覆盖患者姓名/性别/出生/诊断/处方/主诉/辨证/方案等；设 `KHUB_PII_ENCRYPT=1`+`KHUB_PII_KEY` 启用，默认关闭 |
+| 访问审计 | ✅ 完成 | `audit_log` 表记录每次临床 PII 读取事件（read_patient/read_records/read_twin 等） |
+| 灾备/热备规划 | ✅ 完成 | `docs/disaster_recovery.md` + `khub/replication.py`（ReplicaTarget 契约 + WALLog + Snapshot + LocalFileReplica 参考实现） |
 
 ## 安全
 

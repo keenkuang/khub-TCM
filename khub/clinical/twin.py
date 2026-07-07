@@ -1,6 +1,7 @@
 from typing import Optional
 from ..db import Store
 from ..llm import LLMProvider, get_provider
+from ..audit import record
 from .records import list_records, init as init_records
 from .consultations import list_consultations, init as init_consultations
 from .patients import get_patient
@@ -54,6 +55,7 @@ def _fallback_text(patient, recs, cons) -> str:
 
 def build_summary(store: Store, patient_id: str, provider: Optional[LLMProvider] = None) -> str:
     provider = provider or get_provider()
+    record(store, "read_twin", scope="twin", patient_id=patient_id)
     patient, recs, cons = _build_context(store, patient_id)
 
     ctx = (

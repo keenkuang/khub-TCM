@@ -1,0 +1,83 @@
+import os
+import warnings
+from typing import Optional
+from cryptography.fernet import Fernet
+
+
+def load_key() -> bytes:
+    """Load the Fernet key from environment, file, or generate on demand.
+
+    Priority:
+      1. KHUB_PII_KEY env var (base64 urlsafe 44 chars)
+      2. KHUB_PII_KEY_FILE env var (default ~/.khub/pii.key)
+      3. If neither exists and KHUB_PII_ENCRYPT=1, generate + write to default path.
+    Returns b"" if no key available.
+    """
+    key = os.environ.get("KHUB_PII_KEY")
+    if key:
+        return key.encode("ascii")
+
+    key_file = os.environ.get("KHUB_PII_KEY_FILE", os.path.expanduser("~/.khub/pii.key"))
+    if os.path.exists(key_file):
+        with open(key_file, "rb") as f:
+            return f.read().strip()
+
+    if os.environ.get("KHUB_PII_ENCRYPT") == "1":
+        key = Fernet.generate_key()
+        parent = os.path.dirname(key_file)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        with open(key_file, "wb") as f:
+            f.write(key)
+        os.chmod(key_file, 0o600)
+        warnings.warn(
+            f"KHUB_PII_KEY not set; generated new key at {key_file}",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return key
+
+    return b""
+
+
+class PIICipher:
+    """Wrapper around Fernet for PII field encryption / decryption."""
+
+    def __init__(self, key: bytes):
+        self.f = Fernet(key)
+
+    def encrypt(self, plain: Optional[str]) -> str:
+        if not plain:
+            return plain or ""
+        return self.f.encrypt(plain.encode()).decode()
+
+    def decrypt(self, token: Optional[str]) -> str:
+        if not token:
+            return token or ""
+        return self.f.decrypt(token.encode()).decode()
+
+
+def get_cipher() -> Optional[PIICipher]:
+    """Return a PIICipher when encryption is enabled, else None.
+
+    Intentionally not cached — re-reads env each call so tests can toggle.
+    """
+    if os.environ.get("KHUB_PII_ENCRYPT") == "1":
+        return PIICipher(load_key())
+    return None
+
+
+def enc(plain: Optional[str]) -> str:
+    """Encrypt plaintext when PII encryption is active; otherwise passthrough."""
+    c = get_cipher()
+    if c is None:
+        return plain or ""
+    return c.encrypt(plain)
+
+
+def dec(token: Optional[str]) -> str:
+    """Decrypt token when PII encryption is active; otherwise passthrough."""
+    c = get_cipher()
+    if c is None:
+        return token or ""
+    return c.decrypt(token)
