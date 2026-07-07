@@ -2,7 +2,7 @@ import json
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Optional
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urlparse, unquote
 
 from . import __version__
 from .db import Store
@@ -61,7 +61,7 @@ class App:
             return 200, [dict(r) for r in rows]
 
         if method == "GET" and path.startswith("/documents/") and len(path) > len("/documents/"):
-            cid = path[len("/documents/"):]
+            cid = unquote(path[len("/documents/"):])
             doc = self.store.get_document(cid)
             if doc is None:
                 return 404, {"error": "not found"}

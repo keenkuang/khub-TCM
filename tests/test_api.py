@@ -84,6 +84,16 @@ def test_api_documents_ingest_and_searchable():
     assert code == 200
     assert "太阳病" in obj["content"]
 
+def test_api_document_url_encoded():
+    """URL 编码的文档 ID 应正常解码。"""
+    app, _, _ = _app()
+    app.dispatch("POST", "/documents",
+                 {"title": "麻黄汤", "content": "麻黄汤主之。",
+                  "source_id": "kzocr-encoded"})
+    # 模拟 JS encodeURIComponent 编码后的 URL
+    code, obj = app.dispatch("GET", "/documents/kzocr%2Dencoded")
+    assert code == 200 and obj["title"] == "麻黄汤"
+
 
 def test_api_documents_auto_id_when_missing_source_id():
     app, _, _ = _app()
