@@ -246,15 +246,20 @@ def main(argv=None):
         except KeyboardInterrupt:
             print("\n服务停止")
     elif args.cmd == "ima-probe":
-        from .ima_probe import probe_once, probe_loop
+        from .ima_probe import _log, _probe, run_burst, run_fine, run_longterm
         if not os.environ.get("IMA_CLIENT_ID") or not os.environ.get("IMA_API_KEY"):
             print("错误：请设置 IMA_CLIENT_ID 和 IMA_API_KEY 环境变量", file=sys.stderr)
             return 1
         if args.once:
-            r = probe_once()
+            r = _probe()
+            _log(r, os.path.expanduser("~/.khub/ima_probe.jsonl"))
             print(json.dumps(r, ensure_ascii=False, indent=2))
+        elif args.interval == 1:
+            run_burst()
+        elif args.interval < 300:
+            run_fine(interval=args.interval)
         else:
-            probe_loop(interval=args.interval)
+            run_longterm(interval=args.interval)
     else:
         build_parser().print_help()
 
