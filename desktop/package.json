@@ -1,0 +1,13 @@
+{
+  "name": "khub-desktop",
+  "version": "1.0.0",
+  "description": "kHUB 个人知识中枢 — 桌面套壳",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "setup": "npm install"
+  },
+  "devDependencies": {
+    "electron": "^30.0.0"
+  }
+}
