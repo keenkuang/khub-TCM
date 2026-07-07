@@ -42,6 +42,89 @@ class App:
             return 200, [{"doc_id": d, "title": t, "snippet": s}
                          for d, t, s in self.store.search(q)]
 
+        # ---- Exam subsystem ----
+        if method == "POST" and path == "/exam/questions":
+            from .exam.models import Question
+            from .exam.store import add_question
+            q = Question(kind=body.get("kind", "mcq"), stem=body.get("stem", ""),
+                         options=body.get("options", []), answer=body.get("answer", ""),
+                         explanation=body.get("explanation", ""),
+                         source_doc=body.get("source_doc", ""))
+            qid = add_question(self.store, q)
+            return 201, {"id": qid}
+
+        if method == "GET" and path == "/exam/questions":
+            from .exam.store import list_questions
+            kind = qs.get("kind", [None])[0]
+            return 200, [vars(q) for q in list_questions(self.store, kind)]
+
+        if method == "POST" and path == "/exam/generate":
+            from .exam.generator import generate
+            topic = body.get("topic", "")
+            source_doc = body.get("source_doc", "")
+            q = generate(topic, source_doc=source_doc)
+            return 200, vars(q)
+
+        # ---- Clinical subsystem ----
+        if method == "POST" and path == "/clinical/patients":
+            from .clinical.patients import add_patient
+            pid = add_patient(self.store, body["id"], body["name"],
+                              gender=body.get("gender", ""), born=body.get("born", ""))
+            return 201, {"id": pid}
+
+        if method == "GET" and path == "/clinical/patients":
+            from .clinical.patients import list_patients
+            return 200, list_patients(self.store)
+
+        if method == "POST" and path == "/clinical/records":
+            from .clinical.records import add_record
+            rid = add_record(self.store, body["patient_id"],
+                             diagnosis=body.get("diagnosis", ""),
+                             prescription=body.get("prescription", ""),
+                             note=body.get("note", ""))
+            return 201, {"id": rid}
+
+        if method == "POST" and path == "/clinical/consultations":
+            from .clinical.consultations import add_consultation
+            cid = add_consultation(self.store, body["patient_id"],
+                                   chief_complaint=body.get("chief_complaint", ""),
+                                   tongue_pulse=body.get("tongue_pulse", ""),
+                                   differentiation=body.get("differentiation", ""),
+                                   plan=body.get("plan", ""))
+            return 201, {"id": cid}
+
+        if method == "POST" and path.startswith("/clinical/twin/") and path.endswith("/summarize"):
+            pid = path[len("/clinical/twin/"):-len("/summarize")]
+            from .clinical.records import init as init_records
+            from .clinical.consultations import init as init_consultations
+            from .clinical.twin import build_summary
+            init_records(self.store)
+            init_consultations(self.store)
+            text = build_summary(self.store, pid)
+            return 200, {"patient_id": pid, "summary": text}
+
+        # ---- Ops subsystem ----
+        if method == "POST" and path == "/ops/schedules":
+            from .ops.store import add_schedule
+            sid = add_schedule(self.store, body["date"], body["doctor"], body["slot"])
+            return 201, {"id": sid}
+
+        if method == "POST" and path == "/ops/appointments":
+            from .ops.store import book_appointment
+            aid = book_appointment(self.store, body["patient_id"], body["date"], body["doctor"])
+            return 201, {"id": aid}
+
+        if method == "POST" and path == "/ops/visits":
+            from .ops.store import checkin_visit
+            vid = checkin_visit(self.store, body["appointment_id"], body["patient_id"],
+                                note=body.get("note", ""))
+            return 201, {"id": vid}
+
+        if method == "GET" and path == "/ops/appointments":
+            from .ops.store import list_appointments
+            date = qs.get("date", [None])[0]
+            return 200, list_appointments(self.store, date)
+
         return 404, {"error": "not found"}
 
 

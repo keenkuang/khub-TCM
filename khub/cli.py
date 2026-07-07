@@ -3,6 +3,12 @@ import os
 
 from .api import serve
 from .db import Store
+from .exam.generator import generate
+from .clinical.patients import add_patient
+from .clinical.records import add_record
+from .clinical.consultations import add_consultation
+from .clinical.twin import build_summary
+from .ops.store import book_appointment
 from .ingest import ingest_ebook, register_ebook
 from .storage import ManagedLibrary
 
@@ -22,6 +28,36 @@ def build_parser():
     ps = sub.add_parser("serve", help="启动 REST API（薄层，复用核心库）")
     ps.add_argument("--host", default="127.0.0.1")
     ps.add_argument("--port", type=int, default=8000)
+
+    pg = sub.add_parser("exam-gen", help="根据主题生成一道中医考题")
+    pg.add_argument("topic")
+    pg.add_argument("--source-doc", default="", dest="source_doc")
+
+    pp = sub.add_parser("patient-add", help="登记一名患者")
+    pp.add_argument("id")
+    pp.add_argument("name")
+    pp.add_argument("--gender", default="")
+    pp.add_argument("--born", default="")
+
+    pr = sub.add_parser("record-add", help="为某患者添加病历记录")
+    pr.add_argument("patient_id")
+    pr.add_argument("--diagnosis", default="")
+    pr.add_argument("--prescription", default="")
+    pr.add_argument("--note", default="")
+
+    pc = sub.add_parser("consult-add", help="为某患者添加问诊记录")
+    pc.add_argument("patient_id")
+    pc.add_argument("--chief", default="", dest="chief_complaint")
+    pc.add_argument("--diff", default="", dest="differentiation")
+    pc.add_argument("--plan", default="")
+
+    pb = sub.add_parser("ops-book", help="为患者预约挂号")
+    pb.add_argument("patient_id")
+    pb.add_argument("date")
+    pb.add_argument("doctor")
+
+    pt = sub.add_parser("twin-summary", help="生成患者数字孪生摘要")
+    pt.add_argument("patient_id")
     return ap
 
 
@@ -43,5 +79,24 @@ def main(argv=None):
     elif args.cmd == "serve":
         print(f"khub API on http://{args.host}:{args.port}")
         serve(store, lib, args.host, args.port)
+    elif args.cmd == "exam-gen":
+        q = generate(args.topic, source_doc=args.source_doc)
+        print(q.stem)
+    elif args.cmd == "patient-add":
+        pid = add_patient(store, args.id, args.name, gender=args.gender, born=args.born)
+        print(pid)
+    elif args.cmd == "record-add":
+        rid = add_record(store, args.patient_id, diagnosis=args.diagnosis,
+                         prescription=args.prescription, note=args.note)
+        print(rid)
+    elif args.cmd == "consult-add":
+        cid = add_consultation(store, args.patient_id, chief_complaint=args.chief_complaint,
+                               differentiation=args.differentiation, plan=args.plan)
+        print(cid)
+    elif args.cmd == "ops-book":
+        aid = book_appointment(store, args.patient_id, args.date, args.doctor)
+        print(aid)
+    elif args.cmd == "twin-summary":
+        print(build_summary(store, args.patient_id))
     else:
         build_parser().print_help()

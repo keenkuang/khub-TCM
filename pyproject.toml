@@ -5,6 +5,14 @@ requires-python = ">=3.11"
 dependencies = ["PyYAML>=6.0"]
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
+pdf = ["pypdf>=4.0"]
+[project.scripts]
+khub = "khub.cli:main"
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+[tool.setuptools]
+packages = ["khub", "khub.extractors", "khub.llm", "khub.exam", "khub.clinical", "khub.ops"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
