@@ -60,6 +60,23 @@ class App:
                 "ORDER BY updated_at DESC").fetchall()
             return 200, [dict(r) for r in rows]
 
+        if method == "GET" and path.startswith("/documents/") and len(path) > len("/documents/"):
+            cid = path[len("/documents/"):]
+            doc = self.store.get_document(cid)
+            if doc is None:
+                return 404, {"error": "not found"}
+            vers = self.store.get_versions(cid)
+            content = vers[-1]["content"] if vers else ""
+            return 200, {
+                "canonical_id": doc["canonical_id"],
+                "title": doc["title"],
+                "content": content[:100000],  # 截断防超大文本
+                "version_count": len(vers),
+                "source_ids": doc["source_ids"],
+                "created_at": doc["created_at"],
+                "updated_at": doc["updated_at"],
+            }
+
         if method == "GET" and path == "/conflicts":
             rows = self.store.conn.execute(
                 "SELECT canonical_id, title FROM documents WHERE conflict=1").fetchall()
@@ -220,15 +237,29 @@ class App:
 </div>
 <script>
 const box=document.getElementById('results');
-function card(d){
+function card(d, clickable=true){
   const el=document.createElement('div');el.className='card';
   el.innerHTML=`<h3>${esc(d.title||d.doc_id||'')}</h3>`+
     (d.snippet?`<div class="snip">${esc(d.snippet)}</div>`:'')+
     `<div class="meta">${esc(d.doc_id||'')}${d.updated_at?' · '+esc(d.updated_at):''}`+
     `${d.conflict?` <span class="tag">冲突</span>`:''}</div>`;
+  if(clickable && d.doc_id){
+    el.style.cursor='pointer';
+    el.onclick=()=>loadDoc(d.doc_id, d.title);
+  }
   return el;
 }
 function esc(s){return (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+async function loadDoc(id, title){
+  box.innerHTML=`<h2>${esc(title||id)}</h2><p class="meta">加载中...</p>`;
+  try{
+    const r=await fetch('/documents/'+encodeURIComponent(id)).then(x=>x.json());
+    if(r.error){box.innerHTML=`<p class="meta">${esc(r.error)}</p>`;return;}
+    box.innerHTML=`<h2>${esc(r.title||id)}</h2><p class="meta">${esc(r.canonical_id)} · ${r.version_count} 版本 · ${r.updated_at||''}</p>`+
+      `<div style="white-space:pre-wrap;font-size:14px;line-height:1.7;background:#fafafa;padding:12px;border-radius:8px;margin-top:8px;overflow-x:auto">${esc(r.content)}</div>`+
+      '<p style="margin-top:8px"><a href="#" onclick="loadAll();return false">← 返回列表</a></p>';
+  }catch(e){box.innerHTML=`<p class="meta">加载失败: ${esc(e.message)}</p>`;}
+}
 async function search(){
   const q=document.getElementById('q').value.trim();if(!q)return;
   box.innerHTML='';
@@ -253,7 +284,7 @@ async function loadAll(){
   box.appendChild(h);
   const r=await fetch('/documents').then(x=>x.json());
   if(!r.length){box.innerHTML+='<p class="meta">暂无文档</p>';return;}
-  r.forEach(d=>box.appendChild(card(d)));
+  r.forEach(d=>box.appendChild(card({doc_id:d.canonical_id,title:d.title,updated_at:d.updated_at})));
 }
 async function loadConflicts(){
   box.innerHTML='';const h=document.createElement('h2');h.textContent='冲突文档';

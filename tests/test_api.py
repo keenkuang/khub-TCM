@@ -79,6 +79,10 @@ def test_api_documents_ingest_and_searchable():
     import json
     ver = app.store.get_versions("kzocr-abc")[0]
     assert json.loads(ver["note"])["book"] == "伤寒论"
+    # 全文查看
+    code, obj = app.dispatch("GET", "/documents/kzocr-abc")
+    assert code == 200
+    assert "太阳病" in obj["content"]
 
 
 def test_api_documents_auto_id_when_missing_source_id():
