@@ -28,6 +28,24 @@ def parse_meta(path):
         return {}
 
 
+def extract_cover(path):
+    """Best-effort PDF 封面提取，依赖可选 pypdf；缺失或失败时返回 None。"""
+    reader = _reader(path)
+    if reader is None:
+        return None
+    try:
+        if not reader.pages:
+            return None
+        images = reader.pages[0].images
+        for img in images:
+            data = getattr(img, "data", None)
+            if data:
+                return data
+        return None
+    except Exception:
+        return None
+
+
 def extract_text(path):
     reader = _reader(path)
     if reader is None:
