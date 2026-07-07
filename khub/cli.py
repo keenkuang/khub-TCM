@@ -94,6 +94,8 @@ def build_parser():
                       choices=["pull", "push", "both"],
                       help="同步方向：pull=拉取 push=推送 both=双向（默认 pull）")
 
+    pn = sub.add_parser("ima-note-sync", help="拉取 IMA 笔记到本地库")
+
     psc = sub.add_parser("schedule", help="运行定时调度器，按配置周期执行 khub 命令")
     psc.add_argument("--config", default=os.path.expanduser("~/.khub/tasks.yaml"),
                      help="任务配置 YAML 路径")
@@ -210,6 +212,11 @@ def main(argv=None):
                 print(f"  {kb['name']}: pull={p} push={pu}")
             print(f"IMA 同步完成：{len(kbs)} 个库，"
                   f"共拉取 {total_pull} / 推送 {total_push} 篇")
+    elif args.cmd == "ima-note-sync":
+        from .ima_notes import sync_cli
+        res = sync_cli(store, verbose=True)
+        total = sum(r["ingested"] for r in res)
+        print(f"IMA 笔记同步完成：{total} 篇")
     elif args.cmd == "schedule":
         from .scheduler import read_tasks, run_tasks
         tasks = read_tasks(args.config)

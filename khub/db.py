@@ -188,7 +188,8 @@ class Store:
         try:
             rows = self.conn.execute(
                 "SELECT doc_id, title, snippet(docs_fts, 2, '[', ']', '...', 10) AS snip "
-                "FROM docs_fts WHERE docs_fts MATCH ?", (q,)).fetchall()
+                "FROM docs_fts WHERE docs_fts MATCH ? "
+                "ORDER BY rank", (q,)).fetchall()
         except sqlite3.OperationalError:
             return self._search_like(q)
         return [(r["doc_id"], r["title"], r["snip"]) for r in rows]
