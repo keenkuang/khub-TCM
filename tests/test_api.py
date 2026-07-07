@@ -121,6 +121,20 @@ def test_api_root_serves_html_ui():
     assert code == 200 and "text/html" in ctype and "kHUB" in html
 
 
+def test_api_health():
+    app, _, _ = _app()
+    code, obj = app.dispatch("GET", "/health")
+    assert code == 200
+    assert obj["status"] == "ok"
+    assert obj["version"] == "0.2.0"
+    assert "uptime_sec" in obj
+    assert obj["documents"] == 0
+    app.dispatch("POST", "/documents",
+                 {"title": "x", "content": "y", "source_id": "hz"})
+    code, obj = app.dispatch("GET", "/health")
+    assert obj["documents"] == 1
+
+
 def test_api_semantic_search():
     app, _, _ = _app()
     app.dispatch("POST", "/documents",

@@ -4,3 +4,8 @@ inbox/
 .env
 __pycache__/
 *.pyc
+htmlcov/
+bandit_report.json
+pii.key
+desktop/node_modules/
+.CODE.xcconfig

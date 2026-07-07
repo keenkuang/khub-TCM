@@ -1,0 +1,20 @@
+[Unit]
+Description=kHUB personal knowledge hub
+After=network.target
+
+[Service]
+Type=simple
+User=keen
+Group=keen
+WorkingDirectory=/home/keen/khub-m1
+Environment=KHUB_DB=%h/.khub/khub.db
+Environment=KHUB_LIBRARY=%h/.khub/library
+Environment=KHUB_LOG_FILE=/var/log/khub/khub.log
+ExecStart={{KHUB_BIN}} serve --port 8765
+Restart=on-failure
+RestartSec=10
+StandardOutput=append:/var/log/khub/khub.log
+StandardError=append:/var/log/khub/khub.log
+
+[Install]
+WantedBy=multi-user.target

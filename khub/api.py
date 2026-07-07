@@ -4,8 +4,10 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Optional
 from urllib.parse import parse_qs, urlparse
 
+from . import __version__
 from .db import Store
 from .ingest import ingest_ebook, register_ebook
+from .log import get_logger
 from .models import CanonicalDoc
 from .storage import ManagedLibrary
 
@@ -16,12 +18,19 @@ class App:
     def __init__(self, store: Store, library: ManagedLibrary):
         self.store = store
         self.library = library
+        self._started = time.time()
 
     def dispatch(self, method: str, raw_path: str, body: Optional[dict] = None):
         parsed = urlparse(raw_path)
         path = parsed.path
         qs = parse_qs(parsed.query)
         body = body or {}
+
+        if method == "GET" and path == "/health":
+            return 200, {"status": "ok", "version": __version__,
+                         "documents": self.store.conn.execute(
+                             "SELECT count(*) FROM documents").fetchone()[0],
+                         "uptime_sec": round(getattr(self, "_started", 0), 1)}
 
         if method == "GET" and path == "/ebooks":
             return 200, self.store.list_ebooks()
