@@ -1,4 +1,4 @@
-"""Tests for khub.ha — tick 纯决策 + FailoverController 状态机 + CLI 入口。"""
+"""Tests for khub.ha — tick 纯决策 + FailoverController 状态机 + reconcile + selftest + CLI 入口。"""
 
 import json
 import os
@@ -6,7 +6,7 @@ import socket
 import tempfile
 import time
 
-import pytest  # for param helpers; not needed but importable
+import pytest
 
 from khub.ha import (
     HAState,
@@ -285,3 +285,124 @@ def test_render_status_idle(tmp_path):
     out = render_status(fc)
     assert "passive" in out.lower() or "备" in out
     assert "khub ha status" in out or "===" in out
+
+
+# ── reconcile（分歧检测） ──────────────────────────────────────────────────
+
+def _mk_replication_store(db_path, rows, epoch=1):
+    """在 Store 中写入 replication_log 行和解 ha_epoch。"""
+    from khub.db import Store as _S
+    from khub.replication import make_replica
+    s = _S(db_path)
+    s.ha_set("ha_epoch", str(epoch))
+    for r in rows:
+        s.conn.execute(
+            "INSERT INTO replication_log(lsn, op, table_name, row_id, payload, at, applied) "
+            "VALUES(%s, '%s', '%s', '%s', '%s', 'now', 0)" % (
+                r["lsn"], r["op"], r.get("table", "documents"),
+                r["row_id"], r.get("payload", "{}")))
+    s.conn.commit()
+    return s
+
+
+def test_reconcile_identical():
+    """两库完全一致 → 无分叉。"""
+    import tempfile, os
+    rows = [{"lsn": 1, "op": "insert", "row_id": "d1"},
+            {"lsn": 2, "op": "update", "row_id": "d2"}]
+    d = tempfile.mkdtemp()
+    try:
+        l = _mk_replication_store(os.path.join(d, "l.db"), rows, epoch=1)
+        r = _mk_replication_store(os.path.join(d, "r.db"), rows, epoch=1)
+        from khub.ha.reconcile import reconcile as _rec
+        rep = _rec(l, r)
+        assert rep.divergent == 0
+        assert "一致" in rep.summary
+    finally:
+        import shutil; shutil.rmtree(d)
+
+
+def test_reconcile_simple_fork():
+    """右库多一行 → 分叉点正确识别。"""
+    import tempfile, os
+    d = tempfile.mkdtemp()
+    try:
+        common = [{"lsn": 1, "op": "insert", "row_id": "d1"}]
+        extra = [{"lsn": 2, "op": "insert", "row_id": "d2"},
+                 {"lsn": 3, "op": "update", "row_id": "d2"}]
+        l = _mk_replication_store(os.path.join(d, "l.db"), common, epoch=1)
+        r = _mk_replication_store(os.path.join(d, "r.db"), common + extra, epoch=1)
+        from khub.ha.reconcile import reconcile as _rec
+        rep = _rec(l, r)
+        assert rep.divergent > 0
+        assert rep.fork_lsn >= 2
+    finally:
+        import shutil; shutil.rmtree(d)
+
+
+def test_reconcile_diff_epoch():
+    """不同 epoch → 分叉报告含 epoch 差异。"""
+    import tempfile, os
+    d = tempfile.mkdtemp()
+    try:
+        rows = [{"lsn": 1, "op": "insert", "row_id": "d1"}]
+        l = _mk_replication_store(os.path.join(d, "l.db"), rows, epoch=2)
+        r = _mk_replication_store(os.path.join(d, "r.db"), rows, epoch=1)
+        from khub.ha.reconcile import reconcile as _rec
+        rep = _rec(l, r)
+        assert rep.left_epoch == 2
+        assert rep.right_epoch == 1
+    finally:
+        import shutil; shutil.rmtree(d)
+
+
+def test_resolve_split_brain():
+    """resolve_split_brain 应开新 epoch、设 role=active。"""
+    import tempfile, os
+    d = tempfile.mkdtemp()
+    try:
+        store = Store(os.path.join(d, "s.db"))
+        store.ha_set("ha_epoch", "5")
+        store.ha_set("ha_role", "safe_mode")
+        store.conn.commit()
+        from khub.ha.reconcile import resolve_split_brain as _res
+        result = _res(store, "primary")
+        assert result["new_epoch"] == 6
+        assert result["old_role"] == "safe_mode"
+        assert store.ha_get("ha_role") == "active"
+        assert store.ha_get("ha_peer_epoch") == "0"
+    finally:
+        import shutil; shutil.rmtree(d)
+
+
+# ── self-test ─────────────────────────────────────────────────────────────
+
+def test_selftest_link_down():
+    """self-test link-down 场景通过。"""
+    from khub.ha.selftest import run_scenario as _run
+    r = _run("link-down")
+    assert r.passed, r.error
+    assert len(r.steps) >= 2
+
+
+def test_selftest_promote():
+    """self-test promote 场景通过。"""
+    from khub.ha.selftest import run_scenario as _run
+    r = _run("promote")
+    assert r.passed, r.error
+
+
+def test_selftest_split_brain():
+    """self-test split-brain 场景通过。"""
+    from khub.ha.selftest import run_scenario as _run
+    r = _run("split-brain")
+    assert r.passed, r.error
+
+
+def test_selftest_run_all():
+    """run_all 返回所有场景结果。"""
+    from khub.ha.selftest import run_all as _all
+    results = _all()
+    assert len(results) >= 3
+    assert all(r.passed for r in results), [r.error for r in results if not r.passed]
+

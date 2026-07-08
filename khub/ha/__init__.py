@@ -12,6 +12,8 @@ from .controller import (
     FailoverController,
     build_probes,
 )
+from .reconcile import reconcile, resolve_split_brain, ReconcileReport, format_report, resolve_summary
+from .selftest import run_scenario, run_all, ScenarioResult
 from .status import render_status
 from .alerting import emit_alert, build_alert
 
@@ -21,6 +23,14 @@ __all__ = [
     "tick",
     "FailoverController",
     "build_probes",
+    "reconcile",
+    "resolve_split_brain",
+    "ReconcileReport",
+    "format_report",
+    "resolve_summary",
+    "run_scenario",
+    "run_all",
+    "ScenarioResult",
     "render_status",
     "emit_alert",
     "build_alert",

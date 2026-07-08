@@ -152,6 +152,22 @@ def build_parser():
                              help="启动 HA 守护循环（持续回放 WAL + tick 决策）")
     prun.add_argument("--interval", type=float, default=5.0,
                       help="tick 间隔秒（默认 5）")
+    prec = ha_sub.add_parser(
+        "reconcile", help="分歧检测：比对双机 replication_log 输出分叉报告")
+    prec.add_argument("--left", required=True,
+                      help="左库 db 路径（通常为主/新主）")
+    prec.add_argument("--right", required=True,
+                      help="右库 db 路径（通常为备/旧主）")
+    pres = ha_sub.add_parser(
+        "resolve", help="safe_mode 显式退出：选定权威主后开新 epoch、定主")
+    pres.add_argument("--keep", required=True,
+                      choices=["primary", "standby"],
+                      help="以哪一侧为权威主（primary=保持主身份，standby=切换为新主）")
+    pst = ha_sub.add_parser(
+        "self-test", help="HA 自我演练：注入场景运行状态机验证")
+    pst.add_argument("--scenario", default="all",
+                     choices=["link-down", "promote", "split-brain", "all"],
+                     help="特定场景或 all（默认）")
     return ap
 
 
@@ -567,6 +583,27 @@ def main(argv=None):
                 fc.run(interval=args.interval, blocking=True)
             except KeyboardInterrupt:
                 print("\nHA 守护循环已停止。")
+        elif args.ha_cmd == "reconcile":
+            from .db import Store as _S
+            from .ha.reconcile import reconcile as _reconcile, format_report
+            left = _S(args.left)
+            right = _S(args.right)
+            report = _reconcile(left, right)
+            print(format_report(report))
+        elif args.ha_cmd == "resolve":
+            from .ha.reconcile import (
+                resolve_split_brain as _resolve, resolve_summary)
+            result = _resolve(store, args.keep)
+            print(resolve_summary(result))
+        elif args.ha_cmd == "self-test":
+            from .ha.selftest import (
+                run_scenario as _run, run_all as _run_all,
+                format_selftest)
+            if args.scenario == "all":
+                results = _run_all()
+            else:
+                results = [_run(args.scenario)]
+            print(format_selftest(results))
         else:
             pha.print_help()
     else:
