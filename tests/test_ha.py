@@ -290,17 +290,16 @@ def test_render_status_idle(tmp_path):
 # ── reconcile（分歧检测） ──────────────────────────────────────────────────
 
 def _mk_replication_store(db_path, rows, epoch=1):
-    """在 Store 中写入 replication_log 行和解 ha_epoch。"""
+    """在 Store 中写入 replication_log 行和设 ha_epoch。"""
     from khub.db import Store as _S
-    from khub.replication import make_replica
     s = _S(db_path)
     s.ha_set("ha_epoch", str(epoch))
     for r in rows:
         s.conn.execute(
             "INSERT INTO replication_log(lsn, op, table_name, row_id, payload, at, applied) "
-            "VALUES(%s, '%s', '%s', '%s', '%s', 'now', 0)" % (
-                r["lsn"], r["op"], r.get("table", "documents"),
-                r["row_id"], r.get("payload", "{}")))
+            "VALUES(?, ?, ?, ?, ?, 'now', 0)",
+            (r["lsn"], r["op"], r.get("table", "documents"),
+             r["row_id"], r.get("payload", "{}")))
     s.conn.commit()
     return s
 
@@ -341,7 +340,7 @@ def test_reconcile_simple_fork():
 
 
 def test_reconcile_diff_epoch():
-    """不同 epoch → 分叉报告含 epoch 差异。"""
+    """不同 epoch → 报告含 epoch 差异和全部分歧。"""
     import tempfile, os
     d = tempfile.mkdtemp()
     try:
@@ -352,18 +351,23 @@ def test_reconcile_diff_epoch():
         rep = _rec(l, r)
         assert rep.left_epoch == 2
         assert rep.right_epoch == 1
+        # 不同 epoch → 全部分歧（无法比对共同前缀）
+        assert "不同 epoch" in rep.summary
+        assert rep.divergent >= 1
     finally:
         import shutil; shutil.rmtree(d)
 
 
 def test_resolve_split_brain():
-    """resolve_split_brain 应开新 epoch、设 role=active。"""
+    """resolve_split_brain 应开新 epoch、设 role=active、保留 ha_peer。"""
     import tempfile, os
     d = tempfile.mkdtemp()
     try:
         store = Store(os.path.join(d, "s.db"))
         store.ha_set("ha_epoch", "5")
         store.ha_set("ha_role", "safe_mode")
+        store.ha_set("ha_peer", "ssh://user@host/path")   # 有值
+        store.set_applied_max(42)                           # 模拟已回放
         store.conn.commit()
         from khub.ha.reconcile import resolve_split_brain as _res
         result = _res(store, "primary")
@@ -371,6 +375,8 @@ def test_resolve_split_brain():
         assert result["old_role"] == "safe_mode"
         assert store.ha_get("ha_role") == "active"
         assert store.ha_get("ha_peer_epoch") == "0"
+        assert store.ha_get("ha_peer") == "ssh://user@host/path"  # 保留
+        assert store.applied_max() == 42  # 不变
     finally:
         import shutil; shutil.rmtree(d)
 

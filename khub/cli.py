@@ -586,6 +586,12 @@ def main(argv=None):
         elif args.ha_cmd == "reconcile":
             from .db import Store as _S
             from .ha.reconcile import reconcile as _reconcile, format_report
+            if not os.path.isfile(args.left):
+                print(f"错误：左库路径不存在：{args.left}", file=sys.stderr)
+                return 1
+            if not os.path.isfile(args.right):
+                print(f"错误：右库路径不存在：{args.right}", file=sys.stderr)
+                return 1
             left = _S(args.left)
             right = _S(args.right)
             report = _reconcile(left, right)
@@ -593,8 +599,12 @@ def main(argv=None):
         elif args.ha_cmd == "resolve":
             from .ha.reconcile import (
                 resolve_split_brain as _resolve, resolve_summary)
-            result = _resolve(store, args.keep)
-            print(resolve_summary(result))
+            try:
+                result = _resolve(store, args.keep)
+                print(resolve_summary(result))
+            except ValueError as e:
+                print(f"错误：{e}", file=sys.stderr)
+                return 1
         elif args.ha_cmd == "self-test":
             from .ha.selftest import (
                 run_scenario as _run, run_all as _run_all,
