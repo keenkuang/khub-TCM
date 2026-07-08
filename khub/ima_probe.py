@@ -18,8 +18,7 @@ LOG_FILE = os.path.expanduser("~/.khub/ima_probe.jsonl")
 
 # 探测参数
 BURST_INTERVAL = 0.3   # 爆发间隔（秒）
-RECOVERY_WAIT = 30     # 触顶后等多久再试
-MAX_BACKOFF = 120      # 最大退避时间（秒）
+RECOVERY_WAIT = 120     # 触顶后等待秒数（完全恢复需要 ~90s）
 
 
 def _probe(endpoint: str) -> dict:
@@ -84,7 +83,6 @@ def run_scientific(endpoint: str = "search_knowledge_base", log_path: str = LOG_
     burst_id = 0
     burst_start = time.time()
     burst_count = 0
-    last_limit = {"code": 0, "at": 0}
 
     print(f"[ima_probe] 科学探测启动 — endpoint={endpoint} 爆发间隔={BURST_INTERVAL}s")
     print(f"{'#'*5} {'时间':19s} {'状态':>8s} {'爆发':>6s} {'总计':>6s} {'code':>6s}  {'耗时'}  msg")
@@ -126,10 +124,8 @@ def run_scientific(endpoint: str = "search_knowledge_base", log_path: str = LOG_
         }
         _log(summary, log_path)
 
-        # 等 30s 恢复。如果上次也失败，逐步增大等待
+        # 等 120s 完全恢复后继续
         wait = RECOVERY_WAIT
-        if last_limit["code"] == r["code"] and time.time() - last_limit["at"] < 300:
-            wait = min(wait * 1.5, MAX_BACKOFF)
         last_limit = {"code": r["code"], "at": time.time()}
 
         print(f"    ⏳ 等待 {wait}s 恢复...")
