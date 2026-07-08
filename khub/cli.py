@@ -109,6 +109,18 @@ def build_parser():
     pp.add_argument("--interval", type=int, default=3600,
                     help="探测间隔（秒，默认 3600=1h）")
     pp.add_argument("--once", action="store_true", help="只执行一次并退出")
+
+    pdr = sub.add_parser("dr", help="远程灾备（DR）：本地副本 + 多版本快照 + 恢复校验（P0a）")
+    dr_sub = pdr.add_subparsers(dest="dr_cmd")
+    pinit = dr_sub.add_parser("init", help="配置一个灾备副本目标（建 ReplicaTarget）")
+    pinit.add_argument("--target", required=True,
+                       help="file:///绝对路径（本地副本，仅防误删）"
+                            " 或 ssh://user@host/路径（异地灾备，防机器坏/勒索）")
+    dr_sub.add_parser("verify", help="恢复前校验：integrity_check + 行数 + max(lsn) + FTS 抽样")
+    dr_sub.add_parser("status", help="显示上次成功备份时间")
+    prest = dr_sub.add_parser("restore", help="用快照恢复并重建 FTS")
+    prest.add_argument("--to", required=True,
+                       help="快照 db 路径，或 'latest'（仅 file:// 目标）")
     return ap
 
 
@@ -255,6 +267,112 @@ def main(argv=None):
             print(json.dumps(r, ensure_ascii=False, indent=2))
         else:
             run_multi_endpoint()
+    elif args.cmd == "dr":
+        from .replication import (LocalFileReplica, SshReplica, ReplicationManager,
+                                   verify_store)
+        from .db import make_snapshot_db, rebuild_fts
+        import shutil as _shutil
+        import socket
+
+        if args.dr_cmd == "init":
+            target = args.target
+            if target.startswith("file://"):
+                path = os.path.expanduser(target[len("file://"):])
+                replica = LocalFileReplica(path)
+                kind = "本地副本"
+            elif target.startswith("ssh://"):
+                replica = SshReplica(target)
+                kind = "异地灾备"
+            else:
+                print("错误：--target 须以 file:// 或 ssh:// 开头", file=sys.stderr)
+                return 1
+            store.ha_set("dr_target", json.dumps({"type": kind, "target": target}))
+            try:
+                ReplicationManager(store).push_snapshot(replica, db_path=store.path)
+            except Exception as e:
+                print(f"警告：初始快照推送失败（{e}）；目标已记录。",
+                      file=sys.stderr)
+            if kind == "本地副本":
+                print(f"已配置【本地副本】目标：{target}")
+                print(f"注意：此副本与知识库同在 {socket.gethostname()}，"
+                      f"仅防误删/改坏，不算异地灾备；"
+                      f"防勒索/机器坏请改用 ssh:// 异地副本。")
+            else:
+                print(f"已配置【异地灾备】目标：{target}")
+                print("SshReplica 已就绪（配通 SSH 免密后即具备异地保护）；"
+                      "建议每季做一次恢复演练。")
+        elif args.dr_cmd == "verify":
+            report = verify_store(store)
+            print("=== khub dr verify ===")
+            print(f"integrity_check : {report['integrity']}")
+            print(f"max(lsn)        : {report['max_lsn']}")
+            print(f"docs_fts 抽样   : {report['fts_sample']}")
+            print("行数：")
+            for t, n in report["row_counts"].items():
+                if n >= 0:
+                    print(f"  {t:14s}: {n}")
+            if report["ok"]:
+                print("结果：通过")
+                return 0
+            print("结果：失败")
+            for e in report["errors"]:
+                print(f"  - {e}")
+            return 1
+        elif args.dr_cmd == "status":
+            tgt = store.ha_get("dr_target")
+            if not tgt:
+                print("尚未配置灾备目标，请先 `khub dr init --target ...`",
+                      file=sys.stderr)
+                return 1
+            info = json.loads(tgt)
+            meta = None
+            if info["target"].startswith("file://"):
+                try:
+                    rep = LocalFileReplica(
+                        os.path.expanduser(info["target"][len("file://"):]))
+                    meta = rep.fetch_snapshot()
+                except Exception:
+                    pass
+            print(f"目标类型：{info['type']}")
+            print(f"目标地址：{info['target']}")
+            print(f"上次成功备份：{meta.get('at') if meta else '无（尚未推送过快照）'}")
+        elif args.dr_cmd == "restore":
+            tgt = store.ha_get("dr_target")
+            if not tgt:
+                print("尚未配置灾备目标，请先 `khub dr init --target ...`",
+                      file=sys.stderr)
+                return 1
+            info = json.loads(tgt)
+            if args.to == "latest":
+                if not info["target"].startswith("file://"):
+                    print("错误：'latest' 仅支持 file:// 目标；"
+                          "其它目标请提供快照路径", file=sys.stderr)
+                    return 1
+                rep = LocalFileReplica(
+                    os.path.expanduser(info["target"][len("file://"):]))
+                snaps = rep.list_snapshots()
+                if not snaps:
+                    print("错误：无可用快照", file=sys.stderr)
+                    return 1
+                snap_path = snaps[-1]
+            else:
+                snap_path = os.path.expanduser(args.to)
+                if not os.path.isfile(snap_path):
+                    print(f"错误：快照不存在 {snap_path}", file=sys.stderr)
+                    return 1
+            # 快照不含 ha_state；恢复前保留 dr_target，拷回后重建 FTS 并复位配置
+            store.conn.close()
+            _shutil.copy(snap_path, store.path)
+            new_store = Store(store.path)
+            rebuild_fts(new_store)
+            new_store.conn.commit()
+            new_store.ha_set("dr_target", json.dumps(info))
+            print(f"已从快照恢复：{snap_path}")
+            print("docs_fts 已重建。注意：ha_state/角色/epoch 已重置"
+                  "（P0a 本地副本恢复，备机升主后续新 epoch 为 P1）。")
+            return 0
+        else:
+            pdr.print_help()
     else:
         build_parser().print_help()
 

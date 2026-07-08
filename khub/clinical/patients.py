@@ -8,16 +8,32 @@ _PII_FIELDS = frozenset({"name", "gender", "born"})
 def init(store: Store):
     store.conn.execute("""CREATE TABLE IF NOT EXISTS patients(
         id TEXT PRIMARY KEY, name TEXT, gender TEXT, born TEXT, created_at TEXT)""")
+    # WAL 记账改由 DB 触发器自动完成（仅 Primary 安装）
+    from ..replication import install_triggers
+    install_triggers(store.conn, "patients", pk="id")
     store.conn.commit()
 
 def add_patient(store, pid, name, gender="", born="") -> str:
     init(store)
+    cname, cgender, cborn = enc(name), enc(gender), enc(born)
+    now = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())
     store.conn.execute(
         "INSERT OR REPLACE INTO patients(id, name, gender, born, created_at) VALUES(?,?,?,?,?)",
-        (pid, enc(name), enc(gender), enc(born),
-         time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())))
+        (pid, cname, cgender, cborn, now))
+    # WAL 触发器已自动记账，无需手动 _replicate
     store.conn.commit()
     return pid
+
+def apply_change(store, op, row_id, payload):
+    """备机回放：直写主表、绕过 record_change（不污染 WAL）。"""
+    if op == "delete":
+        store.conn.execute("DELETE FROM patients WHERE id=?", (row_id,))
+        return
+    store.conn.execute(
+        "INSERT OR REPLACE INTO patients(id, name, gender, born, created_at) "
+        "VALUES(?,?,?,?,?)",
+        (payload.get("id", row_id), payload.get("name", ""), payload.get("gender", ""),
+         payload.get("born", ""), payload.get("created_at", "")))
 
 def get_patient(store, pid):
     row = store.conn.execute("SELECT * FROM patients WHERE id=?", (pid,)).fetchone()

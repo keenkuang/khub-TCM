@@ -12,32 +12,70 @@ def init(store: Store):
         id INTEGER PRIMARY KEY AUTOINCREMENT, appointment_id INTEGER,
         patient_id TEXT, checkin_at TEXT, note TEXT);
     """)
+    from ..replication import install_triggers
+    install_triggers(store.conn, "schedules", pk="id")
+    install_triggers(store.conn, "appointments", pk="id")
+    install_triggers(store.conn, "visits", pk="id")
     store.conn.commit()
 
 def add_schedule(store, date, doctor, slot) -> int:
     init(store)
     cur = store.conn.execute(
         "INSERT INTO schedules(date, doctor, slot) VALUES(?,?,?)", (date, doctor, slot))
+    sid = cur.lastrowid
+    # WAL 触发器已自动记账
     store.conn.commit()
-    return cur.lastrowid
+    return sid
 
 def book_appointment(store, patient_id, date, doctor) -> int:
     init(store)
+    now = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())
     cur = store.conn.execute(
         "INSERT INTO appointments(patient_id, date, doctor, status, created_at) "
-        "VALUES(?,?,?, 'booked', ?)",
-        (patient_id, date, doctor, time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())))
+        "VALUES(?,?,?, 'booked', ?)", (patient_id, date, doctor, now))
+    aid = cur.lastrowid
+    # WAL 触发器已自动记账
     store.conn.commit()
-    return cur.lastrowid
+    return aid
 
 def checkin_visit(store, appointment_id, patient_id, note="") -> int:
     init(store)
+    now = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())
     cur = store.conn.execute(
         "INSERT INTO visits(appointment_id, patient_id, checkin_at, note) VALUES(?,?,?,?)",
-        (appointment_id, patient_id, time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime()), note))
+        (appointment_id, patient_id, now, note))
+    vid = cur.lastrowid
     store.conn.execute("UPDATE appointments SET status='checked_in' WHERE id=?", (appointment_id,))
+    # WAL 触发器已自动记账（visits 的 INSERT 与 appointments 的 UPDATE 各触发一次）
     store.conn.commit()
-    return cur.lastrowid
+    return vid
+
+# ---- 备机回放（直写主表、绕过 record_change） ----
+def apply_schedule(store, op, row_id, payload):
+    if op == "delete":
+        store.conn.execute("DELETE FROM schedules WHERE id=?", (row_id,)); return
+    store.conn.execute(
+        "INSERT OR REPLACE INTO schedules(id, date, doctor, slot) VALUES(?,?,?,?)",
+        (payload.get("id", row_id), payload.get("date", ""), payload.get("doctor", ""),
+         payload.get("slot", "")))
+
+def apply_appointment(store, op, row_id, payload):
+    if op == "delete":
+        store.conn.execute("DELETE FROM appointments WHERE id=?", (row_id,)); return
+    store.conn.execute(
+        "INSERT OR REPLACE INTO appointments(id, patient_id, date, doctor, status, created_at) "
+        "VALUES(?,?,?,?,?,?)",
+        (payload.get("id", row_id), payload.get("patient_id", ""), payload.get("date", ""),
+         payload.get("doctor", ""), payload.get("status", "booked"), payload.get("created_at", "")))
+
+def apply_visit(store, op, row_id, payload):
+    if op == "delete":
+        store.conn.execute("DELETE FROM visits WHERE id=?", (row_id,)); return
+    store.conn.execute(
+        "INSERT OR REPLACE INTO visits(id, appointment_id, patient_id, checkin_at, note) "
+        "VALUES(?,?,?,?,?)",
+        (payload.get("id", row_id), payload.get("appointment_id", ""), payload.get("patient_id", ""),
+         payload.get("checkin_at", ""), payload.get("note", "")))
 
 def list_appointments(store, date=None):
     if date:

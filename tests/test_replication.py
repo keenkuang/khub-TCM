@@ -13,6 +13,7 @@ from khub.replication import (
     import_snapshot_manifest,
     LocalFileReplica,
     record_change,
+    replay_from,
 )
 
 
@@ -134,7 +135,11 @@ def test_local_replica_push_snapshot():
         assert os.path.isfile(snap_path)
         with open(snap_path) as f:
             loaded = json.load(f)
-        assert loaded == meta
+        # push_snapshot 会用服务器时间覆盖 at（供 dr status 显示），其余字段一致即可
+        assert loaded["tables"] == meta["tables"]
+        assert loaded["max_replication_id"] == meta["max_replication_id"]
+        assert loaded["total_rows"] == meta["total_rows"]
+        assert "at" in loaded
     finally:
         _rmtree(tmp)
 
@@ -155,8 +160,11 @@ def test_local_replica_push_snapshot_with_db():
             db_path=db_path,
         )
 
-        snap_path = os.path.join(target_dir, "db.snapshot")
-        assert os.path.isfile(snap_path)
+        # P0a: 快照存到 <dir>/snapshots/<timestamp>.db
+        import glob
+        snaps = glob.glob(os.path.join(target_dir, "snapshots", "*.db"))
+        assert len(snaps) == 1
+        snap_path = snaps[0]
 
         # Verify the copy is usable
         import sqlite3
@@ -210,16 +218,26 @@ def test_local_replica_health():
 
 
 def test_local_replica_health_not_writable():
+    import pytest
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        pytest.skip("root 绕过 chmod 权限检查，本测试无意义")
     tmp = tempfile.mkdtemp()
-    # Remove write permission
+    # 先构造（tmp 可写），再移除写权限
+    replica = LocalFileReplica(tmp)
     os.chmod(tmp, 0o444)
     try:
-        replica = LocalFileReplica(tmp)
         alive, msg = replica.health()
         assert alive is False
         assert msg == "not writable"
     finally:
+        # 恢复写权限并递归开放子目录，确保 _rmtree 清理不被权限阻塞
         os.chmod(tmp, 0o755)
+        for root, dirs, _ in os.walk(tmp, topdown=False):
+            for name in dirs:
+                try:
+                    os.chmod(os.path.join(root, name), 0o755)
+                except OSError:
+                    pass
         _rmtree(tmp)
 
 
@@ -244,3 +262,100 @@ def _rmtree(path: str):
         for name in dirs:
             os.rmdir(os.path.join(root, name))
     os.rmdir(path)
+
+
+# ── P0a：触发器记账 / 回放隔离（§13 单测要点 1/2/3/4）─────────────────────────
+
+
+def test_business_write_lands_in_wal_with_lsn():
+    """① 业务写入同事务落入 replication_log 且含正确 lsn。"""
+    from khub.models import CanonicalDoc
+
+    d = tempfile.mkdtemp()
+    try:
+        store = Store(os.path.join(d, "live.db"))  # init_schema 装 documents 触发器
+        doc = CanonicalDoc(canonical_id="d1", title="T", content="hello",
+                           source="s", source_id="s/1")
+        store.store_document(doc)
+
+        rows = store.conn.execute(
+            "SELECT lsn, op, table_name, row_id FROM replication_log "
+            "WHERE table_name='documents' ORDER BY lsn"
+        ).fetchall()
+        assert len(rows) >= 1
+        for r in rows:
+            assert r["lsn"] is not None and r["lsn"] >= 1
+            assert r["row_id"] == "d1"
+    finally:
+        _rmtree(d)
+
+
+def test_standby_replay_no_reentry():
+    """② 备机（装有本机触发器）回放不二次触发本机 replication_log。"""
+    from khub.models import CanonicalDoc
+
+    d = tempfile.mkdtemp()
+    try:
+        src = Store(os.path.join(d, "src.db"))
+        doc = CanonicalDoc(canonical_id="d1", title="T", content="hello",
+                           source="s", source_id="s/1")
+        src.store_document(doc)
+        changes = [dict(r) for r in src.conn.execute(
+            "SELECT lsn, op, table_name, row_id, payload FROM replication_log")]
+
+        # 备机：普通 Store（init_schema 已装 documents 触发器），模拟「有触发器」的备机
+        dst = Store(os.path.join(d, "dst.db"))
+        before = dst.conn.execute(
+            "SELECT COUNT(*) FROM replication_log").fetchone()[0]
+        replay_from(dst, changes)
+        after = dst.conn.execute(
+            "SELECT COUNT(*) FROM replication_log").fetchone()[0]
+
+        assert after == before, "备机回放不应二次写本机 replication_log"
+        assert dst.get_document("d1") is not None
+    finally:
+        _rmtree(d)
+
+
+def test_replay_idempotent():
+    """③ 同一批变更回放两次，行数与 max(lsn) 不变（幂等）。"""
+    from khub.models import CanonicalDoc
+    from khub.clinical.patients import add_patient, init as patients_init
+
+    d = tempfile.mkdtemp()
+    try:
+        src = Store(os.path.join(d, "src.db"))
+        doc = CanonicalDoc(canonical_id="d1", title="T", content="hello",
+                           source="s", source_id="s/1")
+        src.store_document(doc)
+        add_patient(src, "p1", "张三")  # 触发 patients 写入 + WAL
+        changes = [dict(r) for r in src.conn.execute(
+            "SELECT lsn, op, table_name, row_id, payload FROM replication_log")]
+
+        dst = Store(os.path.join(d, "dst.db"))
+        patients_init(dst)  # 备机需先有 patients 表结构（实战由 init 保证）
+        replay_from(dst, changes)
+        n1 = dst.conn.execute("SELECT COUNT(*) FROM documents").fetchone()[0]
+        l1 = dst.conn.execute("SELECT COALESCE(MAX(lsn),0) FROM replication_log").fetchone()[0]
+        replay_from(dst, changes)
+        n2 = dst.conn.execute("SELECT COUNT(*) FROM documents").fetchone()[0]
+        l2 = dst.conn.execute("SELECT COALESCE(MAX(lsn),0) FROM replication_log").fetchone()[0]
+
+        assert n1 == n2
+        assert l1 == l2
+        assert dst.get_document("d1") is not None
+    finally:
+        _rmtree(d)
+
+
+def test_unknown_table_isolated():
+    """④ 喂入未知表的变更，整体回放不崩溃（被隔离告警并推进标记）。"""
+    d = tempfile.mkdtemp()
+    try:
+        store = Store(os.path.join(d, "s.db"))
+        bad = [{"lsn": 1, "op": "insert", "table_name": "__x",
+                "row_id": "1", "payload": "{}"}]
+        replay_from(store, bad)  # 不应抛出异常
+        assert store.applied_max() == 1  # 标记仍推进
+    finally:
+        _rmtree(d)
