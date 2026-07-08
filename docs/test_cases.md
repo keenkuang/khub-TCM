@@ -1,6 +1,6 @@
 # 测试用例目录
 
-共计 97 个测试函数（分布 27 个测试文件），覆盖存储、检索、API、业务子系统、安全、灾备、桌面等模块。
+共计 142 个测试函数（分布 32 个测试文件），覆盖存储、检索、API、业务子系统、CLI、安全、灾备、桌面等模块。
 
 ## 测试列表
 
@@ -22,6 +22,12 @@
 | test_api_systems | `test_clinical_patient_record_flow` | 临床患者 → 病历完整流程 API | 患者创建、病历添加成功 |
 | test_api_systems | `test_ops_full_flow` | 门诊运营完整流程 API | 排班 → 预约 → 就诊成功 |
 | test_api_systems | `test_clinical_twin_summary` | 孪生摘要 API | 返回患者摘要内容 |
+| test_cli | `test_cli_help_subcommands` | CLI 各子命令 --help | 输出帮助信息不报错 |
+| test_cli | `test_cli_invalid_command` | CLI 非法命令 | 输出错误信息并返回非零 |
+| test_cli | `test_cli_add_list_flow` | CLI add/list 流程 | 注册后列表显示 |
+| test_cli | `test_cli_doc_add` | CLI doc-add | 文档入库成功 |
+| test_cli | `test_cli_serve_version` | CLI serve --version | 输出版本号 |
+| test_cli | `test_cli_serve_help` | CLI serve --help | 输出帮助信息 |
 | test_clinical | `test_patient_and_records_and_consultations` | 患者创建、病历添加、问诊记录 | 全部操作成功，关联正确 |
 | test_clinical | `test_twin_summary_and_persist` | 孪生摘要生成并持久化 | 摘要正确写入数据库 |
 | test_clinical_twin_llm | `test_build_summary_uses_real_provider` | 真实 LLM Provider 构建孪生摘要 | 返回由 RemoteLLMProvider 生成的摘要 |
@@ -43,6 +49,7 @@
 | test_exam_gen_llm | `test_generate_passes_source_doc` | 生成时正确传递源文档 | 生成结果包含源文档引用 |
 | test_extractors | `test_epub_parse_meta` | 解析 EPUB 元数据 | 正确提取标题、作者等字段 |
 | test_extractors | `test_unknown_extension_returns_empty` | 未知文件扩展名 | 返回空结果，不抛异常 |
+| test_health | `test_health_endpoint_fields` | 健康检查各字段 | status/version/documents/uptime_sec 均存在 |
 | test_ingest | `test_register_ebook_catalog_only` | 仅注册电子书到目录 | 元数据入库，文件未复制 |
 | test_ingest | `test_register_ebook_idempotent` | 重复注册同一电子书 | 第二次注册幂等，不产生重复 |
 | test_ingest_ebook | `test_ingest_ebook_indexes_text` | 入库 EPUB 全文并建 FTS 索引 | 正文文本可被 FTS5 搜索命中 |
@@ -98,6 +105,14 @@
 | test_scheduler | `test_read_tasks_valid_yaml` | 读取合法 YAML 任务配置 | 正确解析任务定义 |
 | test_scheduler | `test_read_tasks_file_not_found` | 任务文件不存在 | 返回空列表，不抛异常 |
 | test_scheduler | `test_read_tasks_invalid_format` | YAML 格式非法 | 抛出格式解析异常 |
+| test_search_ui | `test_search_pagination` | 分页搜索 | 返回正确的分页结果 |
+| test_search_ui | `test_search_source_filter` | 来源过滤 | 按来源过滤返回对应文档 |
+| test_search_ui | `test_search_empty_query` | 空查询 | 返回 400 或空结果 |
+| test_search_ui | `test_search_special_chars` | 特殊字符搜索 | 不抛异常，正常返回 |
+| test_search_ui | `test_search_api_response_format` | 搜索 API 响应格式 | 返回标准 paginated JSON 格式 |
+| test_serve_http | `test_serve_health_endpoint` | 真实 HTTP 服务 /health | 返回 200 及健康状态 |
+| test_stats | `test_stats_dashboard` | 统计端点 | 返回总文档数/各源数量 |
+| test_stats | `test_stats_recent_documents` | 最近文档列表 | 返回按更新时间排序的近期文档 |
 | test_storage | `test_store_copies_and_hashes` | 存储层复制文件并计算哈希 | 目标路径文件存在，哈希值正确 |
 | test_storage | `test_dedup_no_duplicate_copy` | 相同内容去重 | 第二次存储不产生重复文件 |
 | test_storage | `test_move_removes_source` | 移动操作删除源文件 | 源文件不存在，目标文件存在 |
@@ -108,7 +123,7 @@
 
 | 指标 | 值 |
 |---|---|
-| 整体行覆盖率 | 73%（目标 90%） |
+| 整体行覆盖率 | 78%（目标 90%） |
 | 核心模块（db / retrieval / api / clinical / crypto / audit） | 均 >85% |
 | 覆盖率 HTML 报告 | `htmlcov/index.html` |
 | 安全扫描 (bandit) — High | 1（`subprocess shell=True` 在 `scheduler.py` 中，已在代码中限制 timeout，可接受） |

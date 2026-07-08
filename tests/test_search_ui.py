@@ -47,3 +47,24 @@ def test_search_pagination_api():
     assert code == 200
     assert "total" in obj
     assert len(obj["hits"]) == 2
+
+
+def test_search_empty_query():
+    """空查询应返回空结果。"""
+    store = Store(":memory:")
+    hits, total = store.search("")
+    assert total == 0
+    assert hits == []
+
+
+def test_search_special_chars():
+    """特殊字符不应导致崩溃。"""
+    store = Store(":memory:")
+    from khub.models import CanonicalDoc
+    store.store_document(CanonicalDoc(canonical_id="s1", title="文档", content="正常内容", source="test", source_id="s1"))
+    # 各种特殊字符
+    for q in ["<script>", "%%%", "' OR '1'='1", "--", "\\n", "苍术(炒)", "（"]:
+        try:
+            store.search(q)
+        except Exception as e:
+            assert False, f"搜索 {q!r} 引发异常: {e}"

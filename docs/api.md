@@ -4,6 +4,34 @@
 
 所有请求均使用 JSON 编码。请求头 `Content-Type: application/json`。响应默认为 `application/json; charset=utf-8` 格式。
 
+## API 端点一览
+
+| 方法 | 路径 | 说明 | 请求体 | 响应示例 |
+|------|------|------|--------|----------|
+| GET | `/` | Web UI 首页 | — | HTML 页面 |
+| GET | `/stats` | 数据看板统计 | — | `{"total":1861, "sources":{"obsidian":1711,...}, "today":0, "recent":[...]}` |
+| GET | `/health` | 健康检查 | — | `{"status":"ok","version":"0.2.0","documents":42,"uptime_sec":3600.0}` |
+| GET | `/ebooks` | 列出电子书 | — | `[{"canonical_id":"sha256-xxx","title":"伤寒论",...}]` |
+| POST | `/ebooks/register` | 注册电子书 | `{"path":"...", "move":false}` | `{"canonical_id":"sha256-xxx"}` |
+| POST | `/ebooks/{cid}/ingest` | 入库电子书 | — | `{"canonical_id":"sha256-xxx","version_id":3}` |
+| GET | `/documents` | 列出全部文档 | — | `[{"canonical_id":"sha256-xxx","title":"伤寒论",...}]` |
+| GET | `/conflicts` | 列出冲突文档 | — | `[{"canonical_id":"sha256-xxx","title":"伤寒论"}]` |
+| POST | `/documents` | 直接入库文档 | `{"title":"...","content":"...","source":"KZOCR"}` | `{"status":"ok","doc_id":"sha256-xxx","version_id":1}` |
+| GET | `/search?q=关键词&page=0&per=20&source=obsidian` | 全文检索（分页+来源过滤） | — | `{"hits":[...], "total":264, "page":0, "per_page":20}` |
+| GET | `/semantic?q=关键词&k=5` | 语义检索 | — | `[{"doc_id":"sha256-xxx","score":0.9234}]` |
+| POST | `/clinical/patients` | 登记患者 | `{"id":"p1","name":"张三",...}` | `{"id":"p1"}` |
+| GET | `/clinical/patients` | 列出患者 | — | 患者列表 |
+| POST | `/clinical/records` | 新增病历 | `{"patient_id":"p1","diagnosis":"太阳病",...}` | `{"id":"rec-xxx"}` |
+| POST | `/clinical/consultations` | 新增问诊 | `{"patient_id":"p1","chief_complaint":"发热",...}` | `{"id":"cst-xxx"}` |
+| POST | `/clinical/twin/{pid}/summarize` | 生成孪生体摘要 | — | `{"patient_id":"p1","summary":"..."}` |
+| POST | `/ops/schedules` | 新增排班 | `{"date":"2026-04-01","doctor":"王医生","slot":"上午"}` | `{"id":"sch-xxx"}` |
+| POST | `/ops/appointments` | 预约挂号 | `{"patient_id":"p1","date":"2026-04-01","doctor":"王医生"}` | `{"id":"apt-xxx"}` |
+| GET | `/ops/appointments?date=2026-04-01` | 列出预约 | — | 预约列表 |
+| POST | `/ops/visits` | 签到就诊 | `{"appointment_id":"apt-xxx","patient_id":"p1",...}` | `{"id":"vis-xxx"}` |
+| POST | `/exam/questions` | 新增考题 | `{"kind":"mcq","stem":"...","options":[...],...}` | `{"id":"q-xxx"}` |
+| GET | `/exam/questions?kind=mcq` | 列出考题 | — | 考题列表 |
+| POST | `/exam/generate` | 生成考题 | `{"topic":"少阳证"}` | `{"kind":"mcq","stem":"...",...}` |
+
 ---
 
 ## Web UI
@@ -200,32 +228,44 @@
 
 ## 检索
 
-### `GET /search?q=关键词`
+### `GET /search?q=关键词&page=0&per=20&source=obsidian`
 
-全文检索（中文 trigram 子串匹配；< 3 字符自动退回 LIKE）。
+全文检索（中文 trigram 子串匹配；< 3 字符自动退回 LIKE）。支持 page/per/source 参数。
 
 **查询参数：**
 
 | 参数 | 必填 | 说明 |
 |------|------|------|
 | `q` | 是 | 检索关键词 |
+| `page` | 否 | 页码，默认 `0` |
+| `per` | 否 | 每页条数，默认 `20` |
+| `source` | 否 | 来源过滤（如 `obsidian`、`kzocr`） |
 
 **响应：** `200`
 
 ```json
-[
-  {
-    "doc_id": "sha256-xxx",
-    "title": "伤寒论",
-    "snippet": "...关键词所在的上下文片段..."
-  },
-  {
-    "doc_id": "sha256-yyy",
-    "title": "金匮要略",
-    "snippet": "...关键词所在的上下文片段..."
-  }
-]
+{
+  "hits": [
+    {
+      "doc_id": "sha256-xxx",
+      "title": "伤寒论",
+      "snippet": "...<mark>关键词</mark>所在的上下文片段...",
+      "source": "obsidian",
+      "score": 1.0
+    }
+  ],
+  "total": 264,
+  "page": 0,
+  "per_page": 20
+}
 ```
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `hits` | array | 匹配结果列表，每项含 `doc_id`、`title`、`snippet`（含 `<mark>` 高亮）、`source`、`score` |
+| `total` | int | 匹配总数 |
+| `page` | int | 当前页码 |
+| `per_page` | int | 每页条数 |
 
 ### `GET /semantic?q=关键词&k=5`
 
@@ -252,6 +292,44 @@
   }
 ]
 ```
+
+---
+
+## 数据看板
+
+### `GET /stats`
+
+数据看板统计概览。
+
+**查询参数：** 无
+
+**响应：** `200`
+
+```json
+{
+  "total": 1861,
+  "sources": {
+    "obsidian": 1711,
+    "kzocr": 100,
+    "quip": 50
+  },
+  "today": 0,
+  "recent": [
+    {
+      "doc_id": "sha256-xxx",
+      "title": "伤寒论",
+      "updated_at": "2026-04-01T12:00:00"
+    }
+  ]
+}
+```
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `total` | int | 文档总数 |
+| `sources` | object | 各来源文档数 |
+| `today` | int | 今日入库数 |
+| `recent` | array | 最近更新文档列表 |
 
 ---
 

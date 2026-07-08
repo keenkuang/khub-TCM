@@ -40,6 +40,9 @@ khub twin-summary p1                  # 生成患者数字孪生摘要
 khub ops-book p1 2026-07-10 王医生    # 预约挂号
 khub exam-gen 少阳证                  # 生成一道中医考题
 khub serve --port 8000               # 启动 REST API（默认 127.0.0.1，含轻量 Web UI 于 /）
+khub ima-note-sync                # 拉取 IMA 笔记
+khub ima-probe --once             # 探测 IMA API 配额状态
+khub ima-probe                    # 持续科学探测配额规律
 ```
 
 ### REST API
@@ -129,6 +132,9 @@ docs/
 | Quip 文档归档 | ✅ 完成 | `khub quip-sync` + `khub/quip.py`：递归拉取 Quip 文档入库；mock 测试覆盖 |
 | Obsidian 导入 | ✅ 完成 | `khub obsidian-import` + `khub/obsidian.py`：.md 目录扫描入库；内容变更检测幂等 |
 | 定时调度 | ✅ 完成 | `khub schedule` + `khub/scheduler.py`：YAML 配置 + 后台循环执行 khub 命令 |
+| 搜索高亮/分页/过滤 | ✅ 完成 | 关键词 `<mark>` 高亮，20 篇/页翻页，来源下拉过滤 |
+| 数据看板 | ✅ 完成 | 首页顶部统计卡片（总文档/各源/今日入库/最近文档） |
+| 优雅关闭 | ✅ 完成 | SIGTERM/SIGINT → httpd.shutdown() |
 | 桌面 GUI | ✅ 完成 | Electron 套壳 (`desktop/main.js` + `desktop/package.json` + `desktop/run.sh`)，`khub desktop` 浏览器模式 |
 
 ## 安全
