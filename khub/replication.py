@@ -869,6 +869,17 @@ class S3Replica(ReplicaTarget):
             return (False, str(e))
 
 
+def make_replica(target: str) -> ReplicaTarget:
+    """由 file:// / ssh:// / s3:// 目标串构造 ReplicaTarget（零 duplicataion 工厂）。"""
+    if target.startswith("file://"):
+        return LocalFileReplica(os.path.expanduser(target[len("file://"):]))
+    if target.startswith("ssh://"):
+        return SshReplica(target)
+    if target.startswith("s3://"):
+        return S3Replica(target)
+    raise ValueError(f"无法识别的 target 前缀：{target}（须以 file:/// ssh:// 或 s3:// 开头）")
+
+
 class ReplicationManager:
     """编排推送/拉取/回放。"""
 

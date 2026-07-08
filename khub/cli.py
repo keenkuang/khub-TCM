@@ -132,19 +132,35 @@ def build_parser():
                        help="file:// 或 ssh:// 目标；省略则用已配置的 dr_target")
     prest.add_argument("--target", default="",
                        help="恢复输出 db 路径（省略则用临时库并只做报告，不动原库）")
+
+    # ── 双机热备（P1） ─────────────────────────────────────────────────────
+    pha = sub.add_parser(
+        "ha", help="双机热备（HA）：心跳双故障域 + 写租约 + WAL 连续回放 + 故障切换（P1）")
+    pha.add_argument("--manual", action="store_true",
+                     help="仅检测+告警，不自动提升（恢复设计 §4.3 默认）")
+    ha_sub = pha.add_subparsers(dest="ha_cmd")
+    ha_sub.add_parser("status",
+                      help="角色/最后同步/对端失联时长/safe mode/建议动作")
+    pconf = ha_sub.add_parser("config",
+                              help="配置对端 replica 目标（ssh:// 或 s3://）")
+    pconf.add_argument("--peer", required=True,
+                       help="ssh://user@host/路径 或 s3://bucket/前缀"
+                            "（指向对端 replica 目录，供 standby 拉 WAL）")
+    ha_sub.add_parser("promote", help="人工提升为本节点新主（--manual 模式用）")
+    ha_sub.add_parser("demote", help="人工降级为备（停写）")
+    prun = ha_sub.add_parser("run",
+                             help="启动 HA 守护循环（持续回放 WAL + tick 决策）")
+    prun.add_argument("--interval", type=float, default=5.0,
+                      help="tick 间隔秒（默认 5）")
     return ap
 
 
 # ── DR 辅助 ────────────────────────────────────────────────────────────────
 
 def _dr_make_replica(target):
-    """由 file:// 或 ssh:// 目标串构造 ReplicaTarget。"""
-    from .replication import LocalFileReplica, SshReplica
-    if target.startswith("file://"):
-        return LocalFileReplica(os.path.expanduser(target[len("file://"):]))
-    if target.startswith("ssh://"):
-        return SshReplica(target)
-    raise ValueError("target 须以 file:// 或 ssh:// 开头")
+    """由 file:// 或 ssh:// 目标串构造 ReplicaTarget。委托 replication.make_replica。"""
+    from .replication import make_replica
+    return make_replica(target)
 
 
 def _dr_stored_target(store):
@@ -513,6 +529,43 @@ def main(argv=None):
             return 0 if vrep["ok"] else 1
         else:
             pdr.print_help()
+    elif args.cmd == "ha":
+        from .ha import FailoverController, render_status
+        from .ha.controller import LEASE_SECONDS
+
+        peer = store.ha_get("ha_peer")
+        manual = args.manual or False
+
+        def _fc():
+            return FailoverController(store, peer=peer, manual=manual)
+
+        if not hasattr(args, "ha_cmd") or args.ha_cmd is None:
+            pha.print_help()
+            return 1
+        if args.ha_cmd == "status":
+            fc = _fc()
+            print(render_status(fc))
+        elif args.ha_cmd == "config":
+            store.ha_set("ha_peer", args.peer)
+            store.conn.commit()
+            print(f"已配置 HA 对端 replica 目标：{args.peer}")
+        elif args.ha_cmd == "promote":
+            fc = _fc()
+            st = fc.promote()
+            print(f"已提升为新主（epoch={st.epoch}）")
+        elif args.ha_cmd == "demote":
+            fc = _fc()
+            st = fc.demote()
+            print(f"已降级为备（role={st.role}）")
+        elif args.ha_cmd == "run":
+            fc = _fc()
+            print(f"启动 HA 守护循环（interval={args.interval}s），按 Ctrl+C 停止...")
+            try:
+                fc.run(interval=args.interval, blocking=True)
+            except KeyboardInterrupt:
+                print("\nHA 守护循环已停止。")
+        else:
+            pha.print_help()
     else:
         build_parser().print_help()
 
