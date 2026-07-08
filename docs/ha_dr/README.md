@@ -9,6 +9,7 @@
 | `docs/disaster_recovery.md` | 权威定稿设计文档（vFinal） |
 | `review_round1.md` | 第 1 轮三角色评审记录 + 评审修订记录 + 修订稿 |
 | `review_round2.md` | 新一轮（替代原始会话缺失轮次）三角色评审记录 + 修订记录 + 修订稿 |
+| `review_round3.md` | 第 3 轮（纯设计）三角色复审记录 + 修订记录 + 修订稿 |
 
 ## ⚠️ 关于原始会话的第 2、3 轮评审
 
