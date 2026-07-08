@@ -473,7 +473,10 @@ def replay_from(store, changes: list, target_lsn: int = None) -> int:
     - 未知表 → 捕获 UnknownTableError / 无 replayer → 告警并继续（隔离不崩整体），
       仍推进 applied_max 标记。
     - 回放直写主表（UPSERT），绕过 record_change，不污染 WAL。
-    - 整批一次 commit。
+    - 整段在单一事务内一次性提交；中途任意异常整体 rollback
+      （半回放 + 未提交的 applied_max + 回放锁一并撤销），由调用方处理异常。
+      这保证 P1 复用的长连接 standby 循环不会把半回放落库污染副本，
+      也不会因锁残留导致后续正常写入被 WHEN 守卫静默漏记。
     返回本次实际回放（写入主表）条数。
     """
     replays = _ensure_replayers()
@@ -523,17 +526,20 @@ def replay_from(store, changes: list, target_lsn: int = None) -> int:
                     table, lsn)
             max_lsn = max(max_lsn, lsn)
             applied += 1
-        conn.commit()
         if target_lsn is None:
             store.set_applied_max(max_lsn)
         else:
             # PITR：applied_max 取 target 与实际最大已回放 lsn 的较小者
             store.set_applied_max(min(target_lsn, max_lsn))
-    finally:
-        # 解除回放锁，恢复本机触发器记账。
-        # 必须在 finally 中清除：回放中途异常（replayer 抛非 UnknownTableError）
-        # 若不清锁，会导致此后所有正常写入被 WHEN 守卫跳过而静默漏记。
+        # 解除回放锁，与回放、applied_max 同事务一次性提交（设计 §6.3）。
         conn.execute("DELETE FROM ha_state WHERE key='__replay_lock'")
+        conn.commit()
+    except Exception:
+        # 回放中途任意异常（replayer 抛非 UnknownTableError 等）：
+        # 整体 rollback 撤销半回放 + 未提交的 applied_max + 回放锁，
+        # 避免半回放被后续 commit 落库污染副本，或锁残留导致漏记。
+        conn.rollback()
+        raise
     return applied
 
 

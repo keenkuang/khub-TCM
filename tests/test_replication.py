@@ -370,6 +370,126 @@ def test_unknown_table_isolated():
         _rmtree(d)
 
 
+def test_replay_rolls_back_on_error():
+    """#1 replay_from 中途异常须整体 rollback：半回放不落库、回放锁清除、applied_max 不变。
+
+    P1 的 standby 长连接循环直接复用同一连接，若半回放不被回滚，下一次
+    commit 会把残缺数据落库污染副本；锁残留还会让后续正常写入被 WHEN 守卫
+    静默漏记。本测试卡住这两个回归。
+    """
+    import khub.models
+    import khub.replication as R
+
+    d = tempfile.mkdtemp()
+    try:
+        store = Store(os.path.join(d, "dst.db"))
+        # 预置一条已提交基线，确认 rollback 只撤销本次回放、不动既有数据
+        store.store_document(khub.models.CanonicalDoc(
+            canonical_id="base", title="B", content="b",
+            source="s", source_id="s/0"))
+        store.conn.commit()
+
+        # 注入第二条变更抛错的 documents replayer（第一条正常写入）
+        real = R._REPLAYERS.get("documents")
+        calls = {"n": 0}
+
+        def flaky(s, op, row_id, payload):
+            calls["n"] += 1
+            if row_id == "d2":
+                raise RuntimeError("injected failure on 2nd change")
+            s.apply_document(payload)
+
+        R._REPLAYERS["documents"] = flaky
+        try:
+            changes = [
+                {"lsn": 1, "op": "insert", "table_name": "documents",
+                 "row_id": "d1",
+                 "payload": json.dumps({"canonical_id": "d1", "title": "D1",
+                                        "content": "c1"})},
+                {"lsn": 2, "op": "insert", "table_name": "documents",
+                 "row_id": "d2",
+                 "payload": json.dumps({"canonical_id": "d2", "title": "D2",
+                                        "content": "c2"})},
+            ]
+            raised = False
+            try:
+                replay_from(store, changes)
+            except RuntimeError:
+                raised = True
+            assert raised, "replay_from 中途异常应向上抛出"
+
+            # 半回放（d1）不应落库
+            assert store.get_document("d1") is None, "半回放应被 rollback 撤销"
+            assert store.get_document("d2") is None
+            # 基线仍在
+            assert store.get_document("base") is not None
+            # 回放锁已随 rollback 清除（不残留导致后续漏记）
+            lock = store.conn.execute(
+                "SELECT value FROM ha_state WHERE key='__replay_lock'").fetchone()
+            assert lock is None, "异常后回放锁须随 rollback 清除"
+            # applied_max 未推进
+            assert store.applied_max() == 0
+        finally:
+            if real is None:
+                R._REPLAYERS.pop("documents", None)
+            else:
+                R._REPLAYERS["documents"] = real
+    finally:
+        _rmtree(d)
+
+
+def test_dr_restore_target_backs_up_existing():
+    """#2 `dr restore --target <已存在>` 须先备份旧库，绝不静默覆盖（设计 §5/§8）。"""
+    import khub.cli as cli
+    import khub.models
+
+    base = tempfile.mkdtemp()
+    rep_dir = tempfile.mkdtemp()
+    main_db = os.path.join(base, "main.db")
+    target_db = os.path.join(base, "out.db")
+    try:
+        # 主库写数据并推快照 + WAL 到本地副本
+        store = Store(main_db)
+        _write_docs(store, 3, start=1)
+        replica = LocalFileReplica(rep_dir)
+        mgr = ReplicationManager(store)
+        mgr.push_snapshot(replica, db_path=store.path)
+        mgr.push_pending(replica)
+
+        # 预置一个「线上」旧库，写入标记行，模拟 --target 指向现网 db
+        old = Store(target_db)
+        old.store_document(khub.models.CanonicalDoc(
+            canonical_id="LIVE", title="live", content="do-not-lose",
+            source="s", source_id="s/x"))
+        old.conn.commit()
+
+        # 经由 CLI 恢复（覆盖默认库路径，避免动 ~/.khub）
+        saved_env = dict(os.environ)
+        os.environ["KHUB_DB"] = main_db
+        os.environ["KHUB_LIBRARY"] = os.path.join(base, "lib")
+        try:
+            rc = cli.main(["dr", "restore", "--replica", f"file://{rep_dir}",
+                           "--to", "latest", "--target", target_db])
+        finally:
+            os.environ.clear()
+            os.environ.update(saved_env)
+
+        assert rc == 0, "restore 应成功"
+        # 旧库已被备份（生成 out.db.bak-<ts>），原文件名被新恢复库占用
+        baks = [f for f in os.listdir(base) if f.startswith("out.db.bak-")]
+        assert baks, "应生成旧库备份 out.db.bak-*，避免静默覆盖"
+        # 备份保留旧库数据，未被覆盖
+        bak_store = Store(os.path.join(base, baks[0]))
+        assert bak_store.get_document("LIVE") is not None, "备份须保留旧库数据"
+        # 新恢复库含恢复的数据、不含旧标记
+        new_store = Store(target_db)
+        assert new_store.get_document("LIVE") is None
+        assert new_store.get_document("d1") is not None
+    finally:
+        _rmtree(base)
+        _rmtree(rep_dir)
+
+
 # ── P0b：PITR + 多版本快照 + SshReplica（§5/§7/§8/§9）────────────────────────
 
 

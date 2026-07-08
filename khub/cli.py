@@ -477,6 +477,13 @@ def main(argv=None):
                 snapshot_at = snap["at"]
             # 拷到 --target（默认临时库），以 Store 打开并重建 FTS（不动原库）
             out_db = args.target or tempfile.mktemp(suffix=".db")
+            if args.target and os.path.exists(out_db):
+                # 安全覆盖：目标已存在则先改名备份，绝不静默覆盖（设计 §5/§8）。
+                # 指向线上库时避免误毁当前数据；如需覆盖删备份或换路径即可。
+                bak = f"{out_db}.bak-{int(time.time())}"
+                os.rename(out_db, bak)
+                print(f"警告：目标库 {out_db} 已存在，已备份为 {bak}；"
+                      "如需覆盖请先删除备份或换路径。")
             _shutil.copy(snap_db, out_db)
             restored = Store(out_db)
             rebuild_fts(restored)
