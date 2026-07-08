@@ -3,6 +3,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import webbrowser
@@ -118,10 +119,77 @@ def build_parser():
                             " 或 ssh://user@host/路径（异地灾备，防机器坏/勒索）")
     dr_sub.add_parser("verify", help="恢复前校验：integrity_check + 行数 + max(lsn) + FTS 抽样")
     dr_sub.add_parser("status", help="显示上次成功备份时间")
-    prest = dr_sub.add_parser("restore", help="用快照恢复并重建 FTS")
+    ppush = dr_sub.add_parser("push", help="推送快照 + 增量 WAL 到副本目标")
+    ppush.add_argument("--replica", default="",
+                       help="file:// 或 ssh:// 目标；省略则用已配置的 dr_target")
+    pls = dr_sub.add_parser("list-snapshots", help="列出可用快照（ts / lsn / at）")
+    pls.add_argument("--replica", default="",
+                     help="file:// 或 ssh:// 目标；省略则用已配置的 dr_target")
+    prest = dr_sub.add_parser("restore", help="用快照 + WAL 恢复到指定时间点（PITR）")
     prest.add_argument("--to", required=True,
-                       help="快照 db 路径，或 'latest'（仅 file:// 目标）")
+                       help="恢复目标：整数 lsn / @2026-01-01T00:00:00（时间）/ latest")
+    prest.add_argument("--replica", default="",
+                       help="file:// 或 ssh:// 目标；省略则用已配置的 dr_target")
+    prest.add_argument("--target", default="",
+                       help="恢复输出 db 路径（省略则用临时库并只做报告，不动原库）")
     return ap
+
+
+# ── DR 辅助 ────────────────────────────────────────────────────────────────
+
+def _dr_make_replica(target):
+    """由 file:// 或 ssh:// 目标串构造 ReplicaTarget。"""
+    from .replication import LocalFileReplica, SshReplica
+    if target.startswith("file://"):
+        return LocalFileReplica(os.path.expanduser(target[len("file://"):]))
+    if target.startswith("ssh://"):
+        return SshReplica(target)
+    raise ValueError("target 须以 file:// 或 ssh:// 开头")
+
+
+def _dr_stored_target(store):
+    tgt = store.ha_get("dr_target")
+    if not tgt:
+        return None
+    return json.loads(tgt)["target"]
+
+
+def _dr_parse_restore_target(spec, changes):
+    """把 --to 解析为 target_lsn（int | None）。
+
+    - ``latest`` → None（回放全量）
+    - ``@2026-01-01T00:00:00`` → WAL/快照里 ``at<=时间`` 的最大 lsn
+    - 整数 → 该 lsn
+    """
+    if spec == "latest":
+        return None
+    if spec.startswith("@"):
+        tstr = spec[1:]
+        t = None
+        for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M", "%Y-%m-%d"):
+            try:
+                t = time.strptime(tstr, fmt)
+                break
+            except ValueError:
+                continue
+        if t is None:
+            raise ValueError(f"无法解析恢复时间：{tstr}")
+        best = None
+        for c in changes:
+            at = c.get("at") or ""
+            try:
+                ct = time.strptime(at, "%Y-%m-%dT%H:%M:%S")
+            except Exception:
+                continue
+            if ct <= t:
+                lsn = c.get("lsn") or c.get("id") or 0
+                if best is None or lsn > best:
+                    best = lsn
+        return best
+    try:
+        return int(spec)
+    except ValueError:
+        raise ValueError(f"无法解析恢复目标：{spec}（整数 lsn / @时间 / latest）")
 
 
 def main(argv=None):
@@ -269,8 +337,8 @@ def main(argv=None):
             run_multi_endpoint()
     elif args.cmd == "dr":
         from .replication import (LocalFileReplica, SshReplica, ReplicationManager,
-                                   verify_store)
-        from .db import make_snapshot_db, rebuild_fts
+                                   verify_store, replay_from)
+        from .db import rebuild_fts
         import shutil as _shutil
         import socket
 
@@ -336,41 +404,106 @@ def main(argv=None):
             print(f"目标类型：{info['type']}")
             print(f"目标地址：{info['target']}")
             print(f"上次成功备份：{meta.get('at') if meta else '无（尚未推送过快照）'}")
-        elif args.dr_cmd == "restore":
-            tgt = store.ha_get("dr_target")
-            if not tgt:
-                print("尚未配置灾备目标，请先 `khub dr init --target ...`",
+        elif args.dr_cmd == "push":
+            target = args.replica or _dr_stored_target(store)
+            if not target:
+                print("错误：未指定 --replica 且尚未配置 dr_target；"
+                      "请先 `khub dr init --target ...` 或传 --replica",
                       file=sys.stderr)
                 return 1
-            info = json.loads(tgt)
-            if args.to == "latest":
-                if not info["target"].startswith("file://"):
-                    print("错误：'latest' 仅支持 file:// 目标；"
-                          "其它目标请提供快照路径", file=sys.stderr)
-                    return 1
-                rep = LocalFileReplica(
-                    os.path.expanduser(info["target"][len("file://"):]))
-                snaps = rep.list_snapshots()
-                if not snaps:
-                    print("错误：无可用快照", file=sys.stderr)
-                    return 1
-                snap_path = snaps[-1]
+            replica = _dr_make_replica(target)
+            mgr = ReplicationManager(store)
+            meta = mgr.push_snapshot(replica, db_path=store.path)
+            n = mgr.push_pending(replica)
+            print(f"已推送快照（lsn={meta.get('max_replication_id')}）"
+                  f"与 {n} 条增量 WAL 到 {replica.name}")
+            if target.startswith("file://"):
+                print("提示：此副本与知识库同机，仅防误删/改坏；"
+                      "防机器坏/勒索请改用 ssh:// 异地副本。")
+        elif args.dr_cmd == "list-snapshots":
+            target = args.replica or _dr_stored_target(store)
+            if not target:
+                print("错误：未指定 --replica 且尚未配置 dr_target；"
+                      "请先 `khub dr init --target ...` 或传 --replica",
+                      file=sys.stderr)
+                return 1
+            replica = _dr_make_replica(target)
+            if isinstance(replica, SshReplica):
+                versions = replica.list_remote_versions()
             else:
-                snap_path = os.path.expanduser(args.to)
-                if not os.path.isfile(snap_path):
-                    print(f"错误：快照不存在 {snap_path}", file=sys.stderr)
+                versions = replica.list_versions()
+            if not versions:
+                print(f"无可用快照（{replica.name}）")
+                return 0
+            print(f"副本 {replica.name} 的快照（按时间升序）：")
+            for v in versions:
+                print(f"  ts={v['ts']:<17} lsn={v['lsn']:<8} at={v['at']}")
+        elif args.dr_cmd == "restore":
+            target = args.replica or _dr_stored_target(store)
+            if not target:
+                print("错误：未指定 --replica 且尚未配置 dr_target；"
+                      "请先 `khub dr init --target ...` 或传 --replica",
+                      file=sys.stderr)
+                return 1
+            replica = _dr_make_replica(target)
+            # 拉取全量 WAL（含 lsn/at）用于目标解析与回放
+            changes = replica.fetch_changes() or []
+            try:
+                target_lsn = _dr_parse_restore_target(args.to, changes)
+            except ValueError as e:
+                print(f"错误：{e}", file=sys.stderr)
+                return 1
+            # 选取 lsn<=target 的最近快照
+            if isinstance(replica, SshReplica):
+                versions = replica.list_remote_versions()
+                cands = (versions if target_lsn is None
+                         else [v for v in versions if v["lsn"] <= target_lsn])
+                snap = cands[-1] if cands else None
+                if snap is None:
+                    print("错误：无满足目标时间点的远端快照（需更早的快照）",
+                          file=sys.stderr)
                     return 1
-            # 快照不含 ha_state；恢复前保留 dr_target，拷回后重建 FTS 并复位配置
-            store.conn.close()
-            _shutil.copy(snap_path, store.path)
-            new_store = Store(store.path)
-            rebuild_fts(new_store)
-            new_store.conn.commit()
-            new_store.ha_set("dr_target", json.dumps(info))
-            print(f"已从快照恢复：{snap_path}")
-            print("docs_fts 已重建。注意：ha_state/角色/epoch 已重置"
-                  "（P0a 本地副本恢复，备机升主后续新 epoch 为 P1）。")
-            return 0
+                snap_db = replica.fetch_remote_snapshot_db(snap["ts"])
+                snapshot_lsn = snap["lsn"]
+                snapshot_at = snap["at"]
+            else:
+                snap = replica.best_snapshot_for(target_lsn)
+                if snap is None:
+                    print("错误：无满足目标时间点的本地快照（需更早的快照）",
+                          file=sys.stderr)
+                    return 1
+                snap_db = snap["db"]
+                snapshot_lsn = snap["lsn"]
+                snapshot_at = snap["at"]
+            # 拷到 --target（默认临时库），以 Store 打开并重建 FTS（不动原库）
+            out_db = args.target or tempfile.mktemp(suffix=".db")
+            _shutil.copy(snap_db, out_db)
+            restored = Store(out_db)
+            rebuild_fts(restored)
+            restored.set_applied_max(snapshot_lsn)
+            applied = replay_from(restored, changes, target_lsn=target_lsn)
+            recovered_lsn = restored.applied_max()
+            n_docs = restored.conn.execute(
+                "SELECT COUNT(*) FROM documents").fetchone()[0]
+            vrep = verify_store(restored)
+            print(f"已从 {replica.name} 恢复")
+            print(f"  快照 lsn   : {snapshot_lsn}  (at {snapshot_at})")
+            print(f"  恢复目标   : {args.to} -> lsn={target_lsn}")
+            print(f"  本批回放   : {applied} 条")
+            print(f"  恢复 lsn   : {recovered_lsn}")
+            print(f"  documents  : {n_docs} 行")
+            print(f"  integrity  : {vrep['integrity']}")
+            print(f"  结果       : {'通过' if vrep['ok'] else '失败（见下方）'}")
+            for e in vrep["errors"]:
+                print(f"    - {e}")
+            if not args.target:
+                try:
+                    os.remove(out_db)
+                except OSError:
+                    pass
+                print("（默认已用临时库校验，未改动任何已有库；"
+                      "如需落盘请加 --target <out.db>）")
+            return 0 if vrep["ok"] else 1
         else:
             pdr.print_help()
     else:

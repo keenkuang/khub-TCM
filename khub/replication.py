@@ -198,7 +198,8 @@ class LocalFileReplica(ReplicaTarget):
 
     def push_snapshot(self, meta: dict, db_path: str = ""):
         """写最新 manifest 到 {dir}/snapshot.json，并多版本存 db 到
-        {dir}/snapshots/<timestamp>.db（保留最近 keep 份）。"""
+        {dir}/snapshots/<timestamp>.db（保留最近 keep 份）；同时写同名的
+        <timestamp>.json manifest（含 lsn/at），供 PITR 选快照。"""
         meta = dict(meta)
         meta["at"] = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())
         with open(os.path.join(self.dir, "snapshot.json"), "w") as f:
@@ -207,11 +208,58 @@ class LocalFileReplica(ReplicaTarget):
             ts = time.strftime("%Y%m%dT%H%M%S")
             dest = os.path.join(self.dir, "snapshots", f"{ts}.db")
             if os.path.exists(dest):
-                dest = os.path.join(self.dir, "snapshots",
-                                    f"{ts}-{int(time.time()*1000)}.db")
+                ts = f"{ts}-{int(time.time()*1000)}"
+                dest = os.path.join(self.dir, "snapshots", f"{ts}.db")
             shutil.copy2(db_path, dest)
+            # 多版本 manifest：与 db 同 ts 的 json 落地（含 lsn/at）
+            with open(os.path.join(self.dir, "snapshots", f"{ts}.json"), "w") as f:
+                json.dump(meta, f, ensure_ascii=False, indent=2)
             self._prune_snapshots()
         return meta
+
+    def list_versions(self) -> list:
+        """返回按时间升序的快照版本列表
+        `[{ts, db, manifest, lsn, at}]`（lsn = manifest.max_replication_id）。"""
+        d = os.path.join(self.dir, "snapshots")
+        if not os.path.isdir(d):
+            return []
+        versions = []
+        for fn in os.listdir(d):
+            if not fn.endswith(".json"):
+                continue
+            ts = fn[: -len(".json")]
+            db = os.path.join(d, f"{ts}.db")
+            if not os.path.isfile(db):
+                continue
+            try:
+                with open(os.path.join(d, fn)) as f:
+                    manifest = json.load(f)
+            except Exception:
+                continue
+            versions.append({
+                "ts": ts,
+                "db": db,
+                "manifest": manifest,
+                "lsn": manifest.get("max_replication_id", 0),
+                "at": manifest.get("at", ""),
+            })
+        versions.sort(key=lambda v: v["ts"])
+        return versions
+
+    def best_snapshot_for(self, target_lsn: int = None) -> dict:
+        """返回 `lsn<=target_lsn` 中最新的一份（target_lsn=None 返回最新）。
+
+        用于 PITR：恢复点 = 选 lsn 不超过目标时间点的、最新的完整快照，
+        再 `replay_from(changes, target_lsn=target)` 回放增量 WAL 至目标。
+        无候选返回 None。
+        """
+        versions = self.list_versions()
+        if not versions:
+            return None
+        if target_lsn is None:
+            return versions[-1]
+        candidates = [v for v in versions if v["lsn"] <= target_lsn]
+        return candidates[-1] if candidates else None
 
     def _prune_snapshots(self):
         d = os.path.join(self.dir, "snapshots")
@@ -413,15 +461,19 @@ def register_replayer(table: str, fn):
         _REPLAYERS[table] = fn
 
 
-def replay_from(store, changes: list) -> int:
+def replay_from(store, changes: list, target_lsn: int = None) -> int:
     """把 WAL 变更回放到 store（统一回放入口，替代旧 apply_changes）。
 
     - 回放前 `PRAGMA recursive_triggers=OFF`，备机回放不二次触发本机 WAL。
     - 按 lsn 升序；`lsn<=applied_max` 跳过 → 幂等。
+    - **PITR 截断**：`target_lsn` 给定时，仅回放 `lsn<=target_lsn` 的变更；
+      回放后 `set_applied_max(min(target_lsn, 实际最大已回放lsn))`，使 PITR
+      恢复到指定语句级位置（设计 §5/§7）。`target_lsn is None` 则回放全量
+      并 `set_applied_max(max_lsn)`（原行为）。
     - 未知表 → 捕获 UnknownTableError / 无 replayer → 告警并继续（隔离不崩整体），
       仍推进 applied_max 标记。
     - 回放直写主表（UPSERT），绕过 record_change，不污染 WAL。
-    - 整批一次 commit 并 set_applied_max(max_lsn)。
+    - 整批一次 commit。
     返回本次实际回放（写入主表）条数。
     """
     replays = _ensure_replayers()
@@ -444,6 +496,9 @@ def replay_from(store, changes: list) -> int:
                 lsn = ch.get("id") or 0
             if lsn <= applied_max:
                 continue                                    # 幂等跳过
+            # PITR 截断：仅回放 lsn<=target_lsn（target 给定时）
+            if target_lsn is not None and lsn > target_lsn:
+                continue
             op = ch.get("op")
             table = ch.get("table_name") or ch.get("table")
             row_id = ch.get("row_id")
@@ -469,7 +524,11 @@ def replay_from(store, changes: list) -> int:
             max_lsn = max(max_lsn, lsn)
             applied += 1
         conn.commit()
-        store.set_applied_max(max_lsn)
+        if target_lsn is None:
+            store.set_applied_max(max_lsn)
+        else:
+            # PITR：applied_max 取 target 与实际最大已回放 lsn 的较小者
+            store.set_applied_max(min(target_lsn, max_lsn))
     finally:
         # 解除回放锁，恢复本机触发器记账。
         # 必须在 finally 中清除：回放中途异常（replayer 抛非 UnknownTableError）
@@ -541,12 +600,15 @@ def verify_store(store) -> dict:
 # ── 回放辅助 ────────────────────────────────────────────────────────────────
 
 def _to_wal_dict(item) -> dict:
-    """把 Change 或 dict 规范化为含 id 的 WAL 记录 dict。"""
+    """把 Change 或 dict 规范化为 WAL 记录 dict（保留 id 与 lsn 以便
+    备机按 lsn 排序/幂等回放、以及 PITR 按 lsn 截断）。"""
     if isinstance(item, Change):
-        return {"id": None, "op": item.op, "table": item.table,
-                "row_id": item.row_id, "payload": item.payload, "at": item.at}
+        return {"id": None, "lsn": getattr(item, "lsn", None), "op": item.op,
+                "table": item.table, "row_id": item.row_id,
+                "payload": item.payload, "at": item.at}
     d = dict(item)
     d.setdefault("id", None)
+    d.setdefault("lsn", None)
     return d
 
 
@@ -595,47 +657,112 @@ def _parse_ssh_target(target: str):
 
 
 class SshReplica(ReplicaTarget):
-    """经 SSH/SCP 推送快照+WAL 到远端目录（零依赖，subprocess）。"""
+    """经 SSH/SCP 推送多版本快照+全量 WAL 到远端目录（零依赖，subprocess）。
 
-    def __init__(self, target: str, transport: Transport = None):
+    远端布局：
+      {remote_dir}/snapshots/<ts>/db.snapshot + snapshot.json   （多版本，保留 keep 份）
+      {remote_dir}/wal.ndjson                                    （全量 WAL 增量，append）
+
+    凭证沿用 `SSH_AUTH_SOCK`/key；`SshTransport` 用 list 传参（禁 shell=True）。
+    说明（设计 §8 简化）：本实现用 scp 直传（非 SFTP put+rename 原子替换），
+    远端保留 keep 份由 `run(["ls"])` 列目录后删最旧实现；若需更强防勒索/原子性
+    可在 P1 换 SFTP 协议。WAL 全量保留未做归档窗口（I5：保留全量历史即满足 PITR）。
+    """
+
+    def __init__(self, target: str, transport: Transport = None, keep: int = 5):
         self.userhost, self.remote_dir = _parse_ssh_target(target)
         self.transport = transport or SshTransport(self.userhost)
+        self.keep = keep
+        self._snap_seq = 0
         self.stage = tempfile.mkdtemp(prefix="khub-ssh-")
 
     @property
     def name(self) -> str:
         return f"ssh:{self.userhost}{self.remote_dir}"
 
-    def _send_file(self, local_rel: str, data: bytes = None):
-        if data is not None:
-            lp = os.path.join(self.stage, local_rel)
-            with open(lp, "wb") as f:
-                f.write(data)
-        else:
-            lp = os.path.join(self.stage, local_rel)
-        self.transport.send(lp, f"{self.remote_dir}/{local_rel}")
-
     def push_snapshot(self, meta: dict, db_path: str = ""):
-        self._send_file("snapshot.json", json.dumps(meta, ensure_ascii=False).encode("utf-8"))
-        if db_path:
-            self._send_file("db.snapshot", open(db_path, "rb").read())
+        meta = dict(meta)
+        if "at" not in meta:
+            meta["at"] = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())
+        # ts = 本地时间 + 零填充自增序号，保证目录全局唯一且可按字典序排序。
+        # （不用裸时间戳作目录名：多版本 + 远端清理后，同名裸 ts 可能被后续推送
+        # 复用，破坏"最新快照"判定。见 tests/test_ssh_replica_prune_keeps_recent。）
+        self._snap_seq += 1
+        ts = f"{time.strftime('%Y%m%dT%H:%M%S')}-{self._snap_seq:08d}"
+        snap_dir = f"{self.remote_dir}/snapshots/{ts}"
+        # 防同秒/同毫秒碰撞：该 ts 已存在则追加自增序号，保证目录唯一
+        if self.transport.run(["ls", snap_dir]).returncode == 0:
+            self._snap_seq += 1
+            ts = f"{ts}-{self._snap_seq}"
+            snap_dir = f"{self.remote_dir}/snapshots/{ts}"
+        self.transport.run(["mkdir", "-p", snap_dir])
+        json_path = os.path.join(self.stage, "snapshot.json")
+        with open(json_path, "w") as f:
+            json.dump(meta, f, ensure_ascii=False, indent=2)
+        self.transport.send(json_path, f"{snap_dir}/snapshot.json")
+        if db_path and os.path.isfile(db_path):
+            self.transport.send(db_path, f"{snap_dir}/db.snapshot")
+        self._prune_remote(self.keep)
+        return meta
+
+    def _prune_remote(self, keep: int):
+        """远端保留最近 keep 份快照：ls 列目录 → 删最旧。"""
+        r = self.transport.run(["ls", f"{self.remote_dir}/snapshots"])
+        if r.returncode != 0:
+            return
+        dirs = [x for x in r.stdout.split() if x not in (".", "..")]
+        dirs.sort()
+        for old in (dirs[:-keep] if keep > 0 else dirs):
+            self.transport.run(["rm", "-rf", f"{self.remote_dir}/snapshots/{old}"])
+
+    def list_remote_versions(self) -> list:
+        """返回按时间升序的远端快照列表 `[{ts, manifest, lsn, at, snap_dir}]`。"""
+        r = self.transport.run(["ls", f"{self.remote_dir}/snapshots"])
+        if r.returncode != 0:
+            return []
+        ts_list = [x for x in r.stdout.split() if x not in (".", "..")]
+        ts_list.sort()
+        out = []
+        for ts in ts_list:
+            snap_dir = f"{self.remote_dir}/snapshots/{ts}"
+            rc = self.transport.run(["cat", f"{snap_dir}/snapshot.json"])
+            if rc.returncode != 0:
+                continue
+            try:
+                manifest = json.loads(rc.stdout)
+            except json.JSONDecodeError:
+                continue
+            out.append({
+                "ts": ts,
+                "manifest": manifest,
+                "lsn": manifest.get("max_replication_id", 0),
+                "at": manifest.get("at", ""),
+                "snap_dir": snap_dir,
+            })
+        return out
+
+    def fetch_remote_snapshot_db(self, ts: str) -> str:
+        """scp 远端 {snapshots/<ts>/db.snapshot} 到本地临时文件并返回路径。"""
+        remote = f"{self.remote_dir}/snapshots/{ts}/db.snapshot"
+        lp = os.path.join(self.stage, f"db-{ts}.snapshot")
+        self.transport.recv(remote, lp)
+        return lp
 
     def push_changes(self, changes: list):
-        # 本地暂存 WAL（增量追加），整文件覆盖推送
+        # 保留全量 WAL 历史（I5）：先拉取远端已有 WAL（若存在），再 append 本次变更。
         lp = os.path.join(self.stage, "wal.ndjson")
+        try:
+            self.transport.recv(f"{self.remote_dir}/wal.ndjson", lp)
+        except Exception:
+            pass
         with open(lp, "a") as f:
             for ch in changes:
                 f.write(json.dumps(_to_wal_dict(ch), ensure_ascii=False) + "\n")
         self.transport.send(lp, f"{self.remote_dir}/wal.ndjson")
 
     def fetch_snapshot(self) -> dict:
-        lp = os.path.join(self.stage, "snapshot.json")
-        try:
-            self.transport.recv(f"{self.remote_dir}/snapshot.json", lp)
-            with open(lp) as f:
-                return json.load(f)
-        except Exception:
-            return None
+        versions = self.list_remote_versions()
+        return versions[-1]["manifest"] if versions else None
 
     def fetch_changes(self) -> list:
         lp = os.path.join(self.stage, "wal.ndjson")
@@ -762,8 +889,9 @@ class ReplicationManager:
 
     def push_pending(self, replica: ReplicaTarget, mark: bool = True) -> int:
         rows = WALLog(self.store).pending()
-        items = [{"id": r["id"], "op": r["op"], "table_name": r["table_name"],
-                 "row_id": r["row_id"], "payload": r["payload"], "at": r["at"]}
+        items = [{"id": r["id"], "lsn": r["lsn"], "op": r["op"],
+                 "table_name": r["table_name"], "row_id": r["row_id"],
+                 "payload": r["payload"], "at": r["at"]}
                 for r in rows]
         if items:
             replica.push_changes(items)

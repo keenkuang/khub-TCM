@@ -2,19 +2,28 @@
 
 import json
 import os
+import shutil
+import subprocess
 import tempfile
 from dataclasses import asdict
 
-from khub.db import Store
+from khub.db import Store, rebuild_fts
 from khub.replication import (
     Change,
     WALLog,
     export_snapshot,
     import_snapshot_manifest,
     LocalFileReplica,
+    SshReplica,
+    ReplicationManager,
     record_change,
     replay_from,
 )
+
+
+def _max_lsn(store):
+    return store.conn.execute(
+        "SELECT COALESCE(MAX(lsn),0) FROM replication_log").fetchone()[0]
 
 
 # ── WALLog ──────────────────────────────────────────────────────────────────
@@ -359,3 +368,295 @@ def test_unknown_table_isolated():
         assert store.applied_max() == 1  # 标记仍推进
     finally:
         _rmtree(d)
+
+
+# ── P0b：PITR + 多版本快照 + SshReplica（§5/§7/§8/§9）────────────────────────
+
+
+def _write_docs(store, count, start=1):
+    """写 count 篇文档（canonical_id d<start..start+count-1>）。"""
+    from khub.models import CanonicalDoc
+    for i in range(start, start + count):
+        store.store_document(CanonicalDoc(
+            canonical_id=f"d{i}", title=f"T{i}", content=f"C{i}",
+            source="s", source_id="s/1"))
+
+
+def test_pitr_replay_from_target_lsn():
+    """replay_from(target_lsn) 仅回放 lsn<=target 的变更。
+
+    注：store_document 对 documents 表各触发 INSERT + UPDATE 两条 WAL，
+    故每篇文档对应 2 个 lsn；边界 lsn 以实际 replication_log 最大值计。
+    """
+    d = tempfile.mkdtemp()
+    try:
+        store = Store(os.path.join(d, "m.db"))
+        _write_docs(store, 5, start=1)          # 阶段 A -> lsn 边界 L5
+        lsn5 = _max_lsn(store)
+        _write_docs(store, 5, start=6)          # 阶段 B -> lsn 边界 L10
+        lsn10 = _max_lsn(store)
+        changes = [dict(r) for r in store.conn.execute(
+            "SELECT lsn, op, table_name, row_id, payload FROM replication_log")]
+
+        s = Store(os.path.join(d, "r.db"))
+        applied = replay_from(s, changes, target_lsn=lsn5)
+        # applied 计 WAL 条目数（每篇文档 = INSERT+UPDATE 两条），故 == lsn5
+        assert applied == lsn5
+        assert s.conn.execute("SELECT COUNT(*) FROM documents").fetchone()[0] == 5
+        assert s.get_document("d5") is not None
+        assert s.get_document("d6") is None
+        assert s.applied_max() == lsn5
+
+        s2 = Store(os.path.join(d, "r2.db"))
+        replay_from(s2, changes, target_lsn=lsn10)
+        assert s2.conn.execute("SELECT COUNT(*) FROM documents").fetchone()[0] == 10
+    finally:
+        _rmtree(d)
+
+
+def test_pitr_target_lsn_monotonic_rows():
+    """同一批变更回放到不同 target_lsn，行数随 target 单调非降。"""
+    d = tempfile.mkdtemp()
+    try:
+        store = Store(os.path.join(d, "m.db"))
+        _write_docs(store, 3, start=1)
+        lsn3 = _max_lsn(store)
+        _write_docs(store, 3, start=4)
+        lsn6 = _max_lsn(store)
+        _write_docs(store, 4, start=7)
+        lsn10 = _max_lsn(store)
+        changes = [dict(r) for r in store.conn.execute(
+            "SELECT lsn, op, table_name, row_id, payload FROM replication_log")]
+        counts = []
+        for tl in (lsn3, lsn6, lsn10, None):
+            s = Store(os.path.join(d, f"r{tl}.db"))
+            replay_from(s, changes, target_lsn=tl)
+            counts.append(
+                s.conn.execute("SELECT COUNT(*) FROM documents").fetchone()[0])
+        assert counts == [3, 6, 10, 10]
+        assert counts == sorted(counts)
+    finally:
+        _rmtree(d)
+
+
+def test_pitr_local_file_replica():
+    """完整 PITR：LocalFileReplica 多版本快照 + WAL，恢复到某 lsn 仅含之前的变更。"""
+    base = tempfile.mkdtemp()
+    rep_dir = tempfile.mkdtemp()
+    try:
+        main_db = os.path.join(base, "main.db")
+        store = Store(main_db)
+        replica = LocalFileReplica(rep_dir)
+        mgr = ReplicationManager(store)
+
+        # 写前 5 篇，记录边界 lsn
+        _write_docs(store, 5, start=1)
+        lsn5 = _max_lsn(store)
+        mgr.push_snapshot(replica, db_path=store.path)
+        mgr.push_pending(replica)
+
+        # 再写 5 篇
+        _write_docs(store, 5, start=6)
+        mgr.push_snapshot(replica, db_path=store.path)
+        mgr.push_pending(replica)
+
+        # 副本侧：选 lsn<=lsn5 的最新快照
+        best = replica.best_snapshot_for(lsn5)
+        assert best is not None
+        assert best["lsn"] == lsn5
+
+        versions = replica.list_versions()
+        assert len(versions) == 2
+        assert versions[0]["lsn"] == lsn5 and versions[1]["lsn"] > lsn5
+
+        # 恢复到临时 target 库：拷快照 + rebuild_fts + set_applied_max + 回放至 lsn5
+        target_db = os.path.join(base, "restored.db")
+        shutil.copy(best["db"], target_db)
+        restored = Store(target_db)
+        rebuild_fts(restored)
+        restored.set_applied_max(best["lsn"])
+        changes = replica.fetch_changes()
+        replay_from(restored, changes, target_lsn=lsn5)
+
+        assert restored.conn.execute(
+            "SELECT COUNT(*) FROM documents").fetchone()[0] == 5
+        assert restored.get_document("d5") is not None
+        assert restored.get_document("d6") is None
+        assert restored.applied_max() == lsn5
+
+        # 直接 replay_from(changes, target_lsn=lsn5) 行为一致
+        fresh = Store(os.path.join(base, "fresh.db"))
+        replay_from(fresh, changes, target_lsn=lsn5)
+        assert fresh.conn.execute(
+            "SELECT COUNT(*) FROM documents").fetchone()[0] == 5
+        assert fresh.get_document("d6") is None
+    finally:
+        _rmtree(base)
+        _rmtree(rep_dir)
+
+
+# ── SshReplica（用 FakeTransport 模拟远端，无需真实 sshd）────────────────────
+
+
+class FakeTransport:
+    """在本地临时目录模拟 SSH 远端文件系统的 Transport（行为对齐 SshTransport）。"""
+
+    def __init__(self, root):
+        self.root = root  # 本地目录，模拟远端根
+
+    def _rp(self, p):
+        return os.path.join(self.root, p.lstrip("/"))
+
+    def run(self, cmd_list, input=None, **kw):
+        op = cmd_list[0]
+        if op == "true":
+            return subprocess.CompletedProcess(cmd_list, 0, "", "")
+        if op == "mkdir":
+            os.makedirs(self._rp(cmd_list[-1]), exist_ok=True)
+            return subprocess.CompletedProcess(cmd_list, 0, "", "")
+        if op == "ls":
+            d = self._rp(cmd_list[-1])
+            if not os.path.isdir(d):
+                return subprocess.CompletedProcess(cmd_list, 1, "", "no such dir")
+            return subprocess.CompletedProcess(
+                cmd_list, 0, " ".join(sorted(os.listdir(d))), "")
+        if op == "rm":
+            p = self._rp(cmd_list[-1])
+            if os.path.isdir(p):
+                shutil.rmtree(p, ignore_errors=True)
+            elif os.path.isfile(p):
+                os.remove(p)
+            return subprocess.CompletedProcess(cmd_list, 0, "", "")
+        if op == "cat":
+            p = self._rp(cmd_list[-1])
+            try:
+                with open(p, encoding="utf-8") as f:
+                    return subprocess.CompletedProcess(cmd_list, 0, f.read(), "")
+            except Exception as e:
+                return subprocess.CompletedProcess(cmd_list, 1, "", str(e))
+        return subprocess.CompletedProcess(cmd_list, 2, "", f"unsupported {op}")
+
+    def send(self, local, remote):
+        dst = self._rp(remote)
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        shutil.copy(local, dst)
+
+    def recv(self, remote, local):
+        shutil.copy(self._rp(remote), local)
+
+
+def test_ssh_replica_multiversion_and_pitr_fake_transport():
+    """SshReplica 多版本快照 + 全量 WAL + 远端恢复（FakeTransport，无真实 sshd）。"""
+    base = tempfile.mkdtemp()
+    remote_root = tempfile.mkdtemp()
+    try:
+        transport = FakeTransport(remote_root)
+        replica = SshReplica("ssh://u@h/dr", transport=transport, keep=5)
+        store = Store(os.path.join(base, "m.db"))
+        mgr = ReplicationManager(store)
+
+        # 两份多版本快照（边界 lsn 以实际计），且 WAL 全量保留
+        _write_docs(store, 5, start=1)
+        lsn5 = _max_lsn(store)
+        mgr.push_snapshot(replica, db_path=store.path)
+        mgr.push_pending(replica)
+        _write_docs(store, 5, start=6)
+        mgr.push_snapshot(replica, db_path=store.path)
+        mgr.push_pending(replica)
+
+        versions = replica.list_remote_versions()
+        assert len(versions) == 2
+        assert versions[0]["lsn"] == lsn5
+        assert versions[1]["lsn"] > lsn5
+
+        # 全量 WAL 历史（I5）：两次 push 的变更都在远端 wal.ndjson
+        changes = replica.fetch_changes()
+        assert len(changes) == _max_lsn(store)
+
+        # PITR 恢复 lsn5：选 lsn<=lsn5 的最新快照 + 回放截断
+        best = versions[0]
+        snap_db = replica.fetch_remote_snapshot_db(best["ts"])
+        target_db = os.path.join(base, "restored.db")
+        shutil.copy(snap_db, target_db)
+        restored = Store(target_db)
+        rebuild_fts(restored)
+        restored.set_applied_max(best["lsn"])
+        replay_from(restored, changes, target_lsn=lsn5)
+        assert restored.conn.execute(
+            "SELECT COUNT(*) FROM documents").fetchone()[0] == 5
+        assert restored.get_document("d6") is None
+        assert restored.applied_max() == lsn5
+    finally:
+        _rmtree(base)
+        _rmtree(remote_root)
+
+
+def test_ssh_replica_prune_keeps_recent():
+    """远端快照超过 keep 份时，最旧者被清理。"""
+    base = tempfile.mkdtemp()
+    remote_root = tempfile.mkdtemp()
+    try:
+        transport = FakeTransport(remote_root)
+        replica = SshReplica("ssh://u@h/dr", transport=transport, keep=3)
+        store = Store(os.path.join(base, "m.db"))
+        # 推 5 份（每份不同 lsn 的 manifest），同秒内 ts 碰撞应自动加毫秒后缀
+        for i in range(1, 6):
+            replica.push_snapshot(
+                {"at": f"t{i}", "tables": {}, "max_replication_id": i,
+                 "total_rows": 1}, db_path=store.path)
+        versions = replica.list_remote_versions()
+        assert len(versions) == 3, versions
+        # 保留最近的 3 份（lsn 3,4,5）
+        lsns = sorted(v["lsn"] for v in versions)
+        assert lsns == [3, 4, 5]
+    finally:
+        _rmtree(base)
+        _rmtree(remote_root)
+
+
+def _ssh_available() -> bool:
+    r = subprocess.run(
+        ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=3",
+         "localhost", "true"],
+        capture_output=True)
+    return r.returncode == 0
+
+
+def test_ssh_replica_integration_real_sshd():
+    """真机 sshd 集成测试：多版本 push + list + restore。无 sshd 则跳过。"""
+    import pytest
+    if not _ssh_available():
+        pytest.skip("本机无可用 sshd（ssh -o BatchMode=yes localhost true 失败）")
+
+    from khub.replication import SshReplica, ReplicationManager
+
+    base = tempfile.mkdtemp()
+    try:
+        remote_dir = f"~/khub-test-dr-{os.getpid()}"
+        replica = SshReplica(f"ssh://localhost/{remote_dir}", keep=5)
+        store = Store(os.path.join(base, "m.db"))
+        mgr = ReplicationManager(store)
+
+        _write_docs(store, 5, start=1)
+        lsn5 = _max_lsn(store)
+        mgr.push_snapshot(replica, db_path=store.path)
+        mgr.push_pending(replica)
+        _write_docs(store, 5, start=6)
+        mgr.push_snapshot(replica, db_path=store.path)
+        mgr.push_pending(replica)
+
+        versions = replica.list_remote_versions()
+        assert len(versions) == 2
+
+        best = versions[0]
+        snap_db = replica.fetch_remote_snapshot_db(best["ts"])
+        target_db = os.path.join(base, "restored.db")
+        shutil.copy(snap_db, target_db)
+        restored = Store(target_db)
+        rebuild_fts(restored)
+        restored.set_applied_max(best["lsn"])
+        replay_from(restored, replica.fetch_changes(), target_lsn=lsn5)
+        assert restored.conn.execute(
+            "SELECT COUNT(*) FROM documents").fetchone()[0] == 5
+    finally:
+        _rmtree(base)
