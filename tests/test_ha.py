@@ -21,14 +21,6 @@ from khub.db import Store
 
 # ── 辅助 ──────────────────────────────────────────────────────────────────────
 
-def _temp_db():
-    _, path = tempfile.mkstemp(suffix=".db")
-    try:
-        store = Store(path)
-        yield store
-    finally:
-        os.unlink(path)
-
 
 def _st(role="passive", epoch=1, peer_epoch=0, lease=0.0,
         down_since=None, prev_role="active", manual=False):
@@ -122,6 +114,24 @@ def test_tick_active_both_down():
     assert dec.role == "degraded"
     assert "alarm" in dec.actions
     assert "promote" not in dec.actions
+
+
+def test_tick_degraded_prev_active_both_down():
+    """degraded (prev_role=active) + 双域丢失 → 绝不自我提升（防静默脑裂）。"""
+    now = 1000.0
+    dec = tick(now, hb_up=False, lan_up=False,
+               state=_st(role="degraded", prev_role="active"), down_since=990.0)
+    assert dec.role == "degraded"  # 不自愈提升
+    assert "promote" not in dec.actions  # 绝不包含提升
+
+
+def test_tick_degraded_prev_passive_both_down():
+    """degraded (prev_role=passive) + 双域丢失 → 可提升（原为备机）。"""
+    now = 1000.0
+    dec = tick(now, hb_up=False, lan_up=False,
+               state=_st(role="degraded", prev_role="passive"), down_since=990.0)
+    assert dec.role == "promoting"
+    assert "promote" in dec.actions
 
 
 def test_tick_peer_down_s_computed():

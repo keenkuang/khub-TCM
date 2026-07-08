@@ -559,6 +559,9 @@ def main(argv=None):
             print(f"已降级为备（role={st.role}）")
         elif args.ha_cmd == "run":
             fc = _fc()
+            if not peer:
+                print("警告：未配置 HA 对端（ha_peer），请先 `khub ha config --peer ...`；"
+                      "每个 tick 将跳过 WAL 回放。", file=sys.stderr)
             print(f"启动 HA 守护循环（interval={args.interval}s），按 Ctrl+C 停止...")
             try:
                 fc.run(interval=args.interval, blocking=True)

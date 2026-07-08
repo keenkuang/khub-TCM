@@ -105,6 +105,9 @@ def tick(now: float, hb_up: bool, lan_up: bool, state: HAState,
     if both_up:
         # 对端存活
         if state.role in (ROLE_ACTIVE, ROLE_PROMOTING):
+            # ROLE_PROMOTING 理论上不会被持久化（_promote 在同一决策周期内
+            # 将 role 设为 active），保留作为安全兜底——若 ha_state 因异常残留
+            # 'promoting'，见到对端存活就回到 active，避免卡在过渡态。
             return Decision(ROLE_ACTIVE, [], 0.0, False, "对端存活，主角色正常")
         if state.role == ROLE_DEGRADED:
             return Decision(state.prev_role, [], 0.0, False, "对端恢复，回到原角色")
@@ -122,7 +125,7 @@ def tick(now: float, hb_up: bool, lan_up: bool, state: HAState,
         return Decision(ROLE_DEGRADED, ["alarm"], down_s, False,
                         "主角色故障域丢失→degraded，保留主身份待重连/人工")
 
-    if state.role in (ROLE_PASSIVE, ROLE_DEGRADED):
+    if state.role == ROLE_PASSIVE:
         if single:
             return Decision(ROLE_DEGRADED, ["alarm"], down_s, False,
                             "仅单故障域丢失→degraded（疑似分区），不提升")
@@ -132,6 +135,23 @@ def tick(now: float, hb_up: bool, lan_up: bool, state: HAState,
                             False, "对端死（双域），但 --manual：等待人工提升")
         return Decision(ROLE_PROMOTING, ["promote", "alarm"], down_s, False,
                         "对端死（双域）→ 自动提升为新主")
+
+    if state.role == ROLE_DEGRADED:
+        if state.prev_role == ROLE_ACTIVE:
+            # 原主降级来的：即便双域丢失也不自提升，避免与真备同时晋升
+            # 导致 epoch 碰撞、重连后静默脑裂。仅告警等待对端恢复或人工介入。
+            # 提升必须仅由原本非 active 的节点触发（设计 §4.3）。
+            return Decision(ROLE_DEGRADED, ["alarm"], down_s, False,
+                            "原主 degraded：双域丢失仍不自愈提升，待对端恢复或人工推进")
+        # degraded 原为备机（prev_role=passive）：与 passive 逻辑一致
+        if single:
+            return Decision(ROLE_DEGRADED, ["alarm"], down_s, False,
+                            "仅单故障域丢失→仍 degraded，不提升")
+        if state.manual:
+            return Decision(ROLE_DEGRADED, ["alarm", "await_manual_promote"], down_s,
+                            False, "对端死（双域），--manual：等待人工提升")
+        return Decision(ROLE_PROMOTING, ["promote", "alarm"], down_s, False,
+                        "对端死（双域），原备→自动提升为新主")
 
     if state.role == ROLE_PROMOTING:
         return Decision(ROLE_PROMOTING, ["promote"], down_s, False, "提升中")
@@ -211,6 +231,8 @@ class FailoverController:
         # manual 取值：构造参数优先，否则读已持久化的 ha_manual
         persisted = store.ha_get("ha_manual", "0") == "1"
         self.manual = manual or persisted
+        # 缓存 ReplicaTarget（避免每 tick 重建 SshReplica 时产生 tempdir 泄漏）
+        self._replica = make_replica(peer) if peer else None
 
     # ── 状态读写 ──────────────────────────────────────────────────────────
     def state(self) -> HAState:
@@ -258,6 +280,9 @@ class FailoverController:
         if "promote" in dec.actions:
             self._promote(st, now)
         else:
+            # 进入 degraded 时记录降级前的稳定角色（用于原主不自愈提升 和 降级恢复）
+            if dec.role == ROLE_DEGRADED and st.role != ROLE_DEGRADED:
+                st.prev_role = st.role
             st.role = dec.role
 
         self.save(st)
@@ -299,11 +324,10 @@ class FailoverController:
     def _loop_once(self):
         st = self.state()
         # 备机/降级态持续从对端拉 WAL 回放（连续热备）
-        if st.role in (ROLE_PASSIVE, ROLE_DEGRADED) and self.peer:
+        if st.role in (ROLE_PASSIVE, ROLE_DEGRADED) and self._replica:
             try:
-                replica = make_replica(self.peer)
                 mgr = ReplicationManager(self.store)
-                res = mgr.pull_and_replay(replica)
+                res = mgr.pull_and_replay(self._replica)
                 self.store.ha_set("ha_last_sync",
                                   time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime()))
                 self.store.conn.commit()
