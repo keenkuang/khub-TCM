@@ -1034,6 +1034,9 @@ class ReplicationManager:
             replica.push_changes(items)
         if mark and items:
             WALLog(self.store).mark_applied([r["id"] for r in rows])
+        # I5 — 归档窗口：推送成功（已 applied）即清理旧 WAL，防磁盘膨胀。
+        # 须在 push 之后调用：推送前删会丢失 PITR/副本需要的 WAL。
+        self.store.prune_wal()
         return len(items)
 
     def pull_and_replay(self, replica: ReplicaTarget, db_path: str = "") -> dict:

@@ -1,5 +1,15 @@
 # 变更日志
 
+## [0.2.3] — 2026-07-09
+
+### HA/DR：I5 — WAL 归档窗口（防磁盘膨胀）
+
+- `Store.prune_wal(keep=None, keep_days=None)`：仅删已推送（`applied=1`）的旧 WAL，**绝不删 pending（未推送）**；按 `KHUB_WAL_KEEP`（保留最近 N 条）或 `KHUB_WAL_KEEP_DAYS`（保留最近 D 天）归档窗口收敛；两者皆空则 no-op（默认保留全量，PITR 无界）。
+- `ReplicationManager.push_pending` 在推送成功后自动调用 `prune_wal()`，使 WAL 在每次成功推送后按窗口收敛（清理必须在 push 之后，否则会丢 PITR/副本所需数据）。
+- 新增 `khub dr prune`（`--keep` / `--keep-days` 覆盖环境变量）手动/按需归档；打印清理条数与剩余条数。
+- 本地清理不影响 PITR：回放走副本 `replica.fetch_changes()` 而非本地 `replication_log`；清理后 SQLite 复用空闲页，文件大小随窗口收敛而非无限增长。
+- 测试：4 条 prune 单测 + 1 条「push 后归档 + PITR 仍可从副本回放」集成验证。
+
 ## [0.2.2] — 2026-07-09
 
 ### HA/DR：WAL 解耦落地（M2/A5）与收尾清理

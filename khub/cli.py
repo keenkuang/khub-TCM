@@ -136,7 +136,13 @@ def build_parser():
     prest.add_argument("--replica", default="",
                        help="file:// 或 ssh:// 目标；省略则用已配置的 dr_target")
     prest.add_argument("--target", default="",
-                       help="恢复输出 db 路径（省略则用临时库并只做报告，不动原库）")
+                        help="恢复输出 db 路径（省略则用临时库并只做报告，不动原库）")
+    pprune = dr_sub.add_parser(
+        "prune", help="按归档窗口清理已推送(applied=1)的旧 WAL，防磁盘膨胀（I5）")
+    pprune.add_argument("--keep", type=int, default=None,
+                        help="本地保留最近 N 条已推送 WAL（覆盖 KHUB_WAL_KEEP）")
+    pprune.add_argument("--keep-days", type=float, default=None,
+                        help="保留最近 D 天内的已推送 WAL（覆盖 KHUB_WAL_KEEP_DAYS）")
 
     # ── 双机热备（P1） ─────────────────────────────────────────────────────
     pha = sub.add_parser(
@@ -590,6 +596,28 @@ def main(argv=None):
                 print("（默认已用临时库校验，未改动任何已有库；"
                       "如需落盘请加 --target <out.db>）")
             return 0 if vrep["ok"] else 1
+        elif args.dr_cmd == "prune":
+            # I5 — WAL 归档窗口：清理已推送(applied=1)的旧 WAL，防磁盘膨胀。
+            # --keep / --keep-days 覆盖环境变量 KHUB_WAL_KEEP / KHUB_WAL_KEEP_DAYS；
+            # 两者皆未给时按环境变量（仍无则默认保留全量、不清理）。
+            deleted = store.prune_wal(keep=args.keep, keep_days=args.keep_days)
+            remaining = store.conn.execute(
+                "SELECT COUNT(*) FROM replication_log").fetchone()[0]
+            print(f"=== khub dr prune ===")
+            print(f"已清理 WAL  : {deleted} 条（仅 applied=1 的旧记录）")
+            print(f"剩余 WAL    : {remaining} 条")
+            if deleted == 0:
+                env = []
+                if os.environ.get("KHUB_WAL_KEEP"):
+                    env.append(f"KHUB_WAL_KEEP={os.environ['KHUB_WAL_KEEP']}")
+                if os.environ.get("KHUB_WAL_KEEP_DAYS"):
+                    env.append(f"KHUB_WAL_KEEP_DAYS={os.environ['KHUB_WAL_KEEP_DAYS']}")
+                if env:
+                    print("（未达窗口阈值，无需清理；窗口=" + ", ".join(env) + "）")
+                else:
+                    print("（未设归档窗口：默认保留全量 WAL（PITR 无界）。"
+                          "设 KHUB_WAL_KEEP / KHUB_WAL_KEEP_DAYS 或传 --keep/--keep-days 启用）")
+            return 0
         else:
             pdr.print_help()
     elif args.cmd == "ha":

@@ -67,7 +67,7 @@
 
 **P0b — 异地灾备 + PITR（防机器坏/勒索）**
 - [x] `SshReplica`（SFTP put 临时名 + rename 原子替换；凭证走 `SSH_AUTH_SOCK`/600）。
-- [~] WAL 保留策略（I5）：保留全量 WAL 历史已实现（支撑 PITR）；**归档窗口（按保留份数/时长清理旧 WAL）未做**——当前以「保留全量」换取 PITR 完整，磁盘增长为已知取舍（见 `replication.py` 注释）。
+- [x] WAL 保留策略（I5）：`Store.prune_wal` 归档窗口（`KHUB_WAL_KEEP` / `KHUB_WAL_KEEP_DAYS`）已在 `0.2.3` 实现——推送后自动清理已 applied 的旧 WAL，本地文件随窗口收敛；PITR 因走副本 `fetch_changes` 不受影响（详见 CHANGELOG 0.2.3）。
 - [x] PITR：`replay_from` 回放至 `lsn<=target`（语句级容忍半事务），附用户剧本（高级项）。
 - [x] CLI 警示：区分"本地副本"与"异地灾备"，`dr init` 提示机器归属与每季演练。
 

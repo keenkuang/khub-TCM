@@ -5,6 +5,7 @@ import logging
 import os
 import threading
 import time
+from datetime import datetime, timedelta
 from typing import Optional
 from .models import CanonicalDoc
 
@@ -152,6 +153,57 @@ class Store:
         """
         if getattr(self, "wal_flusher", None) is not None:
             self.wal_flusher.flush()
+
+    def prune_wal(self, keep: Optional[int] = None,
+                  keep_days: Optional[float] = None) -> int:
+        """I5 — WAL 归档窗口：清理已推送（applied=1）的旧 WAL，防磁盘膨胀。
+
+        仅删 `applied=1` 的行，**绝不删 pending（applied=0）**——未推送的 WAL 是
+        PITR/副本的唯一来源，删了会丢数据。保留窗口由二选一（或多选）控制：
+        - `keep`：本地保留最近 N 条已 applied WAL（其余更旧的删除）；
+        - `keep_days`：保留最近 D 天内的已 applied WAL（`at` 早于 cutoff 的删除）。
+        两者皆 `None` 时回退读环境变量 `KHUB_WAL_KEEP` / `KHUB_WAL_KEEP_DAYS`；
+        若仍都为空 → 不清理（向后兼容：默认保留全量，PITR 无界）。
+        PITR 回放走副本（replica.fetch_changes）而非本地 replication_log，故本地
+        清理不影响 PITR；清理后 SQLite 复用空闲页，文件大小随窗口收敛而非无限增长。
+        返回删除条数。
+        """
+        if keep is None:
+            v = os.environ.get("KHUB_WAL_KEEP")
+            keep = int(v) if v not in (None, "") else None
+        if keep_days is None:
+            v = os.environ.get("KHUB_WAL_KEEP_DAYS")
+            keep_days = float(v) if v not in (None, "") else None
+        if keep is None and keep_days is None:
+            return 0
+
+        conn = self.conn
+        deleted = 0
+        # 按条数：保留最近 keep 条，删除更旧的 applied 行
+        if keep is not None and keep >= 0:
+            if keep == 0:
+                deleted += conn.execute(
+                    "DELETE FROM replication_log WHERE applied=1").rowcount
+            else:
+                # (keep-1) 即第 keep 新（最大）条的 id；其之前的更旧 applied 行皆删，
+                # 留下最近 keep 条。applied 总数 <= keep 时 row 为 None → 不删。
+                row = conn.execute(
+                    "SELECT id FROM replication_log WHERE applied=1 "
+                    "ORDER BY id DESC LIMIT 1 OFFSET ?", (keep - 1,)).fetchone()
+                if row is not None:
+                    cid = row["id"]
+                    deleted += conn.execute(
+                        "DELETE FROM replication_log WHERE applied=1 AND id < ?",
+                        (cid,)).rowcount
+        # 按天数：删除 at 早于 cutoff 的 applied 行
+        if keep_days is not None and keep_days >= 0:
+            cutoff = (datetime.now() - timedelta(days=keep_days)).strftime(
+                "%Y-%m-%dT%H:%M:%S")
+            deleted += conn.execute(
+                "DELETE FROM replication_log WHERE applied=1 AND at < ?",
+                (cutoff,)).rowcount
+        conn.commit()
+        return deleted
 
     def close(self):
         """优雅关闭：停 flusher、末次刷盘、关连接。"""

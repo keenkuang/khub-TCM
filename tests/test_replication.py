@@ -926,3 +926,107 @@ def test_ssh_replica_integration_real_sshd():
             "SELECT COUNT(*) FROM documents").fetchone()[0] == 5
     finally:
         _rmtree(base)
+
+
+# ── I5: WAL 归档窗口（防磁盘膨胀）────────────────────────────────────────────
+
+
+def _mark_applied_first_n(store, n: int):
+    """模拟「前 n 条已推送」：把 pending 中前 n 条标 applied。"""
+    log = WALLog(store)
+    ids = [r["id"] for r in log.pending()]
+    if n:
+        log.mark_applied(ids[:n])
+
+
+def test_wal_prune_by_keep_keeps_recent_and_pending():
+    """I5：prune_wal(keep=K) 仅删已 applied 的旧 WAL，保留最近 K 条与全部 pending。"""
+    store = Store(":memory:")
+    _write_docs(store, 10)          # 10 文档 => 20 条 WAL（每篇 INSERT+UPDATE）
+    store.flush_wal()
+    log = WALLog(store)
+    ids = [r["id"] for r in log.pending()]
+    assert len(ids) == 20
+    # 前 16 条（8 篇）已推送；后 4 条（2 篇）尚未推送（pending）
+    log.mark_applied(ids[:16])
+
+    deleted = store.prune_wal(keep=4)   # 保留最近 4 条 applied
+
+    applied_left = store.conn.execute(
+        "SELECT COUNT(*) FROM replication_log WHERE applied=1").fetchone()[0]
+    pending_left = store.conn.execute(
+        "SELECT COUNT(*) FROM replication_log WHERE applied=0").fetchone()[0]
+    # 16 条 applied 中删 12（留 4），pending 4 条绝不删
+    assert deleted == 12, deleted
+    assert applied_left == 4, applied_left
+    assert pending_left == 4, pending_left
+
+
+def test_wal_prune_keep_zero_deletes_all_applied():
+    """I5：keep=0 删除全部已 applied WAL（仍不碰 pending）。"""
+    store = Store(":memory:")
+    _write_docs(store, 5)
+    store.flush_wal()
+    log = WALLog(store)
+    ids = [r["id"] for r in log.pending()]
+    log.mark_applied(ids[:6])      # 部分已推送
+
+    deleted = store.prune_wal(keep=0)
+    assert deleted == 6, deleted
+    assert store.conn.execute(
+        "SELECT COUNT(*) FROM replication_log WHERE applied=1").fetchone()[0] == 0
+    assert store.conn.execute(
+        "SELECT COUNT(*) FROM replication_log WHERE applied=0").fetchone()[0] == len(ids) - 6
+
+
+def test_wal_prune_env_default_noop():
+    """I5：未设窗口（无 env、无显式参数）时 prune_wal 不删任何行（默认保留全量）。"""
+    store = Store(":memory:")
+    _write_docs(store, 5)
+    store.flush_wal()
+    WALLog(store).mark_applied([r["id"] for r in WALLog(store).pending()])
+    deleted = store.prune_wal()
+    assert deleted == 0
+    assert store.conn.execute(
+        "SELECT COUNT(*) FROM replication_log").fetchone()[0] == 10
+
+
+def test_wal_prune_push_pending_respects_env(monkeypatch):
+    """I5：push_pending 在 push 后按 KHUB_WAL_KEEP 归档；PITR 仍可从副本回放。"""
+    import os as _os
+    monkeypatch.setenv("KHUB_WAL_KEEP", "4")
+    base = tempfile.mkdtemp()
+    rep_dir = tempfile.mkdtemp()
+    try:
+        store = Store(os.path.join(base, "m.db"))
+        rep = LocalFileReplica(rep_dir)
+        mgr = ReplicationManager(store)
+
+        _write_docs(store, 5, start=1)
+        store.flush_wal()
+        lsn5 = _max_lsn(store)
+        mgr.push_snapshot(rep, db_path=store.path)   # 先打快照（lsn5 边界）
+        mgr.push_pending(rep)              # push + prune(keep=4)
+        _write_docs(store, 5, start=6)
+        store.flush_wal()
+        mgr.push_pending(rep)
+
+        # 本地 replication_log 被按窗口收敛：已 applied 的只留最近 4 条
+        local_left = store.conn.execute(
+            "SELECT COUNT(*) FROM replication_log WHERE applied=1").fetchone()[0]
+        assert local_left <= 4, local_left
+
+        # 副本保留全量 WAL（支撑 PITR）；恢复到 lsn5 仍只含前 5 篇
+        best = rep.best_snapshot_for(lsn5)
+        target_db = os.path.join(base, "restored.db")
+        shutil.copy(best["db"], target_db)
+        restored = Store(target_db)
+        rebuild_fts(restored)
+        restored.set_applied_max(best["lsn"])
+        replay_from(restored, rep.fetch_changes(), target_lsn=lsn5)
+        assert restored.conn.execute(
+            "SELECT COUNT(*) FROM documents").fetchone()[0] == 5
+        assert restored.get_document("d6") is None
+    finally:
+        _rmtree(base)
+        _rmtree(rep_dir)
