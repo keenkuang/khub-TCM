@@ -24,9 +24,9 @@ services:
       - KHUB_WAL_KEEP_DAYS=7
       # PII 加密（默认启用）
       - KHUB_PII_ENCRYPT=1
-      # PII 密钥由容器自动生成（首次启动），或通过 KHUB_PII_KEY 传入
+      # PII 密钥（默认容器自动生成，生产建议通过密钥文件注入）
       # - KHUB_PII_KEY=...               # 方式1：环境变量（注意不提交到 git）
-      # - KHUB_PII_KEY_FILE=/root/.khub/pii.key  # 方式2：从文件加载（推荐）
+      # - KHUB_PII_KEY_FILE=/home/app/.khub/pii.key  # 方式2：从文件加载
       # 真实模型（可选，注释掉时为离线模式）
       # - KHUB_EMBEDDING_URL=http://host.docker.internal:8080/v1/embeddings
       # - KHUB_EMBED_API_KEY=${KHUB_EMBED_API_KEY:-}

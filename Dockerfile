@@ -16,7 +16,7 @@ RUN pip install --no-cache-dir PyYAML pypdf sqlite-vec cryptography boto3
 
 # === 4. 复制源码并安装 ===
 COPY . .
-RUN pip install --no-cache-dir -e . && \
+RUN pip install --no-cache-dir . && \
     chown -R app:app /app
 
 # === 5. 入口脚本 ===
