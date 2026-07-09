@@ -1,5 +1,47 @@
 # 变更日志
 
+## [0.2.5] — 2026-07-10
+
+### 新增
+
+#### 数据看板与统计图表
+- `/stats` 端点扩展：近 7 天入库趋势（weekly）、版本/向量数、冲突数
+- 前端 SVG 条形图展示来源分布
+- 前端 SVG 折线图展示每日入库趋势
+- 最近文档列表（可点击加载详情）
+
+#### 数据源同步状态面板
+- `GET /sync-status` — 查询各数据源同步时间与状态
+- 前端表格展示，绿/橙/灰颜色指示器
+
+#### 限流器持久化（v0.4 AMEND C3）
+- `khub/ratelimit.py` — SQLite 持久化令牌桶，重启状态不丢失
+- `KHUB_RATE_LIMIT_RATE` / `KHUB_RATE_LIMIT_BURST` 环境变量配置
+- API 层集成，超限返回 429
+
+#### Docker 部署增强
+- Dockerfile: python 3.12、非 root 用户、入口脚本
+- docker-compose: 内部网络隔离、WAL 保留窗口配置
+- nginx: CSP 头、限流（30r/m burst=20）
+- `docs/deployment.md` 全面重写
+
+### 安全加固
+- CSP / X-Content-Type-Options / X-Frame-Options / HSTS / Referrer-Policy / Permissions-Policy
+- 请求体上限 10MB（含负值 Content-Length 防护）
+- Transfer-Encoding: chunked 拒绝
+- 静态文件 MIME 类型正确映射
+- 非 root 容器运行
+
+### 修复
+- `docs/test_security.py` — 9 项安全测试（CSP/限流/MIME/chunked）
+- `docs/test_docker_build.py` + `test_docker_compose.py` — Docker 构建测试
+- pyproject.toml 补全 crypto/s3 可选依赖组
+- RAG 空上下文不再调用 LLM
+- Dockerfile `&& \` 残留语法错误修复
+
+### 测试
+- 267 passed / 4 skipped（+43 个新增测试，测试覆盖率显著提升）
+
 ## [0.2.4] — 2026-07-09
 
 ### HA/DR：端到端双节点 failover 演练
