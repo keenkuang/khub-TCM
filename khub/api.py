@@ -12,6 +12,9 @@ from .log import get_logger
 from .models import CanonicalDoc
 from .storage import ManagedLibrary
 
+# 请求体大小限制（10MB）
+_MAX_BODY_SIZE = 10 * 1024 * 1024
+
 
 def _safe_int(value, default: int) -> int:
     """把查询参数安全转 int，失败回退默认，避免非法输入抛 500。"""
@@ -415,6 +418,15 @@ def make_handler(app: App):
             self.send_response(code)
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(data)))
+            # 安全响应头
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("X-Frame-Options", "DENY")
+            if ctype == "text/html; charset=utf-8":
+                self.send_header("Content-Security-Policy",
+                    "default-src 'self'; script-src 'self'; "
+                    "style-src 'self' 'unsafe-inline'; "
+                    "img-src 'self' data:; form-action 'none'; "
+                    "frame-ancestors 'none'")
             self.end_headers()
             self.wfile.write(data)
 
@@ -469,6 +481,8 @@ def make_handler(app: App):
 
         def do_POST(self):
             length = int(self.headers.get("Content-Length", 0) or 0)
+            if length > _MAX_BODY_SIZE:
+                return self._send(413, {"error": "请求体过大（上限 10MB）"})
             raw = self.rfile.read(length) if length else b"{}"
             try:
                 body = json.loads(raw) if raw else {}
@@ -502,6 +516,8 @@ def make_handler(app: App):
 
         def do_PUT(self):
             length = int(self.headers.get("Content-Length", 0) or 0)
+            if length > _MAX_BODY_SIZE:
+                return self._send(413, {"error": "请求体过大（上限 10MB）"})
             raw = self.rfile.read(length) if length else b"{}"
             try:
                 body = json.loads(raw) if raw else {}
@@ -520,6 +536,8 @@ def make_handler(app: App):
 
         def do_DELETE(self):
             length = int(self.headers.get("Content-Length", 0) or 0)
+            if length > _MAX_BODY_SIZE:
+                return self._send(413, {"error": "请求体过大（上限 10MB）"})
             raw = self.rfile.read(length) if length else b"{}"
             try:
                 body = json.loads(raw) if raw else {}
