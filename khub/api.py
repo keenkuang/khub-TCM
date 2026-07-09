@@ -118,7 +118,35 @@ class App:
             return 200, [dict(r) for r in rows]
 
         if method == "GET" and path.startswith("/documents/") and len(path) > len("/documents/"):
-            cid = unquote(path[len("/documents/"):])
+            rest = path[len("/documents/"):]
+            parts = rest.split("/", 2)
+            cid = unquote(parts[0])
+
+            # GET /documents/{id}/versions/{vid}
+            if len(parts) >= 3 and parts[1] == "versions" and parts[2]:
+                vid = _safe_int(parts[2], 0)
+                if not vid:
+                    return 400, {"error": "invalid version_id"}
+                ver = self.store.get_version(cid, vid)
+                if not ver:
+                    return 404, {"error": "version not found"}
+                return 200, {
+                    "version_id": ver["version_id"],
+                    "content": ver["content"][:100000],
+                    "format": ver.get("format", "plain"),
+                    "updated_at": ver["updated_at"],
+                }
+
+            # GET /documents/{id}/versions
+            if len(parts) >= 2 and parts[1] == "versions":
+                vers = self.store.get_versions(cid)
+                return 200, [{
+                    "version_id": v["version_id"],
+                    "updated_at": v["updated_at"],
+                    "format": v.get("format", "plain"),
+                } for v in vers]
+
+            # GET /documents/{id}
             doc = self.store.get_document(cid)
             if doc is None:
                 return 404, {"error": "not found"}
@@ -127,13 +155,42 @@ class App:
             return 200, {
                 "canonical_id": doc["canonical_id"],
                 "title": doc["title"],
-                "content": content[:100000],  # 截断防超大文本
+                "content": content[:100000],
                 "version_count": len(vers),
                 "source_ids": doc["source_ids"],
                 "created_at": doc["created_at"],
                 "updated_at": doc["updated_at"],
                 "format": vers[-1]["format"] if (vers and "format" in vers[-1]) else "plain",
             }
+
+        # PUT /documents/{id} — 更新文档
+        if method == "PUT" and path.startswith("/documents/") and len(path) > len("/documents/"):
+            cid = unquote(path[len("/documents/"):])
+            title = (body or {}).get("title", "").strip()
+            content = (body or {}).get("content", "").strip()
+            if not title or not content:
+                return 400, {"error": "title 与 content 必填"}
+            doc = CanonicalDoc(
+                canonical_id=cid,
+                title=title,
+                content=content,
+                source="webui",
+                source_id="",
+                origin="webui",
+                format=body.get("format", "plain"),
+                updated_at=time.strftime("%Y-%m-%dT%H:%M:%S"),
+            )
+            version_id = self.store.store_document(doc)
+            return 200, {"status": "ok", "version_id": version_id}
+
+        # POST /documents/{id}/resolve — 解决冲突
+        if method == "POST" and path.endswith("/resolve"):
+            cid = unquote(path[len("/documents/"):-len("/resolve")])
+            keep_id = (body or {}).get("keep_version")
+            if not keep_id:
+                return 400, {"error": "keep_version 必填"}
+            self.store.resolve_conflict(cid, int(keep_id))
+            return 200, {"status": "ok"}
 
         if method == "GET" and path == "/conflicts":
             rows = self.store.conn.execute(
@@ -279,245 +336,17 @@ class App:
 
     @staticmethod
     def _html_page():
-        return """<!DOCTYPE html>
-<html lang="zh"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>kHUB</title>
-<style>
- body{font-family:system-ui,"PingFang SC","Microsoft YaHei",sans-serif;margin:0;background:#f6f7f9;color:#222}
- header{background:#1f2937;color:#fff;padding:12px 20px;font-weight:600}
- .wrap{max-width:920px;margin:20px auto;padding:0 16px}
- .bar{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
- input[type=text]{flex:1;min-width:200px;padding:9px 12px;border:1px solid #ccd;border-radius:8px;font-size:15px}
- button{padding:9px 14px;border:0;border-radius:8px;background:#2563eb;color:#fff;cursor:pointer;font-size:14px}
- button.ghost{background:#e5e7eb;color:#333}
- .card{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:12px 14px;margin-bottom:10px}
- .card h3{margin:0 0 4px;font-size:16px}
- .snip{color:#555;font-size:14px;line-height:1.5}
- .meta{color:#999;font-size:12px;margin-top:4px}
- .tag{display:inline-block;background:#fee2e2;color:#b91c1c;border-radius:6px;padding:1px 7px;font-size:12px}
- h2{font-size:15px;color:#555;margin:18px 0 8px}
- /* AI 助手对话框 */
- .fab{position:fixed;bottom:24px;right:24px;width:52px;height:52px;border-radius:26px;background:#2563eb;color:#fff;font-size:26px;border:0;cursor:pointer;z-index:1000;box-shadow:0 4px 12px rgba(37,99,235,0.35);display:flex;align-items:center;justify-content:center}
- .fab:hover{background:#1d4ed8}
- .ai-panel{position:fixed;bottom:88px;right:24px;width:380px;max-height:560px;background:#fff;border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,0.15);z-index:999;display:none;flex-direction:column;overflow:hidden;font-size:14px}
- .ai-panel.open{display:flex}
- .ai-panel .hdr{padding:12px 16px;font-weight:600;border-bottom:1px solid #e5e7eb;display:flex;justify-content:space-between;align-items:center;background:#f9fafb}
- .ai-panel .hdr .close{background:none;border:0;font-size:18px;cursor:pointer;padding:0;color:#999}
- .ai-panel .msgs{flex:1;overflow-y:auto;padding:10px 12px;display:flex;flex-direction:column;gap:10px}
- .ai-panel .msg{max-width:85%;padding:8px 12px;border-radius:12px;line-height:1.5;word-wrap:break-word}
- .ai-panel .msg.user{background:#2563eb;color:#fff;align-self:flex-end;border-bottom-right-radius:4px}
- .ai-panel .msg.ai{background:#f3f4f6;color:#222;align-self:flex-start;border-bottom-left-radius:4px}
- .ai-panel .msg .sources{font-size:11px;color:#666;margin-top:6px;display:flex;gap:6px;flex-wrap:wrap}
- .ai-panel .msg .sources a{color:#2563eb;text-decoration:none}
- .ai-panel .input-area{display:flex;padding:8px 12px;border-top:1px solid #e5e7eb;gap:6px}
- .ai-panel .input-area input{flex:1;padding:7px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;outline:0}
- .ai-panel .input-area input:focus{border-color:#2563eb}
- .ai-panel .input-area button{padding:7px 14px;border:0;border-radius:8px;background:#2563eb;color:#fff;cursor:pointer;font-size:13px;white-space:nowrap}
- .ai-panel .input-area button:disabled{background:#9ca3af;cursor:default}
- .ai-panel .hint{font-size:12px;color:#999;padding:6px 12px 8px;border-top:1px solid #f3f4f6;text-align:center}
- @media(max-width:640px){
-   .ai-panel{width:calc(100vw - 32px);max-height:70vh;right:16px;bottom:80px}
-   .fab{width:44px;height:44px;font-size:22px;right:16px;bottom:16px}
-   .ai-panel .msg{font-size:13px}
- }
-</style></head>
-<body>
-<header>kHUB · 个人知识中枢</header>
-<div class="wrap">
-  <div id="stats" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px"></div>
-  <div class="bar">
-    <input id="q" type="text" placeholder="全文检索（中文子串，如 桂枝汤 / 麻黄）">
-    <button onclick="search()">检索</button>
-    <button class="ghost" onclick="semantic()">语义</button>
-    <button class="ghost" onclick="loadAll()">全部文档</button>
-    <button class="ghost" onclick="loadConflicts()">冲突</button>
-    <select id="sourceFilter" style="padding:6px 8px;border:1px solid #ccd;border-radius:6px;font-size:13px">
-      <option value="">所有来源</option>
-      <option value="obsidian">秘方</option>
-      <option value="ima">IMA</option>
-      <option value="imanote">IMA笔记</option>
-      <option value="quip">Quip</option>
-      <option value="kzocr">KZOCR</option>
-    </select>
-  </div>
-  <div id="results"></div>
-</div>
-<script>
-const box=document.getElementById('results');
-let currentPage=0;const PER_PAGE=20;
-function card(d, clickable=true, highlightTerm=''){
-  const el=document.createElement('div');el.className='card';
-  el.innerHTML=`<h3>${highlight(d.title||d.doc_id||'', highlightTerm)}</h3>`+
-    (d.snippet?`<div class="snip">${highlight(d.snippet, highlightTerm)}</div>`:'')+
-    `<div class="meta">${esc(d.doc_id||'')}${d.updated_at?' · '+esc(d.updated_at):''}`+
-    `${d.conflict?` <span class="tag">冲突</span>`:''}</div>`;
-  if(clickable && d.doc_id){
-    el.style.cursor='pointer';
-    el.onclick=()=>loadDoc(d.doc_id, d.title);
-  }
-  return el;
-}
-function esc(s){return (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
-function highlight(s,term){
-  s=esc(s);if(!term)return s;
-  const re=new RegExp(esc(term).replace(/[.*+?^${}()|[\\]\\\\]/g,'\\$&'),'gi');
-  return s.replace(re,m=>'<mark>'+m+'</mark>');
-}
-async function loadDoc(id, title){
-  box.innerHTML=`<h2>${esc(title||id)}</h2><p class="meta">加载中...</p>`;
-  try{
-    const r=await fetch('/documents/'+encodeURIComponent(id)).then(x=>x.json());
-    if(r.error){box.innerHTML=`<p class="meta">${esc(r.error)}</p>`;return;}
-    const backLink = '<p style="margin-bottom:8px"><a href="#" onclick="loadAll();return false">← 返回列表</a></p>';
-    box.innerHTML=backLink;
-    box.innerHTML+=`<h2>${esc(r.title||id)}</h2><p class="meta">${esc(r.canonical_id)} · ${r.version_count} 版本 · ${r.updated_at||''} · 格式: ${esc(r.format||'')}</p>`;
-    let contentDiv;
-    if(r.format === 'html'){
-      const safe = (r.content||'').replace(/<script[\\s\\S]*?<\\/script>/gi,'');
-      contentDiv = `<div style="line-height:1.7;padding:12px;border-radius:8px;margin-top:8px;overflow-x:auto">${safe}</div>`;
-    } else {
-      contentDiv = `<div style="white-space:pre-wrap;font-size:14px;line-height:1.7;background:#fafafa;padding:12px;border-radius:8px;margin-top:8px;overflow-x:auto">${esc(r.content)}</div>`;
-    }
-    box.innerHTML += contentDiv + backLink;
-  }catch(e){box.innerHTML=`<p class="meta">加载失败: ${esc(e.message)}</p>`;}
-}
-async function search(){
-  currentPage=0;
-  const q=document.getElementById('q').value.trim();if(!q)return;
-  box.innerHTML='';
-  const source=document.getElementById('sourceFilter').value;
-  const r=await fetch(`/search?q=${encodeURIComponent(q)}&page=${currentPage}&per=${PER_PAGE}&source=${encodeURIComponent(source)}`).then(x=>x.json());
-  if(!r.total){box.innerHTML='<p class="meta">无结果</p>';return;}
-  const from = currentPage * PER_PAGE + 1;
-  const to = Math.min((currentPage+1)*PER_PAGE, r.total);
-  const h=document.createElement('h2');h.textContent=`命中 ${r.total} 篇（第${from}-${to}篇）`;box.appendChild(h);
-  r.hits.forEach(d=>box.appendChild(card(d, true, q)));
-  if((currentPage + 1) * PER_PAGE < r.total){
-    const btn=document.createElement('button');btn.textContent='下一页 →';btn.style.margin='10px auto';btn.style.display='block';
-    btn.onclick=()=>{currentPage++;search();};
-    box.appendChild(btn);
-  }
-}
-async function semantic(){
-  const q=document.getElementById('q').value.trim();if(!q)return;
-  box.innerHTML='';
-  const h=document.createElement('h2');h.textContent='语义检索（向量 / ANN）';box.appendChild(h);
-  const r=await fetch('/semantic?q='+encodeURIComponent(q)).then(x=>x.json());
-  if(!r.length){box.innerHTML+='<p class="meta">无结果</p>';return;}
-  const docs=await fetch('/documents').then(x=>x.json());
-  const titles={};docs.forEach(d=>titles[d.canonical_id]=d.title);
-  r.forEach(d=>{const el=document.createElement('div');el.className='card';
-    el.innerHTML=`<h3>${esc(titles[d.doc_id]||d.doc_id)}</h3><div class="meta">${esc(d.doc_id)} · 相似度 ${d.score}</div>`;
-    el.style.cursor='pointer';el.onclick=()=>loadDoc(d.doc_id, titles[d.doc_id]||d.doc_id);box.appendChild(el);});
-}
-async function loadAll(){
-  box.innerHTML='';const h=document.createElement('h2');h.textContent='全部文档';
-  box.appendChild(h);
-  const r=await fetch('/documents').then(x=>x.json());
-  if(!r.length){box.innerHTML+='<p class="meta">暂无文档</p>';return;}
-  r.forEach(d=>box.appendChild(card({doc_id:d.canonical_id,title:d.title,updated_at:d.updated_at})));
-}
-async function loadConflicts(){
-  box.innerHTML='';const h=document.createElement('h2');h.textContent='冲突文档';
-  box.appendChild(h);
-  const r=await fetch('/conflicts').then(x=>x.json());
-  if(!r.length){box.innerHTML+='<p class="meta">无冲突</p>';return;}
-  r.forEach(d=>box.appendChild(card(d)));
-}
-async function loadStats(){
-  const s=document.getElementById('stats');
-  try{
-    const r=await fetch('/stats').then(x=>x.json());
-    let html=`<div class="stat-card" style="background:#e8f5e9;padding:8px 14px;border-radius:8px;text-align:center;min-width:70px"><div style="font-size:20px;font-weight:700">${r.total}</div><div style="font-size:11px;color:#555">总计</div></div>`;
-    const srcMap={'obsidian':'秘方','ima':'IMA','imanote':'IMA笔记','quip':'Quip','library':'电子书'};
-    for(const [k,v] of Object.entries(srcMap)){
-      const cnt=r.sources[k]||0;
-      if(cnt>0) html+=`<div class="stat-card" style="background:#e3f2fd;padding:8px 14px;border-radius:8px;text-align:center;min-width:60px"><div style="font-size:16px;font-weight:700">${cnt}</div><div style="font-size:11px;color:#555">${v}</div></div>`;
-    }
-    html+=`<div class="stat-card" style="background:#fff3e0;padding:8px 14px;border-radius:8px;text-align:center;min-width:60px"><div style="font-size:16px;font-weight:700">${r.today}</div><div style="font-size:11px;color:#555">今日</div></div>`;
-    s.innerHTML=html;
-  }catch(e){s.innerHTML='';}
-}
-loadStats();
-document.getElementById('q').addEventListener('keydown',e=>{if(e.key==='Enter')search();});
-loadAll();
-// ── AI 助手对话框 ──
-const aiState={open:false,streaming:false,abortController:null};
-const aiMsgs=document.getElementById('ai-msgs');
-const aiInput=document.getElementById('ai-q');
-function aiToggle(){aiState.open=!aiState.open;
-  document.getElementById('ai-panel').classList.toggle('open',aiState.open);
-  if(aiState.open)aiInput&&aiInput.focus();}
-function aiAddMsg(role,text,streaming){const d=document.createElement('div');
-  d.className='msg '+role;
-  if(streaming)d.innerHTML=`<span class="streaming-text">${esc(text)}</span>`;
-  else d.innerHTML=esc(text).replace(/\n/g,'<br>');
-  aiMsgs.appendChild(d);aiMsgs.scrollTop=aiMsgs.scrollHeight;return d;}
-function aiAppendToken(msgEl,token){
-  const t=msgEl.querySelector('.streaming-text');
-  if(t)t.textContent+=token;else msgEl.textContent+=token;
-  aiMsgs.scrollTop=aiMsgs.scrollHeight;}
-function aiRenderSources(msgEl,sources){
-  if(!sources||!sources.length)return;
-  const d=document.createElement('div');d.className='sources';
-  d.innerHTML='📖 ';sources.forEach(s=>{
-    d.innerHTML+=`<a href="#" onclick="loadDoc('${esc(s.id)}','${esc(s.title)}');return false">${esc(s.title)}</a><span style="color:#999">(${s.score})</span> `;});
-  msgEl.appendChild(d);}
-async function aiAsk(){const q=aiInput.value.trim();
-  if(!q||aiState.streaming)return;
-  aiAddMsg('user',q);aiInput.value='';
-  const aiBubble=aiAddMsg('ai','',true);
-  aiState.streaming=true;
-  const useStream=true; // 默认流式
-  try{
-    if(useStream){
-      const resp=await fetch('/ask',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({question:q,k:5,stream:true})});
-      const reader=resp.body.getReader();const decoder=new TextDecoder();
-      let buf='',sourcesReceived=false;
-      while(true){
-        const {done,value}=await reader.read();if(done)break;
-        buf+=decoder.decode(value,{stream:true});
-        const parts=buf.split('\n\n');buf=parts.pop()||'';
-        for(const block of parts){
-          const lines=block.split('\n');
-          const ev=lines.find(l=>l.startsWith('event: '));
-          const dl=lines.find(l=>l.startsWith('data: '));
-          if(!dl)continue;
-          const event=ev?ev.slice(7).trim():'';const data=JSON.parse(dl.slice(6));
-          if(event==='sources'&&!sourcesReceived){
-            aiRenderSources(aiBubble,data.sources);sourcesReceived=true;}
-          else if(event==='token'){aiAppendToken(aiBubble,data.token);}
-          else if(event==='error'){aiAppendToken(aiBubble,'[错误: '+data.error+']');}
-          // done — nothing to do, stream ends
-        }
-      }
-    }else{
-      const resp=await fetch('/ask',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({question:q,k:5,stream:false})});
-      const data=await resp.json();
-      aiBubble.querySelector('.streaming-text').textContent=data.answer||'';
-      aiRenderSources(aiBubble,data.sources);
-    }
-  }catch(e){aiAppendToken(aiBubble,'[请求失败: '+e.message+']');
-  }finally{aiState.streaming=false;}
-}
-document.getElementById('ai-send').addEventListener('click',aiAsk);
-aiInput.addEventListener('keydown',e=>{if(e.key==='Enter')aiAsk();});
-</script>
-<!-- AI 助手对话框 -->
-<button class="fab" id="ai-fab" onclick="aiToggle()" title="AI 助手">✨</button>
-<div class="ai-panel" id="ai-panel">
-  <div class="hdr"><span>✨ AI 助手</span><button class="close" onclick="aiToggle()">✕</button></div>
-  <div class="msgs" id="ai-msgs"></div>
-  <div class="input-area">
-    <input id="ai-q" type="text" placeholder="输入问题..." maxlength="2000">
-    <button id="ai-send">发送</button>
-  </div>
-  <div class="hint">基于知识库语义检索 + LLM 回答</div>
-</div>
-</body></html>"""
+        """加载外部化的 Web UI 页面（khub/web/index.html）。"""
+        page_path = os.path.join(os.path.dirname(__file__), "web", "index.html")
+        try:
+            with open(page_path, encoding="utf-8") as f:
+                return f.read()
+        except FileNotFoundError:
+            return "<!DOCTYPE html><html lang='zh'><head><meta charset='utf-8'>" \
+                   "<title>kHUB</title></head><body><p>Web UI not found.</p></body></html>"
+
+
+
 
 
 def make_handler(app: App):

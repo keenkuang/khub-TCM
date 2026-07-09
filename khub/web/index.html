@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="zh"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>kHUB</title>
+<link rel="stylesheet" href="/web/style.css">
+</head>
+<body>
+<header>kHUB · 个人知识中枢
+  <button class="theme-toggle" onclick="toggleTheme()" title="切换深色/浅色模式">🌙</button>
+</header>
+<div class="wrap">
+  <div id="stats" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px"></div>
+  <div class="bar">
+    <input id="q" type="text" placeholder="全文检索（中文子串，如 桂枝汤 / 麻黄）">
+    <button onclick="search()">检索</button>
+    <button class="ghost" onclick="semantic()">语义</button>
+    <button class="ghost" onclick="loadAll()">全部文档</button>
+    <button class="ghost" onclick="loadConflicts()">冲突</button>
+    <select id="sourceFilter" style="padding:6px 8px;border:1px solid #ccd;border-radius:6px;font-size:13px">
+      <option value="">所有来源</option>
+      <option value="obsidian">秘方</option>
+      <option value="ima">IMA</option>
+      <option value="imanote">IMA笔记</option>
+      <option value="quip">Quip</option>
+      <option value="kzocr">KZOCR</option>
+    </select>
+  </div>
+  <div id="results"></div>
+</div>
+<script src="/web/script.js"></script>
+
+<!-- AI 助手对话框 -->
+<button class="fab" id="ai-fab" onclick="aiToggle()" title="AI 助手">✨</button>
+<div class="ai-panel" id="ai-panel">
+  <div class="hdr"><span>✨ AI 助手</span><button class="close" onclick="aiToggle()">✕</button></div>
+  <div class="msgs" id="ai-msgs"></div>
+  <div class="input-area">
+    <input id="ai-q" type="text" placeholder="输入问题..." maxlength="2000">
+    <button id="ai-send">发送</button>
+  </div>
+  <div class="hint">基于知识库语义检索 + LLM 回答</div>
+</div>
+</body></html>

@@ -270,6 +270,20 @@ class Store:
             "SELECT * FROM document_versions WHERE doc_id=? ORDER BY version_id",
             (doc_id,)).fetchall()
 
+    def get_version(self, doc_id: str, version_id: int):
+        """返回指定文档的指定版本。"""
+        return self.conn.execute(
+            "SELECT * FROM document_versions WHERE doc_id=? AND version_id=?",
+            (doc_id, version_id)).fetchone()
+
+    def resolve_conflict(self, canonical_id: str, keep_version_id: int):
+        """解决冲突：清除冲突标记。keep_version_id 表示用户选择保留的版本。"""
+        with self._lock:
+            self.conn.execute(
+                "UPDATE documents SET conflict=0 WHERE canonical_id=?",
+                (canonical_id,))
+            self.conn.commit()
+
     def set_sync_state(self, source_id: str, doc_id: str, etag: str, h: str):
         with self._lock:
             self.conn.execute(
