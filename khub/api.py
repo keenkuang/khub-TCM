@@ -15,6 +15,19 @@ from .storage import ManagedLibrary
 # 请求体大小限制（10MB）
 _MAX_BODY_SIZE = 10 * 1024 * 1024
 
+# 静态文件 MIME 类型映射
+_MIME = {
+    ".html": "text/html; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".js": "application/javascript; charset=utf-8",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".svg": "image/svg+xml",
+    ".ico": "image/x-icon",
+    ".json": "application/json",
+}
+
 
 def _safe_int(value, default: int) -> int:
     """把查询参数安全转 int，失败回退默认，避免非法输入抛 500。"""
@@ -54,7 +67,8 @@ class App:
             if not os.path.isfile(filepath):
                 return 404, {"error": "not found"}
             with open(filepath, "rb") as f:
-                return 200, f.read(), "application/octet-stream"
+                ctype = _MIME.get(os.path.splitext(filename)[1].lower(), "application/octet-stream")
+                return 200, f.read(), ctype
 
         if method == "GET" and path == "/health":
             uptime = round(time.time() - self._started, 1) if self._started else 0
@@ -423,10 +437,10 @@ def make_handler(app: App):
             self.send_header("X-Frame-Options", "DENY")
             if ctype == "text/html; charset=utf-8":
                 self.send_header("Content-Security-Policy",
-                    "default-src 'self'; script-src 'self'; "
+                    "default-src 'self'; script-src 'self' 'unsafe-inline'; "
                     "style-src 'self' 'unsafe-inline'; "
                     "img-src 'self' data:; form-action 'none'; "
-                    "frame-ancestors 'none'")
+                    "frame-ancestors 'none'; base-uri 'self'; object-src 'none'")
             self.end_headers()
             self.wfile.write(data)
 
