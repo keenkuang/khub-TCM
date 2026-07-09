@@ -66,8 +66,13 @@ class App:
             sources = {}
             for row in cur.execute("SELECT source_ids FROM documents").fetchall():
                 ids = row["source_ids"] or "[]"
+                try:
+                    parsed = json.loads(ids)
+                    first = parsed[0] if isinstance(parsed, list) and parsed else None
+                except (json.JSONDecodeError, IndexError, TypeError):
+                    first = None
                 for src in ("obsidian", "ima", "imanote", "quip", "kzocr", "library", "feishu", "webui"):
-                    if f'"{src}"' in ids:
+                    if first and src in str(first):
                         sources[src] = sources.get(src, 0) + 1
                         break
             today = time.strftime("%Y-%m-%d")
@@ -75,24 +80,28 @@ class App:
                 "SELECT count(*) FROM documents WHERE updated_at >= ?",
                 (today,)).fetchone()[0]
 
-            # 近 7 天每日入库趋势
+            # 近 7 天每日入库趋势 + 额外统计（表不存在时容错）
             weekly = []
-            import datetime as _dt
-            for i in range(6, -1, -1):
-                day = (_dt.date.today() - _dt.timedelta(days=i)).isoformat()
-                cnt = cur.execute(
-                    "SELECT count(*) FROM documents WHERE updated_at >= ? AND updated_at < ?",
-                    (day, (_dt.date.today() - _dt.timedelta(days=i - 1)).isoformat())
-                ).fetchone()[0]
-                weekly.append({"date": day, "count": cnt})
-
-            # 额外统计
-            version_count = cur.execute(
-                "SELECT count(*) FROM document_versions").fetchone()[0]
-            embed_count = cur.execute(
-                "SELECT count(*) FROM embeddings").fetchone()[0]
-            conflict_count = cur.execute(
-                "SELECT count(*) FROM documents WHERE conflict=1").fetchone()[0]
+            version_count = 0
+            embed_count = 0
+            conflict_count = 0
+            try:
+                import datetime as _dt
+                for i in range(6, -1, -1):
+                    day = (_dt.date.today() - _dt.timedelta(days=i)).isoformat()
+                    cnt = cur.execute(
+                        "SELECT count(*) FROM documents WHERE updated_at >= ? AND updated_at < ?",
+                        (day, (_dt.date.today() - _dt.timedelta(days=i - 1)).isoformat())
+                    ).fetchone()[0]
+                    weekly.append({"date": day, "count": cnt})
+                version_count = cur.execute(
+                    "SELECT count(*) FROM document_versions").fetchone()[0]
+                embed_count = cur.execute(
+                    "SELECT count(*) FROM embeddings").fetchone()[0]
+                conflict_count = cur.execute(
+                    "SELECT count(*) FROM documents WHERE conflict=1").fetchone()[0]
+            except Exception:
+                pass
 
             recent = cur.execute(
                 "SELECT canonical_id, title, updated_at FROM documents "

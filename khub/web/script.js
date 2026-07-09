@@ -6,7 +6,7 @@ let lastQuery = '';
 let lastSource = '';
 
 // ── 工具函数 ──
-function esc(s) { return (s || '').replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])); }
+function esc(s) { return (s || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
 function highlight(s, term) {
   s = esc(s); if (!term) return s;
