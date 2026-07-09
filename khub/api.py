@@ -438,9 +438,8 @@ def make_handler(app: App):
             self.send_header("Referrer-Policy", "no-referrer")
             self.send_header("Permissions-Policy",
                 "camera=(), microphone=(), geolocation=(), interest-cohort=()")
-            if code == 200:
-                self.send_header("Strict-Transport-Security",
-                    "max-age=31536000; includeSubDomains")
+            self.send_header("Strict-Transport-Security",
+                "max-age=31536000; includeSubDomains")
             if ctype == "text/html; charset=utf-8":
                 self.send_header("Content-Security-Policy",
                     "default-src 'self'; script-src 'self' 'unsafe-inline'; "
@@ -500,6 +499,8 @@ def make_handler(app: App):
             self._send(code, obj, ctype)
 
         def do_POST(self):
+            if self.headers.get("Transfer-Encoding", "").lower() == "chunked":
+                return self._send(411, {"error": "请使用 Content-Length，不接受 Transfer-Encoding: chunked"})
             length = self.headers.get("Content-Length", "0")
             try:
                 length = int(length)
@@ -539,6 +540,8 @@ def make_handler(app: App):
             self.end_headers()
 
         def do_PUT(self):
+            if self.headers.get("Transfer-Encoding", "").lower() == "chunked":
+                return self._send(411, {"error": "请使用 Content-Length，不接受 Transfer-Encoding: chunked"})
             try:
                 length = int(self.headers.get("Content-Length", "0") or "0")
             except (TypeError, ValueError):
@@ -562,6 +565,8 @@ def make_handler(app: App):
             self._send(code, obj, ctype)
 
         def do_DELETE(self):
+            if self.headers.get("Transfer-Encoding", "").lower() == "chunked":
+                return self._send(411, {"error": "请使用 Content-Length，不接受 Transfer-Encoding: chunked"})
             try:
                 length = int(self.headers.get("Content-Length", "0") or "0")
             except (TypeError, ValueError):
