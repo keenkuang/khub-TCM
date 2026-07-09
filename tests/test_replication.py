@@ -59,6 +59,7 @@ def test_record_change_convenience():
     """record_change creates a WALLog entry via the convenience function."""
     store = Store(":memory:")
     record_change(store, "insert", "documents", "c1", '{"x": 1}')
+    store.flush_wal()  # 触发器/补记写 wal_staging，由 flusher 落 replication_log（M2/A5 解耦）
     rows = store.conn.execute(
         "SELECT * FROM replication_log WHERE applied=0").fetchall()
     assert len(rows) == 1
@@ -329,6 +330,7 @@ def test_business_write_lands_in_wal_with_lsn():
         doc = CanonicalDoc(canonical_id="d1", title="T", content="hello",
                            source="s", source_id="s/1")
         store.store_document(doc)
+        store.flush_wal()  # 触发器写 wal_staging，由 flusher 落 replication_log（M2/A5 解耦）
 
         rows = store.conn.execute(
             "SELECT lsn, op, table_name, row_id FROM replication_log "
@@ -352,6 +354,7 @@ def test_standby_replay_no_reentry():
         doc = CanonicalDoc(canonical_id="d1", title="T", content="hello",
                            source="s", source_id="s/1")
         src.store_document(doc)
+        src.flush_wal()  # 落 replication_log 后再读取变更（M2/A5 解耦）
         changes = [dict(r) for r in src.conn.execute(
             "SELECT lsn, op, table_name, row_id, payload FROM replication_log")]
 
@@ -394,6 +397,7 @@ def test_trigger_regenerates_on_schema_change():
         store.conn.execute(
             "UPDATE documents SET extra_col='NEWVAL' WHERE canonical_id='d1'")
         store.conn.commit()
+        store.flush_wal()  # UPDATE 触发写 wal_staging，落 replication_log 后再断言（M2/A5）
 
         row = store.conn.execute(
             "SELECT payload FROM replication_log WHERE table_name='documents' "
@@ -422,6 +426,7 @@ def test_replay_idempotent():
                            source="s", source_id="s/1")
         src.store_document(doc)
         add_patient(src, "p1", "张三")  # 触发 patients 写入 + WAL
+        src.flush_wal()  # 落 replication_log 后再读取变更（M2/A5 解耦）
         changes = [dict(r) for r in src.conn.execute(
             "SELECT lsn, op, table_name, row_id, payload FROM replication_log")]
 
@@ -597,8 +602,10 @@ def test_pitr_replay_from_target_lsn():
     try:
         store = Store(os.path.join(d, "m.db"))
         _write_docs(store, 5, start=1)          # 阶段 A -> lsn 边界 L5
+        store.flush_wal()                        # 落 replication_log（M2/A5 解耦）
         lsn5 = _max_lsn(store)
         _write_docs(store, 5, start=6)          # 阶段 B -> lsn 边界 L10
+        store.flush_wal()
         lsn10 = _max_lsn(store)
         changes = [dict(r) for r in store.conn.execute(
             "SELECT lsn, op, table_name, row_id, payload FROM replication_log")]
@@ -625,10 +632,13 @@ def test_pitr_target_lsn_monotonic_rows():
     try:
         store = Store(os.path.join(d, "m.db"))
         _write_docs(store, 3, start=1)
+        store.flush_wal()                        # 落 replication_log（M2/A5 解耦）
         lsn3 = _max_lsn(store)
         _write_docs(store, 3, start=4)
+        store.flush_wal()
         lsn6 = _max_lsn(store)
         _write_docs(store, 4, start=7)
+        store.flush_wal()
         lsn10 = _max_lsn(store)
         changes = [dict(r) for r in store.conn.execute(
             "SELECT lsn, op, table_name, row_id, payload FROM replication_log")]
@@ -656,12 +666,14 @@ def test_pitr_local_file_replica():
 
         # 写前 5 篇，记录边界 lsn
         _write_docs(store, 5, start=1)
+        store.flush_wal()                        # 落 replication_log（M2/A5 解耦）
         lsn5 = _max_lsn(store)
         mgr.push_snapshot(replica, db_path=store.path)
         mgr.push_pending(replica)
 
         # 再写 5 篇
         _write_docs(store, 5, start=6)
+        store.flush_wal()
         mgr.push_snapshot(replica, db_path=store.path)
         mgr.push_pending(replica)
 
@@ -770,10 +782,12 @@ def test_ssh_replica_multiversion_and_pitr_fake_transport():
 
         # 两份多版本快照（边界 lsn 以实际计），且 WAL 全量保留
         _write_docs(store, 5, start=1)
+        store.flush_wal()                        # 落 replication_log（M2/A5 解耦）
         lsn5 = _max_lsn(store)
         mgr.push_snapshot(replica, db_path=store.path)
         mgr.push_pending(replica)
         _write_docs(store, 5, start=6)
+        store.flush_wal()
         mgr.push_snapshot(replica, db_path=store.path)
         mgr.push_pending(replica)
 

@@ -1,6 +1,7 @@
 import sqlite3
 import hashlib
 import json
+import logging
 import os
 import threading
 import time
@@ -79,13 +80,24 @@ class Store:
             "CREATE TABLE IF NOT EXISTS lsn_seq(seq INTEGER NOT NULL)")
         if self.conn.execute("SELECT COUNT(*) FROM lsn_seq").fetchone()[0] == 0:
             self.conn.execute("INSERT INTO lsn_seq(seq) VALUES(0)")
+        # WAL 暂存表：触发器只写此轻量表（与主写入同事务、几乎不失败），
+        # 由 WalFlusher 在独立连接上 best-effort 落 replication_log（M2/A5 解耦）。
+        self.conn.execute("""
+        CREATE TABLE IF NOT EXISTS wal_staging(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            op TEXT, table_name TEXT, row_id TEXT,
+            payload TEXT, at TEXT)""")
         self._migrate()
         self.conn.commit()
         # WAL 模式：允许并发读/写，避免 delete 模式的读写锁互相阻塞
         self.conn.execute("PRAGMA journal_mode=WAL")
         # documents 复制触发器（仅 Primary 自动记账；备机回放前关 recursive_triggers）
-        from .replication import install_triggers
+        from .replication import install_triggers, WalFlusher
         install_triggers(self.conn, "documents", pk="canonical_id")
+        # WAL 解耦：暂存表由后台 flusher best-effort 落盘（M2/A5）
+        self.wal_flusher = WalFlusher(self)
+        if self.path != ":memory:":
+            self.wal_flusher.start()
 
     def _migrate(self):
         cols = {r["name"] for r in self.conn.execute("PRAGMA table_info(documents)")}
@@ -132,6 +144,34 @@ class Store:
                     self.store._lock.release()
                 return False
         return _Tx(self)
+
+    def flush_wal(self):
+        """同步刷盘：将 wal_staging 暂存行落 replication_log（测试/关闭前调用）。
+
+        后台 flusher 线程已在持续刷盘；此方法用于确定性断言与优雅关闭。
+        """
+        if getattr(self, "wal_flusher", None) is not None:
+            self.wal_flusher.flush()
+
+    def close(self):
+        """优雅关闭：停 flusher、末次刷盘、关连接。"""
+        flusher = getattr(self, "wal_flusher", None)
+        if flusher is not None:
+            try:
+                flusher.stop()
+                flusher.flush()
+            except Exception:
+                pass
+        try:
+            self.conn.close()
+        except Exception:
+            pass
+
+    def __del__(self):
+        try:
+            self.close()
+        except Exception:
+            pass
 
     def _replicate(self, op: str, table: str, row_id: str, payload: dict):
         """P0a：复制改由 DB 触发器自动记账（仅 Primary 安装，见 replication.install_triggers）。
@@ -513,8 +553,13 @@ def make_snapshot_db(src_conn, dst_path: str):
 
     # 将 WAL checkpoint 到主 DB，确保快照包含全部已提交数据
     # 注意：FULL 会阻塞等待，TRUNCATE 会重置 WAL（可能影响 vec0 虚表），
-    # 用 PASSIVE 只 checkpoint 已完成的帧，不等待活跃读事务
-    src_conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
+    # 用 PASSIVE 只 checkpoint 已完成的帧，不等待活跃读事务。
+    # best-effort：并发写事务（如 WalFlusher 独立连接的 BEGIN）可能短暂持锁，
+    # 导致 SQLITE_LOCKED/BUSY；checkpoint 失败不阻断快照（已提交数据仍可读）。
+    try:
+        src_conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
+    except Exception as e:  # pragma: no cover - 依赖/并发边界
+        logging.warning("[snapshot] wal_checkpoint 跳过（并发锁，已提交数据仍纳入快照）: %s", e)
 
     if os.path.exists(dst_path):
         os.remove(dst_path)
@@ -530,7 +575,7 @@ def make_snapshot_db(src_conn, dst_path: str):
         # - lsn_seq：全局 lsn 分配器；备机恢复应自起 lsn（各自 epoch），拷贝会令
         #   恢复库 lsn_seq 与主库对齐，后续升主可能产生重复/错乱 lsn。
         # - ha_state：节点角色/复制锁等本机状态，备机须保留自身状态。
-        _EXCLUDE_TABLES = {"ha_state", "replication_log", "lsn_seq"}
+        _EXCLUDE_TABLES = {"ha_state", "replication_log", "lsn_seq", "wal_staging"}
 
         def _is_virtual(name):
             if name in _EXCLUDE_TABLES:

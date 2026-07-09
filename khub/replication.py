@@ -13,6 +13,7 @@ import json
 import logging
 import os
 import shutil
+import sqlite3
 import subprocess
 import tempfile
 import threading
@@ -314,18 +315,16 @@ class LocalFileReplica(ReplicaTarget):
 
 
 def manual_record_change(store, op: str, table: str, row_id: str, payload_json: str):
-    """手动补记一条变更（非主路径），复用 lsn_seq 分配器，须在事务内调用。
+    """手动补记一条变更（非主路径），写入 `wal_staging`，由 WalFlusher 落盘。
 
-    P0a 主路径已由 DB 触发器（install_triggers）自动记账，此处仅用于
-    触发器覆盖不到的角落场景。与业务写入同源可比。
+    P0a 主路径已由 DB 触发器（install_triggers）自动记账。此处仅用于触发器覆盖
+    不到的角落场景，与触发器统一走 `wal_staging` → replication_log 解耦路径。
     """
-    from .db import next_lsn
-    lsn = next_lsn(store.conn)
     at = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())
     store.conn.execute(
-        "INSERT INTO replication_log(lsn, op, table_name, row_id, payload, at) "
-        "VALUES(?,?,?,?,?,?)",
-        (lsn, op, table, str(row_id), payload_json, at))
+        "INSERT INTO wal_staging(op, table_name, row_id, payload, at) "
+        "VALUES(?,?,?,?,?)",
+        (op, table, str(row_id), payload_json, at))
 
 
 # 兼容别名（原 record_change，已改名）。既有测试/调用方继续可用。
@@ -390,12 +389,13 @@ def install_triggers(conn, table: str, pk: str = None):
     for op in ("insert", "update", "delete"):
         ref = "NEW" if op != "delete" else "OLD"
         trigger_name = f"khub_rpl_{table}_{op}"
+        # 触发器只写轻量 wal_staging（与主写入同事务、几乎不失败）。
+        # replication_log + lsn 由 WalFlusher 在独立连接上 best-effort 落盘，
+        # 从而 WAL 写失败仅告警、绝不回滚业务写（M2/A5：解耦）。
         body = (
-            "UPDATE lsn_seq SET seq=seq+1; "
-            f"INSERT INTO replication_log(lsn, op, table_name, row_id, payload, at) "
-            f"VALUES((SELECT seq FROM lsn_seq), '{op}', '{table}', "
-            f"CAST({ref}.{pk} AS TEXT), {payload_expr(ref)}, "
-            f"strftime('%Y-%m-%dT%H:%M:%S','now'));"
+            f"INSERT INTO wal_staging(op, table_name, row_id, payload, at) "
+            f"VALUES('{op}', '{table}', CAST({ref}.{pk} AS TEXT), "
+            f"{payload_expr(ref)}, strftime('%Y-%m-%dT%H:%M:%S','now'));"
         )
         # WHEN 守卫：回放（备机）期间设置 ha_state.__replay_lock='1'，
         # 触发器整体跳过 → 备机回放不二次写本机 replication_log。
@@ -422,6 +422,101 @@ def install_all_triggers(store):
         if table in existing:
             install_triggers(store.conn, table, pk=pk)
     TRIGGERS_INSTALLED = True
+
+
+# ── WAL 解耦：暂存表 best-effort 异步刷盘（M2/A5） ───────────────────────────
+class WalFlusher:
+    """把 `wal_staging` 暂存行 best-effort 落盘到 `replication_log` + `lsn_seq`。
+
+    业务写只在主事务写轻量 `wal_staging`（几乎不失败），WAL 持久化由此对象在
+    **独立连接**（文件库）或主连接（:memory:）上完成。任一失败仅 `logging.warning`，
+    绝不回滚业务写 → 满足「WAL 写失败仅告警不阻塞主事务」。WAL 变最终一致，
+    缺口由快照/PITR 兜底（明确取舍）。
+
+    - 文件库：daemon 线程按 POLL 周期刷盘，使用独立连接（不阻塞业务连接）。
+    - :memory:：不启后台线程（独立 :memory: 连接是空库），靠显式 `store.flush_wal()` 驱动。
+    """
+
+    BATCH = 200
+    POLL = 0.2
+
+    def __init__(self, store):
+        self.store = store
+        self._lock = threading.Lock()
+        self._stop = False
+        self._thread = None
+        self._conn = None
+        if store.path != ":memory:":
+            try:
+                self._conn = sqlite3.connect(
+                    store.path, check_same_thread=False, isolation_level=None)
+                self._conn.row_factory = sqlite3.Row
+            except Exception as e:  # pragma: no cover - 依赖/路径问题
+                logging.warning("[wal] 无法建立独立刷盘连接，WAL 暂不落盘: %s", e)
+                self._conn = None
+
+    def _conn_for(self):
+        # :memory: 复用主连接；文件库用独立连接（避免阻塞业务事务）
+        return self._conn if self._conn is not None else self.store.conn
+
+    def start(self):
+        if self._thread is not None or self.store.path == ":memory:":
+            return
+        self._stop = False
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def stop(self):
+        self._stop = True
+        if self._thread is not None:
+            self._thread.join(timeout=1.0)
+            self._thread = None
+
+    def _run(self):
+        while not self._stop:
+            try:
+                self.flush()
+            except Exception as e:  # pragma: no cover - 防御性
+                logging.warning("[wal] 刷盘循环异常: %s", e)
+            # 分段休眠，便于快速响应 stop
+            for _ in range(int(self.POLL / 0.05)):
+                if self._stop:
+                    break
+                time.sleep(0.05)
+
+    def flush(self):
+        """将一批 wal_staging 落 replication_log（独立事务，失败仅告警）。"""
+        with self._lock:
+            from .db import next_lsn
+            conn = self._conn_for()
+            try:
+                rows = conn.execute(
+                    "SELECT id, op, table_name, row_id, payload, at "
+                    "FROM wal_staging ORDER BY id LIMIT ?", (self.BATCH,)).fetchall()
+            except Exception:
+                return
+            if not rows:
+                return
+            try:
+                conn.execute("BEGIN")
+                for r in rows:
+                    lsn = next_lsn(conn)
+                    conn.execute(
+                        "INSERT INTO replication_log(lsn, op, table_name, row_id, payload, at) "
+                        "VALUES(?,?,?,?,?,?)",
+                        (lsn, r["op"], r["table_name"], r["row_id"],
+                         r["payload"], r["at"]))
+                ids = [r["id"] for r in rows]
+                conn.execute(
+                    "DELETE FROM wal_staging WHERE id IN (%s)"
+                    % ",".join("?" * len(ids)), ids)
+                conn.execute("COMMIT")
+            except Exception as e:
+                try:
+                    conn.execute("ROLLBACK")
+                except Exception:
+                    pass
+                logging.warning("[wal] 刷盘失败（仅告警，不阻塞业务写）: %s", e)
 
 
 # ── 回放（分发表 + 幂等 + 未知表隔离） ───────────────────────────────────────
