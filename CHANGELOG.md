@@ -1,5 +1,25 @@
 # 变更日志
 
+## [0.2.2] — 2026-07-09
+
+### HA/DR：WAL 解耦落地（M2/A5）与收尾清理
+
+#### WAL 解耦（设计 §6 / M2 / A5）
+- 业务写只写轻量 `wal_staging`（与主事务同提交、几乎不失败），由 `WalFlusher` 在独立连接上 best-effort 落 `replication_log` + `lsn_seq`；WAL 写失败仅 `logging.warning`，**绝不回滚业务写**，满足「WAL 写失败不阻塞主事务」。
+- 文件库：`WalFlusher` 启 daemon 线程按 0.2s 轮询刷盘（独立连接，不阻塞业务连接）；`:memory:` 不启后台线程，靠显式 `store.flush_wal()` 驱动（测试/关闭前）。
+- 触发器（Primary）与 `manual_record_change`（补记）统一走 `wal_staging` → `replication_log` 解耦路径，WAL 变最终一致，缺口由快照/PITR 兜底（明确取舍）。
+
+#### 修复
+- 修复 `replication.py` 漏 `import sqlite3`，导致文件库独立刷盘连接建立失败（WAL 不落盘）。
+- `make_snapshot_db` 的 `PRAGMA wal_checkpoint(PASSIVE)` 改为 best-effort：并发 flusher 写事务持锁（`SQLITE_LOCKED`）不再阻断快照。
+- 8 个测试在业务写后读 `replication_log` 未 `flush_wal()`，补显式刷盘以确定性断言。
+
+#### 清理
+- 删除 dead `Store._replicate`（触发器自动记账已替代，无残留双记）。
+
+#### 测试
+- 全测试 **184 passed / 2 skipped**（`tests/`，含 `test_ha.py` 31 passed）。
+
 ## [0.2.1] — 2026-07-09
 
 ### 修复（M1 代码评审）

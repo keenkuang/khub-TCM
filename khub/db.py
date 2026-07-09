@@ -173,14 +173,6 @@ class Store:
         except Exception:
             pass
 
-    def _replicate(self, op: str, table: str, row_id: str, payload: dict):
-        """P0a：复制改由 DB 触发器自动记账（仅 Primary 安装，见 replication.install_triggers）。
-
-        保留此接口为 no-op，避免任何残留双记；手动补记路径见
-        replication.manual_record_change（同样复用 lsn_seq）。
-        """
-        return
-
     def store_document(self, doc: CanonicalDoc, parent_version: Optional[int] = None) -> int:
         with self._lock:
             cur = self.conn

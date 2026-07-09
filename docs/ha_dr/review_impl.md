@@ -54,21 +54,22 @@
 > 落地依据：vFinal.3 + 上述决策。P0 先交付 **P0a（真 MVP）**，再 **P0b**。
 
 **P0a — 本地副本 + 多版本快照 + 恢复校验（防误删）**
-- [ ] `db.py`：`replication_log` 加 `lsn` 列；新增 `lsn_seq` 表与 `next_lsn()`（同事务，按 I6 解耦分配）。
-- [ ] `replication.py`：`record_change`→`manual_record_change`（内联 lsn）。
-- [ ] `replication.py`：新增 `install_triggers(conn, table)`（取列 / `json_object` / BLOB `base64`），挂入各域 `init()`；加 `TRIGGERS_INSTALLED` 过渡开关。
-- [ ] 删除 5 处手动 `_replicate` 调用（过渡期开关保护）。
-- [ ] `replication.py`：`register_replayer`（`threading.Lock` + 导入期注册 + `UnknownTableError` 隔离）；`apply_changes`→`replay_from`（按 lsn 排序 / 幂等 UPSERT / 隔离未知表）。
+- [x] `db.py`：`replication_log` 加 `lsn` 列；新增 `lsn_seq` 表与 `next_lsn()`（同事务，按 I6 解耦分配）。
+- [x] `replication.py`：`record_change`→`manual_record_change`（内联 lsn）。
+- [x] `replication.py`：新增 `install_triggers(conn, table)`（取列 / `json_object` / BLOB `base64`），挂入各域 `init()`；加 `TRIGGERS_INSTALLED` 过渡开关。
+- [x] 删除 5 处手动 `_replicate` 调用（过渡期开关保护）；`0.2.2` 进一步删除 dead `Store._replicate`。
+- [x] `replication.py`：`register_replayer`（`threading.Lock` + 导入期注册 + `UnknownTableError` 隔离）；`apply_changes`→`replay_from`（按 lsn 排序 / 幂等 UPSERT / 隔离未知表）。
 - [x] `ReplicationManager.push_snapshot`：`conn.backup`→ATTACH 逐表 `INSERT…SELECT` 跳过 `ha_state` / `replication_log` / `lsn_seq`（见 `db.make_snapshot_db`，由 `_EXCLUDE_TABLES` 控制）；`export_snapshot` 表清单补全（embeddings/vec_meta/files/ebook_meta/attachments/sync_states）。
-- [ ] `LocalFileReplica`：多版本快照保留最近 N 份。
-- [ ] 新增 `khub dr verify`（integrity_check + 行数 + lsn + FTS 抽样 + manifest）+ `dr status`/`dr init`/`dr restore --to`。
-- [ ] §13 五条单测落地（同事务落 log / 备机不重入 / 幂等 / 未知表隔离 / tick 全转换）。
+- [x] `LocalFileReplica`：多版本快照保留最近 N 份。
+- [x] 新增 `khub dr verify`（integrity_check + 行数 + lsn + FTS 抽样 + manifest）+ `dr status`/`dr init`/`dr restore --to`。
+- [x] §13 五条单测落地（同事务落 log / 备机不重入 / 幂等 / 未知表隔离 / tick 全转换）。
+- [x] **WAL 解耦（M2/A5，`0.2.2`）**：业务写只写 `wal_staging`，`WalFlusher` 独立连接 best-effort 落 `replication_log`；WAL 写失败仅告警不阻塞业务写。
 
 **P0b — 异地灾备 + PITR（防机器坏/勒索）**
-- [ ] `SshReplica`（SFTP put 临时名 + rename 原子替换；凭证走 `SSH_AUTH_SOCK`/600）。
-- [ ] WAL 保留策略（I5）：保留全量 WAL 历史 + 归档窗口，支撑 PITR。
-- [ ] PITR：`replay_from` 回放至 `lsn<=target`（语句级容忍半事务），附用户剧本（高级项）。
-- [ ] CLI 警示：区分"本地副本"与"异地灾备"，`dr init` 提示机器归属与每季演练。
+- [x] `SshReplica`（SFTP put 临时名 + rename 原子替换；凭证走 `SSH_AUTH_SOCK`/600）。
+- [~] WAL 保留策略（I5）：保留全量 WAL 历史已实现（支撑 PITR）；**归档窗口（按保留份数/时长清理旧 WAL）未做**——当前以「保留全量」换取 PITR 完整，磁盘增长为已知取舍（见 `replication.py` 注释）。
+- [x] PITR：`replay_from` 回放至 `lsn<=target`（语句级容忍半事务），附用户剧本（高级项）。
+- [x] CLI 警示：区分"本地副本"与"异地灾备"，`dr init` 提示机器归属与每季演练。
 
-**P1（双机热备，后续）**
-- [ ] `FailoverController` + `tick()->Decision` + 双故障域 + 写租约 + `reconcile` + `resolve_split_brain` + `--self-test` + `ha status`/告警/剧本 + `S3Replica`。
+**P1（双机热备）**
+- [x] `FailoverController` + `tick()->Decision` + 双故障域 + 写租约 + `reconcile` + `resolve_split_brain` + `--self-test` + `ha status`/告警/剧本 + `S3Replica`（均已在 `khub/ha/` 落地，`test_ha.py` 31 passed）。
