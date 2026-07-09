@@ -246,10 +246,13 @@ def main(argv=None):
         serve(store, lib, args.host, args.port)
     elif args.cmd == "query":
         q = " ".join(args.keywords)
-        for doc_id, title, snip in store.search(q):
+        hits, total = store.search(q)
+        for doc_id, title, snip in hits:
             print(f"{doc_id}\t{title}")
             if snip:
                 print(f"  {snip}")
+        if not hits:
+            print(f"无结果（共 {total} 篇文档）")
     elif args.cmd == "exam-gen":
         q = generate(args.topic, source_doc=args.source_doc)
         print(q.stem)
