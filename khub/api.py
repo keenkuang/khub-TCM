@@ -21,13 +21,13 @@ class App:
         self.library = library
         self._started = time.time()
 
-    def dispatch(self, method: str, raw_path: str, body: Optional[dict] = None):
+    def dispatch(self, method: str, raw_path: str, body: Optional[dict] = None,
+                 auth_header: str = ""):
         # 写操作鉴权（可选，由 KHUB_API_TOKEN 环境变量控制）
         if method in ("POST", "PUT", "DELETE"):
             token = os.environ.get("KHUB_API_TOKEN")
             if token:
-                auth = getattr(self, '_auth_header', '')
-                if auth != f"Bearer {token}":
+                if auth_header != f"Bearer {token}":
                     return 401, {"error": "unauthorized"}
         parsed = urlparse(raw_path)
         path = parsed.path
@@ -412,9 +412,9 @@ def make_handler(app: App):
             self.wfile.write(data)
 
         def do_GET(self):
-            app._auth_header = self.headers.get("Authorization", "")
             try:
-                res = app.dispatch("GET", self.path)
+                res = app.dispatch("GET", self.path,
+                                   auth_header=self.headers.get("Authorization", ""))
                 if len(res) == 3:
                     code, obj, ctype = res
                 else:
@@ -424,7 +424,6 @@ def make_handler(app: App):
             self._send(code, obj, ctype)
 
         def do_POST(self):
-            app._auth_header = self.headers.get("Authorization", "")
             length = int(self.headers.get("Content-Length", 0) or 0)
             raw = self.rfile.read(length) if length else b"{}"
             try:
@@ -432,7 +431,8 @@ def make_handler(app: App):
             except json.JSONDecodeError:
                 return self._send(400, {"error": "bad json"})
             try:
-                res = app.dispatch("POST", self.path, body)
+                res = app.dispatch("POST", self.path, body,
+                                   auth_header=self.headers.get("Authorization", ""))
                 if len(res) == 3:
                     code, obj, ctype = res
                 else:
@@ -442,7 +442,6 @@ def make_handler(app: App):
             self._send(code, obj, ctype)
 
         def do_PUT(self):
-            app._auth_header = self.headers.get("Authorization", "")
             length = int(self.headers.get("Content-Length", 0) or 0)
             raw = self.rfile.read(length) if length else b"{}"
             try:
@@ -450,7 +449,8 @@ def make_handler(app: App):
             except json.JSONDecodeError:
                 return self._send(400, {"error": "bad json"})
             try:
-                res = app.dispatch("PUT", self.path, body)
+                res = app.dispatch("PUT", self.path, body,
+                                   auth_header=self.headers.get("Authorization", ""))
                 if len(res) == 3:
                     code, obj, ctype = res
                 else:
@@ -460,7 +460,6 @@ def make_handler(app: App):
             self._send(code, obj, ctype)
 
         def do_DELETE(self):
-            app._auth_header = self.headers.get("Authorization", "")
             length = int(self.headers.get("Content-Length", 0) or 0)
             raw = self.rfile.read(length) if length else b"{}"
             try:
@@ -468,7 +467,8 @@ def make_handler(app: App):
             except json.JSONDecodeError:
                 return self._send(400, {"error": "bad json"})
             try:
-                res = app.dispatch("DELETE", self.path, body)
+                res = app.dispatch("DELETE", self.path, body,
+                                   auth_header=self.headers.get("Authorization", ""))
                 if len(res) == 3:
                     code, obj, ctype = res
                 else:

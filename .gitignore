@@ -10,3 +10,4 @@ pii.key
 desktop/node_modules/
 ssl/
 .CODE.xcconfig
+*.egg-info/
