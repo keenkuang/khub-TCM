@@ -177,7 +177,7 @@ class TestHandlerSSEUnit:
         from khub.api import make_handler, App
         from khub.db import Store
         from khub.storage import ManagedLibrary
-        from unittest.mock import MagicMock
+        from unittest.mock import MagicMock, patch
         import io
 
         store = Store()
@@ -196,7 +196,7 @@ class TestHandlerSSEUnit:
         handler.send_header = lambda k, v: None
         handler.end_headers = lambda: None
 
-        # Mock RAGEngine.ask_stream
+        # Mock RAGEngine.ask_stream 使用 patch.object
         from khub.llm.rag import RAGEngine
         mock_stream = [
             {"event": "sources", "data": {"sources": [{"id": "d1", "title": "Doc", "score": 0.9, "snippet": "..."}]}},
@@ -204,26 +204,11 @@ class TestHandlerSSEUnit:
             {"event": "token", "data": {"token": "案"}},
             {"event": "done", "data": {"finish_reason": "stop"}},
         ]
-        original_init = RAGEngine.__init__
-        original_stream = RAGEngine.ask_stream
 
-        def mock_init(self, store, **kw):
-            self.store = store
-            self.retriever = None
-            self.llm = None
-
-        def mock_ask_stream(self, q, k=5):
-            return iter(mock_stream)
-
-        RAGEngine.__init__ = mock_init
-        RAGEngine.ask_stream = mock_ask_stream
-        try:
+        with patch.object(RAGEngine, 'ask_stream', return_value=iter(mock_stream)):
             handler._send_sse({"question": "什么？", "k": 3, "stream": True})
             output = handler.wfile.getvalue().decode("utf-8")
             events = _parse_sse(output)
             assert len(events) == 4
             assert events[0]["event"] == "sources"
             assert events[-1]["event"] == "done"
-        finally:
-            RAGEngine.__init__ = original_init
-            RAGEngine.ask_stream = original_stream

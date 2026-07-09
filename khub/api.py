@@ -544,8 +544,10 @@ def make_handler(app: App):
                 return self._send(400, {"error": "question 必填"})
             if len(question) > 2000:
                 return self._send(400, {"error": "question 超过 2000 字符上限"})
-            k = int(body.get("k", 5))
-            k = max(1, min(k, 20))
+            k = body.get("k", 5)
+            if not isinstance(k, (int, float)):
+                k = 5
+            k = max(1, min(int(k), 20))
 
             from .llm.rag import RAGEngine
             engine = RAGEngine(app.store)
@@ -555,6 +557,7 @@ def make_handler(app: App):
             self.send_header("Cache-Control", "no-cache")
             self.send_header("Connection", "keep-alive")
             self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("X-Accel-Buffering", "no")
             self.end_headers()
 
             try:
@@ -601,6 +604,16 @@ def make_handler(app: App):
             except Exception as e:  # noqa: BLE001
                 return self._send(500, {"error": str(e)})
             self._send(code, obj, ctype)
+
+        def do_OPTIONS(self):
+            """CORS preflight 处理。"""
+            self.send_response(204)
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Access-Control-Allow-Methods",
+                             "GET, POST, PUT, DELETE, OPTIONS")
+            self.send_header("Access-Control-Allow-Headers",
+                             "Content-Type, Authorization")
+            self.end_headers()
 
         def do_PUT(self):
             length = int(self.headers.get("Content-Length", 0) or 0)

@@ -169,16 +169,39 @@ class TestAsk:
         engine = RAGEngine(s, retriever=ret, llm=llm)
         engine.ask("什么汤？", k=5)
         assert llm.complete.call_count == 1
-        # 验证 prompt 包含了 question 和文档内容
         prompt_arg = llm.complete.call_args[0][0]
         assert "什么汤？" in prompt_arg
+
+    def test_ask_empty_question(self):
+        """空问题应返回空结果。"""
+        s = _make_store_with_docs()
+        llm = _make_fake_llm()
+        engine = RAGEngine(s, llm=llm)
+        answer, sources = engine.ask("")
+        assert answer == ""
+        assert sources == []
+
+    def test_ask_llm_failure(self):
+        """LLM 抛异常时返回友好错误消息，不抛到调用方。"""
+        s = _make_store_with_docs()
+        ret = MagicMock(spec=Retriever)
+        ret.search_similar.return_value = [("doc-001", 0.9)]
+        bad_llm = MagicMock(spec=LLMProvider)
+        bad_llm.complete.side_effect = RuntimeError("API挂了")
+        engine = RAGEngine(s, retriever=ret, llm=bad_llm)
+        answer, sources = engine.ask("什么汤？", k=5)
+        assert "生成失败" in answer
+        assert len(sources) == 1
+        assert bad_llm.complete.call_count == 1
 
 
 class TestAskStream:
     def test_stream_events_sequence(self):
         s = _make_store_with_docs()
         llm = _make_fake_llm()
-        engine = RAGEngine(s, llm=llm)
+        ret = MagicMock(spec=Retriever)
+        ret.search_similar.return_value = [("doc-001", 0.95)]
+        engine = RAGEngine(s, retriever=ret, llm=llm)
         events = list(engine.ask_stream("什么汤？", k=5))
         # 事件顺序：sources → token... → done
         assert events[0]["event"] == "sources"
@@ -190,8 +213,10 @@ class TestAskStream:
     def test_stream_empty_llm(self):
         """NoOpProvider 的 complete_stream 不 yield token。"""
         s = _make_store_with_docs()
+        ret = MagicMock(spec=Retriever)
+        ret.search_similar.return_value = [("doc-001", 0.9)]
         from khub.llm import NoOpProvider
-        engine = RAGEngine(s, llm=NoOpProvider())
+        engine = RAGEngine(s, retriever=ret, llm=NoOpProvider())
         events = list(engine.ask_stream("什么汤？", k=5))
         assert events[0]["event"] == "sources"
         assert events[-1]["event"] == "done"
@@ -201,10 +226,33 @@ class TestAskStream:
     def test_stream_error_handling(self):
         """LLM complete_stream 抛异常时 yield error 事件。"""
         s = _make_store_with_docs()
+        ret = MagicMock(spec=Retriever)
+        ret.search_similar.return_value = [("doc-001", 0.9)]
         bad_llm = MagicMock(spec=LLMProvider)
         bad_llm.complete_stream.side_effect = RuntimeError("LLM挂了")
-        engine = RAGEngine(s, llm=bad_llm)
+        engine = RAGEngine(s, retriever=ret, llm=bad_llm)
         events = list(engine.ask_stream("什么汤？", k=5))
         assert events[0]["event"] == "sources"
         assert events[-1]["event"] == "error"
         assert "LLM挂了" in events[-1]["data"]["error"]
+
+    def test_stream_retrieval_failure(self):
+        """retriever 抛异常时 yield error 事件，不传播。"""
+        s = _make_store_with_docs()
+        ret = MagicMock(spec=Retriever)
+        ret.search_similar.side_effect = RuntimeError("DB挂了")
+        engine = RAGEngine(s, retriever=ret)
+        events = list(engine.ask_stream("什么汤？", k=5))
+        assert events[0]["event"] == "error"
+        assert "检索" in events[0]["data"]["error"]
+
+    def test_stream_special_chars(self):
+        """问题和文档含 {} 不崩溃。"""
+        s = _make_store_with_docs()
+        ret = MagicMock(spec=Retriever)
+        ret.search_similar.return_value = [("doc-001", 0.9)]
+        llm = _make_fake_llm()
+        engine = RAGEngine(s, retriever=ret, llm=llm)
+        events = list(engine.ask_stream("{hello} {world} {x: y}", k=5))
+        assert events[0]["event"] == "sources"
+        assert events[-1]["event"] == "done"

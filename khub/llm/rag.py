@@ -15,12 +15,16 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Generator, Optional
 
 from ..db import Store
 from ..llm import get_provider
 from ..retrieval import Retriever
 
+logger = logging.getLogger("khub.rag")
+
+# 使用 .replace() 替代 .format()，避免文档/问题中含 {} 时抛 KeyError
 PROMPT_TEMPLATE = """你是一个知识问答助手。请根据以下参考文档，用中文回答用户的问题。
 
 如果参考文档不足以回答，请如实说"资料中未找到相关信息"，不要编造。
@@ -45,11 +49,17 @@ class RAGEngine:
 
     def ask(self, question: str, k: int = 5) -> tuple[str, list[dict]]:
         """非流式 RAG 管道。返回 (answer_text, sources_list)。"""
+        if not question or not question.strip():
+            return "", []
         hits = self.retriever.search_similar(question, k=k)
         sources = self._fetch_sources(hits)
         context = self._assemble_context(sources)
         prompt = self._build_prompt(question, context)
-        answer = self.llm.complete(prompt, temperature=0.3)
+        try:
+            answer = self.llm.complete(prompt, temperature=0.3)
+        except Exception as exc:
+            logger.error("LLM complete failed: %s", exc)
+            answer = f"（回答生成失败：{exc}）"
         return answer, sources
 
     def ask_stream(self, question: str, k: int = 5) -> Generator[dict, None, None]:
@@ -61,16 +71,21 @@ class RAGEngine:
             {"event": "done",     "data": {"finish_reason": "stop"}}
             {"event": "error",    "data": {"error": "..."}}
         """
-        hits = self.retriever.search_similar(question, k=k)
-        sources = self._fetch_sources(hits)
-        yield {"event": "sources", "data": {"sources": sources}}
-
-        context = self._assemble_context(sources)
-        prompt = self._build_prompt(question, context)
+        try:
+            hits = self.retriever.search_similar(question, k=k)
+            sources = self._fetch_sources(hits)
+            yield {"event": "sources", "data": {"sources": sources}}
+            context = self._assemble_context(sources)
+            prompt = self._build_prompt(question, context)
+        except Exception as exc:
+            logger.error("RAG retrieval/assembly failed: %s", exc)
+            yield {"event": "error", "data": {"error": f"检索/组装失败：{exc}"}}
+            return
         try:
             for token in self.llm.complete_stream(prompt, temperature=0.3):
                 yield {"event": "token", "data": {"token": token}}
         except Exception as exc:
+            logger.error("LLM stream failed: %s", exc)
             yield {"event": "error", "data": {"error": str(exc)}}
             return
         yield {"event": "done", "data": {"finish_reason": "stop"}}
@@ -78,7 +93,10 @@ class RAGEngine:
     # ── 辅助方法 ──────────────────────────────────────────────────────────
 
     def _fetch_sources(self, hits: list[tuple[str, float]]) -> list[dict]:
-        """将 [(doc_id, score)] 转换为包含标题和摘要的富来源列表。"""
+        """将 [(doc_id, score)] 转换为包含标题、摘要和全文内容的富来源列表。
+
+        `_content` 字段供 `_assemble_context` 复用，避免重复查库。
+        """
         sources = []
         for doc_id, score in hits:
             doc = self.store.get_document(doc_id)
@@ -94,16 +112,18 @@ class RAGEngine:
                 "title": doc["title"] if doc else doc_id,
                 "score": round(score, 4),
                 "snippet": snippet,
+                "_content": content,  # 内部复用，不暴露给 API 响应
             })
         return sources
 
     def _assemble_context(self, sources: list[dict], max_chars: int = 6000) -> str:
         """将多篇文档拼成 LLM context 文本。按相似度降序排列，分层截断。"""
-        per_doc = max(400, max_chars // max(len(sources), 1))
+        if not sources:
+            return ""
+        per_doc = max(400, max_chars // len(sources))
         parts = []
         for src in sources:
-            vers = self.store.get_versions(src["id"])
-            content = vers[-1]["content"] if vers else ""
+            content = src.get("_content", "")  # 复用 _fetch_sources 已取内容
             truncated = content[:per_doc].strip()
             parts.append(
                 f"--- 文档：{src['title']} (相似度: {src['score']}) ---\n"
@@ -113,4 +133,7 @@ class RAGEngine:
 
     @staticmethod
     def _build_prompt(question: str, context: str) -> str:
-        return PROMPT_TEMPLATE.format(question=question, context=context)
+        """使用 str.replace 避免文档/问题中 {} 导致 KeyError。"""
+        return (PROMPT_TEMPLATE
+                .replace("{context}", context)
+                .replace("{question}", question))

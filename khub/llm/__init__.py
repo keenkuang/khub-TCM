@@ -1,8 +1,11 @@
 import json
+import logging
 import os
 import urllib.error
 import urllib.request
 from typing import Generator, Optional, Protocol, runtime_checkable
+
+logger = logging.getLogger("khub.llm")
 
 
 @runtime_checkable
@@ -28,9 +31,9 @@ class NoOpProvider:
         return ""
 
     def complete_stream(self, prompt: str, **kwargs) -> Generator[str, None, None]:
-        """流式占位：不 yield 任何值。"""
-        if False:
-            yield ""
+        """流式占位：空 generator（不 yield 任何值）。"""
+        return
+        yield  # 使函数成为 generator 函数
 
     def embed(self, text: str) -> list[float]:
         return []
@@ -65,10 +68,15 @@ class RemoteLLMProvider:
             with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                 payload = json.loads(resp.read().decode("utf-8"))
         except urllib.error.URLError as exc:
+            logger.error("LLM request failed: %s", exc)
             raise
-        except Exception as exc:
+        except (json.JSONDecodeError, OSError) as exc:
+            logger.error("LLM response invalid: %s", exc)
             raise
-        return str(payload["choices"][0]["message"]["content"])
+        choices = payload.get("choices", [])
+        if not choices:
+            raise RuntimeError(f"LLM returned no choices: {payload}")
+        return str(choices[0].get("message", {}).get("content", ""))
 
     def complete_stream(self, prompt: str, **kwargs) -> Generator[str, None, None]:
         """流式补全，逐 token yield。使用 SSE 协议解析 /v1/chat/completions 流式响应。"""
@@ -84,19 +92,30 @@ class RemoteLLMProvider:
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
         req = urllib.request.Request(endpoint, data=data, headers=headers, method="POST")
-        with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-            for raw_line in resp:
-                line = raw_line.decode("utf-8", errors="replace").strip()
-                if not line.startswith("data: "):
-                    continue
-                payload = line[6:]
-                if payload.strip() == "[DONE]":
-                    return
-                obj = json.loads(payload)
-                delta = obj.get("choices", [{}])[0].get("delta", {})
-                content = delta.get("content", "")
-                if content:
-                    yield content
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                for raw_line in resp:
+                    line = raw_line.decode("utf-8", errors="replace").strip()
+                    if not line.startswith("data: "):
+                        continue
+                    payload = line[6:]
+                    if payload.strip() == "[DONE]":
+                        return
+                    try:
+                        obj = json.loads(payload)
+                    except json.JSONDecodeError:
+                        logger.warning("SSE 非 JSON 行: %.100s", line)
+                        continue
+                    delta = obj.get("choices", [{}])[0].get("delta", {})
+                    content = delta.get("content", "")
+                    if content:
+                        yield content
+        except urllib.error.URLError as exc:
+            logger.error("LLM stream request failed: %s", exc)
+            raise
+        except OSError as exc:
+            logger.error("LLM stream connection error: %s", exc)
+            raise
 
     def embed(self, text: str) -> list[float]:
         # 向量由独立的 RemoteEmbedder 负责；provider 仅满足协议。
@@ -124,6 +143,7 @@ def get_provider(name: Optional[str] = None) -> LLMProvider:
             )
             register_provider("remote", remote)
             return remote
+        logger.warning("KHUB_LLM_URL 未设置，使用 NoOpProvider（返回空回答）")
         return NoOpProvider()
 
     raise KeyError(f"unknown provider: {name}")
