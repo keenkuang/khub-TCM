@@ -92,6 +92,13 @@ def build_parser():
     pfs.add_argument("--space-id", default="",
                      help="指定知识空间 ID（不指定则遍历所有可访问空间）")
 
+    pi = sub.add_parser("import-legacy", help="导入老问诊系统数据（Excel/HTML）")
+    pi.add_argument("--file", required=True, help="Excel .xlsx 或 HTML 文件路径")
+    pi.add_argument("--sheet", default="0",
+                    help='工作表名或索引（Excel，默认 0=第一张表）')
+    pi.add_argument("--dry-run", action="store_true",
+                    help="仅解析不写入，预览导入结果")
+
     po = sub.add_parser("obsidian-import", help="导入 Obsidian vault（.md 目录）到本地库")
     po.add_argument("vault_path")
     po.add_argument("--no-recursive", dest="recursive", action="store_false", default=True)
@@ -332,6 +339,27 @@ def main(argv=None):
             store.store_document(canonical)
             ingested += 1
         print(f"飞书同步完成：入库 {ingested} 篇")
+    elif args.cmd == "import-legacy":
+        from .importer import LegacyImporter
+        imp = LegacyImporter(store)
+        fpath = args.file
+        dry = args.dry_run
+        if fpath.endswith((".xlsx", ".xls")):
+            try:
+                sheet = int(args.sheet)
+            except ValueError:
+                sheet = args.sheet
+            result = imp.import_excel(fpath, sheet=sheet, dry_run=dry)
+        else:
+            result = imp.import_html(fpath, dry_run=dry)
+        print(f"导入结果{'（预览）' if dry else ''}："
+              f"患者 {result['patients']}，"
+              f"病历 {result['records']}，"
+              f"问诊 {result['consultations']}"
+              f"{'，错误 ' + str(len(result['errors'])) if result['errors'] else ''}")
+        if result["errors"]:
+            for err in result["errors"][:5]:
+                print(f"  ⚠ {err['error']}")
     elif args.cmd == "obsidian-import":
         from .obsidian import import_vault
         ingested, skipped = import_vault(store, args.vault_path, recursive=args.recursive)
