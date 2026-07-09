@@ -157,7 +157,7 @@ class App:
             if fmt == "html":
                 import re as _re
                 safe_tags = r"p|br|b|i|u|em|strong|h[1-6]|ul|ol|li|div|span|pre|code|blockquote|table|tr|td|th|a"
-                content = _re.sub(r"(?s)<(?!\/?(?:" + safe_tags + r")(?:\s[^>]*)?>).*?<", "<", content)
+                content = _re.sub(r"(?s)<(?!\/?(?:" + safe_tags + r")(?:\s[^>]*)?>)[^>]*>", "", content)
                 content = _re.sub(r"(?s)<(script|style|iframe|object|embed|form|input|select|textarea|button|svg|math)[^>]*>.*?</\1>", "", content)
                 content = _re.sub(r'\s+on\w+\s*=\s*["\'][^"\']*["\']', "", content)
                 content = _re.sub(r'\s+on\w+\s*=\S+', "", content)
@@ -194,8 +194,11 @@ class App:
                 updated_at=time.strftime("%Y-%m-%dT%H:%M:%S"),
             )
             version_id = self.store.store_document(doc)
-            # 编辑文档时自动清除冲突标记（新版本写入即表示用户确认）
-            self.store.resolve_conflict(cid, version_id)
+            # 编辑文档时自动清除冲突标记（如有）
+            self.store.conn.execute(
+                "UPDATE documents SET conflict=0 WHERE canonical_id=? AND conflict=1",
+                (cid,))
+            self.store.conn.commit()
             return 200, {"status": "ok", "version_id": version_id}
 
         # POST /documents/{id}/resolve — 解决冲突
