@@ -6,7 +6,6 @@ services:
     volumes:
       - khub-db:/data/db
       - khub-library:/data/library
-      - ./config.yaml:/app/config.yaml:ro
       # SSH agent 转发（可选，用于 SshReplica 远程灾备）
       # - $SSH_AUTH_SOCK:/ssh-agent:ro
       # SSH 密钥挂载（可选，次选方案）
@@ -42,6 +41,9 @@ services:
   nginx:
     image: nginx:alpine
     restart: unless-stopped
+    mem_limit: 128m
+    mem_reservation: 64m
+    cpus: "0.5"
     ports:
       - "80:80"
       - "443:443"
@@ -63,10 +65,10 @@ volumes:
 # 建议用宿主机 crontab 执行每日远程备份：
 #
 #   0 3 * * * cd /home/keen/khub-m1 && docker compose exec -T khub \
-#     python -m khub.cli dr push --replica ssh://user@nas/backups/khub
+#     khub dr push --replica ssh://user@nas/backups/khub
 #
 # 恢复：
-#   docker compose exec khub dr restore \
+#   docker compose exec khub khub dr restore \
 #     --replica ssh://user@nas/backups/khub --to latest --target /data/db/restored.db
 #
 # 更多选项见: khub dr --help 或 docs/disaster_recovery.md

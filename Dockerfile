@@ -9,13 +9,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     dumb-init \
     && rm -rf /var/lib/apt/lists/*
 
-# === 2. 先安装 Python 依赖（缓存层） ===
-# 先装已知的第三方包（全部有 wheel，无需编译）
-# khub 自身的包体（khub/ 目录）在下一层 COPY 后再装
+# === 2. 先预装第三方依赖（缓存层） ===
+# 利用 Docker 分层缓存：只装 wheel 包，不装 khub 自身。
+# 注意：预装仅用于缓存提速，版本约束以 pyproject.toml 为准。
+# 下一层 pip install -e . 会自动补齐/对齐版本。
 WORKDIR /app
 COPY pyproject.toml ./
-RUN pip install --no-cache-dir PyYAML>=6.0 pypdf>=4.0 sqlite-vec>=0.1.9 \
- && pip install --no-cache-dir cryptography boto3
+RUN pip install --no-cache-dir PyYAML pypdf sqlite-vec cryptography boto3
 
 # === 3. 再复制源码并安装 khub ===
 # 改源码只重建此层（依赖层已缓存）
