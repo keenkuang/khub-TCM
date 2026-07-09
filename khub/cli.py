@@ -89,6 +89,8 @@ def build_parser():
     pq.add_argument("--root", default="ROOT", help="起始文件夹 ID（默认用户根目录）")
 
     pfs = sub.add_parser("feishu-sync", help="拉取飞书知识空间文档入库")
+    pfs.add_argument("--space-id", default="",
+                     help="指定知识空间 ID（不指定则遍历所有可访问空间）")
 
     po = sub.add_parser("obsidian-import", help="导入 Obsidian vault（.md 目录）到本地库")
     po.add_argument("vault_path")
@@ -321,7 +323,24 @@ def main(argv=None):
         ingested, skipped = pull_all(store, token, args.root)
         print(f"Quip 同步完成：入库 {ingested}，跳过 {skipped}")
     elif args.cmd == "feishu-sync":
-        print("飞书适配器待实现")
+        from .adapters import create_adapter
+        from .sync_engine import TwoWaySyncEngine
+        adapter = create_adapter("feishu", space_id=args.space_id)
+        raw_docs = adapter.pull()
+        engine = TwoWaySyncEngine(store)
+        items = []
+        for raw in raw_docs:
+            canonical = adapter.normalize(raw)
+            store.store_document(canonical)
+            items.append({
+                "source_id": canonical.canonical_id,
+                "title": canonical.title,
+                "content": canonical.content,
+                "hash": canonical.hash,
+            })
+        result = engine.sync_pull("feishu", items)
+        print(f"飞书同步完成：入库 {result['ingested']} 篇"
+              f"{'，跳过 ' + str(result.get('skipped', 0)) + ' 篇' if result.get('skipped') else ''}")
     elif args.cmd == "obsidian-import":
         from .obsidian import import_vault
         ingested, skipped = import_vault(store, args.vault_path, recursive=args.recursive)
