@@ -23,6 +23,9 @@ def diff_lines(old: str, new: str) -> list[dict]:
     Returns:
         list[dict]: [{"type": "equal"|"insert"|"delete", "content": str, "old_ln": int, "new_ln": int}, ...]
     """
+    # 统一换行符，避免 \r\n 导致误判
+    old = old.replace("\r\n", "\n").replace("\r", "\n")
+    new = new.replace("\r\n", "\n").replace("\r", "\n")
     old_lines = old.splitlines(keepends=True)
     new_lines = new.splitlines(keepends=True)
     return _lcs_diff(old_lines, new_lines)
