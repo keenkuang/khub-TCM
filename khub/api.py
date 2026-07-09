@@ -196,6 +196,28 @@ class App:
                     "format": v.get("format", "plain"),
                 } for v in vers]
 
+            # GET /documents/{id}/diff?v1=X&v2=Y — 版本差异对比
+            if len(parts) >= 2 and parts[1] == "diff":
+                from .diff import diff_lines, diff_to_html
+                v1 = _safe_int(qs.get("v1", [0])[0], 0)
+                v2 = _safe_int(qs.get("v2", [0])[0], 0)
+                if not v1 or not v2:
+                    return 400, {"error": "请指定 v1 和 v2（版本 ID）"}
+                ver1 = self.store.get_version(cid, v1)
+                ver2 = self.store.get_version(cid, v2)
+                if not ver1 or not ver2:
+                    return 404, {"error": "版本不存在"}
+                diff = diff_lines(ver1["content"] or "", ver2["content"] or "")
+                return 200, {
+                    "canonical_id": cid,
+                    "v1": v1, "v2": v2,
+                    "v1_updated": ver1["updated_at"],
+                    "v2_updated": ver2["updated_at"],
+                    "diff": diff,
+                    "diff_html": diff_to_html(diff),
+                    "changes": sum(1 for d in diff if d["type"] != "equal"),
+                }
+
             # GET /documents/{id}
             doc = self.store.get_document(cid)
             if doc is None:
