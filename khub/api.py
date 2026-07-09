@@ -277,6 +277,32 @@ class App:
             hits = Retriever(self.store).search_similar(q, k=k)
             return 200, [{"doc_id": d, "score": round(s, 4)} for d, s in hits]
 
+        # ---- 数据源同步状态 ----
+        if method == "GET" and path == "/sync-status":
+            rows = self.store.conn.execute(
+                "SELECT source_id, MAX(last_sync_at) AS last_sync_at, direction "
+                "FROM sync_states GROUP BY source_id ORDER BY source_id"
+            ).fetchall()
+            import datetime as _dt
+            now = _dt.datetime.now(_dt.timezone.utc).replace(tzinfo=None)
+            results = []
+            for r in rows:
+                last_sync = r["last_sync_at"]
+                recent = False
+                if last_sync:
+                    try:
+                        sync_time = _dt.datetime.fromisoformat(last_sync)
+                        recent = (now - sync_time).total_seconds() < 86400  # 24h
+                    except (ValueError, TypeError):
+                        pass
+                results.append({
+                    "source_id": r["source_id"],
+                    "last_sync_at": last_sync,
+                    "direction": r["direction"],
+                    "recent": recent,
+                })
+            return 200, results
+
         # ---- RAG 问答 ----
         if method == "POST" and path == "/ask":
             from .llm.rag import RAGEngine

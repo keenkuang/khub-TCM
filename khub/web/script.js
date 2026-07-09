@@ -150,6 +150,35 @@ async function loadConflicts() {
   } catch (e) { box.innerHTML = '<p class="meta">加载失败: ' + esc(e.message) + '</p>'; }
 }
 
+async function loadSyncStatus() {
+  renderSkeletons(3, 'list');
+  try {
+    const r = await fetch('/sync-status').then(x => x.json());
+    box.innerHTML = '<h2>数据源同步状态</h2>';
+    if (!r.length) { box.innerHTML += '<p class="meta">暂无同步记录</p>'; return; }
+    const table = document.createElement('table');
+    table.style.cssText = 'width:100%;border-collapse:collapse;margin-top:8px';
+    table.innerHTML = '<thead><tr style="background:var(--card-bg,#f5f5f7)">' +
+      '<th style="padding:8px;text-align:left;border-bottom:2px solid #ddd">来源</th>' +
+      '<th style="padding:8px;text-align:left;border-bottom:2px solid #ddd">方向</th>' +
+      '<th style="padding:8px;text-align:left;border-bottom:2px solid #ddd">最后同步</th>' +
+      '<th style="padding:8px;text-align:left;border-bottom:2px solid #ddd">状态</th></tr></thead><tbody>';
+    r.forEach(s => {
+      const color = s.recent ? '#22c55e' : (s.last_sync_at ? '#f97316' : '#9ca3af');
+      const label = s.recent ? '正常' : (s.last_sync_at ? '过期' : '从未同步');
+      const dirMap = { pull: '拉取', push: '推送', both: '双向' };
+      table.innerHTML += '<tr style="border-bottom:1px solid #eee">' +
+        '<td style="padding:8px">' + esc(s.source_id) + '</td>' +
+        '<td style="padding:8px">' + (dirMap[s.direction] || s.direction) + '</td>' +
+        '<td style="padding:8px;color:#666">' + (s.last_sync_at || '-') + '</td>' +
+        '<td style="padding:8px"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:' + color + ';margin-right:6px;vertical-align:middle"></span>' +
+        '<span style="vertical-align:middle">' + label + '</span></td></tr>';
+    });
+    table.innerHTML += '</tbody>';
+    box.appendChild(table);
+  } catch (e) { box.innerHTML = '<p class="meta">加载失败: ' + esc(e.message) + '</p>'; }
+}
+
 async function loadStats() {
   try {
     const r = await fetch('/stats').then(x => x.json());
