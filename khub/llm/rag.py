@@ -72,10 +72,14 @@ class RAGEngine:
             {"event": "done",     "data": {"finish_reason": "stop"}}
             {"event": "error",    "data": {"error": "..."}}
         """
+        if not question or not question.strip():
+            yield {"event": "error", "data": {"error": "问题不能为空"}}
+            return
         try:
             hits = self.retriever.search_similar(question, k=k)
             sources = self._fetch_sources(hits)
-            self._clean_sources(sources)  # 移除内部字段，防止全文泄露
+            context = self._assemble_context(sources)
+            self._clean_sources(sources)  # _assemble_context 用完后移除内部字段
             yield {"event": "sources", "data": {"sources": sources}}
             context = self._assemble_context(sources)
             prompt = self._build_prompt(question, context)
