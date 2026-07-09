@@ -1,7 +1,7 @@
 import json
 import os
 import time
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Optional
 from urllib.parse import parse_qs, urlparse, unquote
 
@@ -22,10 +22,29 @@ class App:
         self._started = time.time()
 
     def dispatch(self, method: str, raw_path: str, body: Optional[dict] = None):
+        # 写操作鉴权（可选，由 KHUB_API_TOKEN 环境变量控制）
+        if method in ("POST", "PUT", "DELETE"):
+            token = os.environ.get("KHUB_API_TOKEN")
+            if token:
+                auth = getattr(self, '_auth_header', '')
+                if auth != f"Bearer {token}":
+                    return 401, {"error": "unauthorized"}
         parsed = urlparse(raw_path)
         path = parsed.path
         qs = parse_qs(parsed.query)
         body = body or {}
+
+        # ---- Static file serving (web/ directory, path traversal protected) ----
+        if method == "GET" and path.startswith("/web/"):
+            filename = path[len("/web/"):]
+            web_dir = os.path.realpath(os.path.join(os.path.dirname(__file__), "web"))
+            filepath = os.path.realpath(os.path.join(web_dir, filename))
+            if not filepath.startswith(web_dir + os.sep):
+                return 404, {"error": "bad path"}
+            if not os.path.isfile(filepath):
+                return 404, {"error": "not found"}
+            with open(filepath, "rb") as f:
+                return 200, f.read(), "application/octet-stream"
 
         if method == "GET" and path == "/health":
             uptime = round(time.time() - self._started, 1) if self._started else 0
@@ -393,6 +412,7 @@ def make_handler(app: App):
             self.wfile.write(data)
 
         def do_GET(self):
+            app._auth_header = self.headers.get("Authorization", "")
             try:
                 res = app.dispatch("GET", self.path)
                 if len(res) == 3:
@@ -404,6 +424,7 @@ def make_handler(app: App):
             self._send(code, obj, ctype)
 
         def do_POST(self):
+            app._auth_header = self.headers.get("Authorization", "")
             length = int(self.headers.get("Content-Length", 0) or 0)
             raw = self.rfile.read(length) if length else b"{}"
             try:
@@ -420,6 +441,42 @@ def make_handler(app: App):
                 return self._send(500, {"error": str(e)})
             self._send(code, obj, ctype)
 
+        def do_PUT(self):
+            app._auth_header = self.headers.get("Authorization", "")
+            length = int(self.headers.get("Content-Length", 0) or 0)
+            raw = self.rfile.read(length) if length else b"{}"
+            try:
+                body = json.loads(raw) if raw else {}
+            except json.JSONDecodeError:
+                return self._send(400, {"error": "bad json"})
+            try:
+                res = app.dispatch("PUT", self.path, body)
+                if len(res) == 3:
+                    code, obj, ctype = res
+                else:
+                    code, obj, ctype = res[0], res[1], "application/json; charset=utf-8"
+            except Exception as e:  # noqa: BLE001
+                return self._send(500, {"error": str(e)})
+            self._send(code, obj, ctype)
+
+        def do_DELETE(self):
+            app._auth_header = self.headers.get("Authorization", "")
+            length = int(self.headers.get("Content-Length", 0) or 0)
+            raw = self.rfile.read(length) if length else b"{}"
+            try:
+                body = json.loads(raw) if raw else {}
+            except json.JSONDecodeError:
+                return self._send(400, {"error": "bad json"})
+            try:
+                res = app.dispatch("DELETE", self.path, body)
+                if len(res) == 3:
+                    code, obj, ctype = res
+                else:
+                    code, obj, ctype = res[0], res[1], "application/json; charset=utf-8"
+            except Exception as e:  # noqa: BLE001
+                return self._send(500, {"error": str(e)})
+            self._send(code, obj, ctype)
+
         def log_message(self, *args):
             pass
 
@@ -428,7 +485,7 @@ def make_handler(app: App):
 
 def serve(store: Store, library: ManagedLibrary, host: str = "127.0.0.1", port: int = 8000):
     app = App(store, library)
-    httpd = HTTPServer((host, port), make_handler(app))
+    httpd = ThreadingHTTPServer((host, port), make_handler(app))
     import signal
 
     def _stop(*a):

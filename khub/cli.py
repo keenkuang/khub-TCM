@@ -88,6 +88,8 @@ def build_parser():
     pq.add_argument("--token", default="", help="Quip API access_token；默认读 KHUB_QUIP_TOKEN 环境变量")
     pq.add_argument("--root", default="ROOT", help="起始文件夹 ID（默认用户根目录）")
 
+    pfs = sub.add_parser("feishu-sync", help="拉取飞书知识空间文档入库")
+
     po = sub.add_parser("obsidian-import", help="导入 Obsidian vault（.md 目录）到本地库")
     po.add_argument("vault_path")
     po.add_argument("--no-recursive", dest="recursive", action="store_false", default=True)
@@ -306,6 +308,8 @@ def main(argv=None):
             return 1
         ingested, skipped = pull_all(store, token, args.root)
         print(f"Quip 同步完成：入库 {ingested}，跳过 {skipped}")
+    elif args.cmd == "feishu-sync":
+        print("飞书适配器待实现")
     elif args.cmd == "obsidian-import":
         from .obsidian import import_vault
         ingested, skipped = import_vault(store, args.vault_path, recursive=args.recursive)

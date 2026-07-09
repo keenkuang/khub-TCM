@@ -13,7 +13,7 @@ khub = "khub.cli:main"
 requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 [tool.setuptools]
-packages = ["khub", "khub.extractors", "khub.llm", "khub.exam", "khub.clinical", "khub.ops"]
+packages = ["khub", "khub.adapters", "khub.extractors", "khub.llm", "khub.exam", "khub.clinical", "khub.ops"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
