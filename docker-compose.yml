@@ -55,3 +55,18 @@ services:
 volumes:
   khub-db:
   khub-library:
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 备份与恢复
+# ══════════════════════════════════════════════════════════════════════════════
+# khub 内置灾备命令（基于一致性快照 + WAL 回放），支持本地/SSH/S3 副本。
+# 建议用宿主机 crontab 执行每日远程备份：
+#
+#   0 3 * * * cd /home/keen/khub-m1 && docker compose exec -T khub \
+#     python -m khub.cli dr push --replica ssh://user@nas/backups/khub
+#
+# 恢复：
+#   docker compose exec khub dr restore \
+#     --replica ssh://user@nas/backups/khub --to latest --target /data/db/restored.db
+#
+# 更多选项见: khub dr --help 或 docs/disaster_recovery.md
