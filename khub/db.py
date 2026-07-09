@@ -500,10 +500,13 @@ def rebuild_fts(store):
 
 
 def make_snapshot_db(src_conn, dst_path: str):
-    """一致性快照：排除 ha_state / docs_fts 虚表 / vec0 向量虚表，
+    """一致性快照：排除 ha_state / replication_log / lsn_seq 等节点本机记账表，
+    以及 docs_fts 虚表 / vec0 向量虚表。
 
     其余用户表经 ATTACH 逐表 `INSERT INTO snap.t SELECT * FROM main.t` 拷贝。
     FTS/向量由恢复侧 rebuild_fts 重建（避免 SELECT * 拷贝虚表）。
+    ha_state / replication_log / lsn_seq 由 `_EXCLUDE_TABLES` 控制：恢复库须自建，
+    否则 lsn_seq 与主库对齐会导致备机升主后 lsn 重复/错乱、replication_log 被二次回放。
     """
     import re
     import sqlite3  # noqa: F401（保证 sqlite3 可用）
