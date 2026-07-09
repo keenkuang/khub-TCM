@@ -19,28 +19,45 @@
 
 ### 2.1 Dockerfile 增强
 
-- `python:3.11-slim` → `python:3.12-slim`（对齐本地运行环境）
-- 新增 `adduser --system app` + `USER app`（非 root 运行，安全最佳实践）
+- `python:3.11-slim` → `python:3.12-slim`
+- 新增 `adduser --system app` + `USER app`
 - COPY 后 `chown -R app:app /app`
+- 复制 `docker-entrypoint.sh` 并设为 ENTRYPOINT
 
-### 2.2 .dockerignore 补全
+### 2.2 新增 docker-entrypoint.sh
 
-- 补充 `*.md`、`docs/`、`*.pdf`、`*.docx`
+入口脚本，在启动前修正卷所有权，再降权运行：
 
-### 2.3 docker-compose.yml 增强
+```bash
+#!/bin/sh
+# 修正运行时挂载卷所有权（首次挂载时归 root）
+chown -R app:app /data/db /data/library 2>/dev/null || true
+# 以降权用户执行原始命令
+exec dumb-init su -s /bin/sh app -c "python -m khub.cli $*"
+```
+
+### 2.3 .dockerignore 补全
+
+- 无改动（已存在 docs/ 忽略）
+
+### 2.4 docker-compose.yml 增强
 
 - 新增 WAL 保留窗口环境变量：
   - `KHUB_WAL_KEEP=1000`
   - `KHUB_WAL_KEEP_DAYS=7`
-- 取消注释 SSH agent 转发的注释示例
+- SSH/PII 路径从 `/root/` 改为 `/home/app/`
+- 新增 entrypoint 脚本挂载
 
-### 2.4 docs/deployment.md 重写
+### 2.5 nginx/khub-docker.conf 增强
+
+- 新增 CSP 头：`Content-Security-Policy: default-src 'self'`
+
+### 2.6 docs/deployment.md 重写
 
 - 版本号 0.2.0 → 0.2.4
-- 新增 3 个部署方案：pip 安装、Docker 单服务、Docker Compose 全套
-- 新增功能说明：RAG 问答 AI 助手、WebUI（编辑/冲突解决/深色模式）、数据看板
-- 新增安全头说明（CSP/HSTS/Referrer-Policy）
-- 新增 WAL 持久化配置说明
+- 新增 Docker Compose 部署说明
+- 新增 RAG/看板/WebUI 功能说明
+- 新增安全头说明
 
 ## 三、文件修改清单
 

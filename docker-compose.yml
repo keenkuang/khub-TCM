@@ -6,17 +6,21 @@ services:
     volumes:
       - khub-db:/data/db
       - khub-library:/data/library
+      - ./docker-entrypoint.sh:/usr/local/bin/docker-entrypoint.sh:ro
       # SSH agent 转发（可选，用于 SshReplica 远程灾备）
       # - $SSH_AUTH_SOCK:/ssh-agent:ro
-      # SSH 密钥挂载（可选，次选方案）
-      # - ~/.ssh/id_ed25519:/root/.ssh/id_ed25519:ro
-      # - ~/.ssh/known_hosts:/root/.ssh/known_hosts:ro
-      # PII 密钥文件（可选，取消注释并创建 pii.key）
-      # - ./pii.key:/root/.khub/pii.key:ro
+      # SSH 密钥挂载（可选）
+      # - ~/.ssh/id_ed25519:/home/app/.ssh/id_ed25519:ro
+      # - ~/.ssh/known_hosts:/home/app/.ssh/known_hosts:ro
+      # PII 密钥文件（可选）
+      # - ./pii.key:/home/app/.khub/pii.key:ro
     environment:
       - KHUB_DB=/data/db/khub.db
       - KHUB_LIBRARY=/data/library
-      # PII 加密（默认启用，生产环境建议用密钥文件）
+      # WAL 保留窗口：保留最近 1000 条或最近 7 天的已推送 WAL
+      - KHUB_WAL_KEEP=1000
+      - KHUB_WAL_KEEP_DAYS=7
+      # PII 加密（默认启用）
       - KHUB_PII_ENCRYPT=1
       # PII 密钥由容器自动生成（首次启动），或通过 KHUB_PII_KEY 传入
       # - KHUB_PII_KEY=...               # 方式1：环境变量（注意不提交到 git）
