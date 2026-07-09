@@ -1,4 +1,5 @@
 import json
+import logging
 import math
 import os
 import re
@@ -8,6 +9,8 @@ import urllib.request
 from typing import List, Optional, Tuple
 
 from .db import Store
+
+logger = logging.getLogger("khub.retrieval")
 
 
 # ---------------------------------------------------------------------------
@@ -135,13 +138,18 @@ class Retriever:
             if d and d["dim"] != dim:
                 conn.execute(f"DROP TABLE IF EXISTS {name}")
                 conn.execute("DELETE FROM vec_meta WHERE name=?", (name,))
-                conn.execute(f"CREATE VIRTUAL TABLE {name} USING vec0(embedding float[{dim}] distance=cosine)")
+                conn.execute(
+                    f"CREATE VIRTUAL TABLE {name} USING vec0("
+                    f"embedding float[{dim}] distance=cosine, "
+                    f"doc_id TEXT, version_id INTEGER)")
                 conn.execute("INSERT INTO vec_meta(name, dim) VALUES(?,?)", (name, dim))
                 conn.commit()
         else:
             if HAVE_VEC:
                 conn.execute(
-                    f"CREATE VIRTUAL TABLE {name} USING vec0(embedding float[{dim}] distance=cosine)")
+                    f"CREATE VIRTUAL TABLE {name} USING vec0("
+                    f"embedding float[{dim}] distance=cosine, "
+                    f"doc_id TEXT, version_id INTEGER)")
                 conn.execute("CREATE TABLE IF NOT EXISTS vec_meta(name TEXT PRIMARY KEY, dim INTEGER)")
                 conn.execute("INSERT INTO vec_meta(name, dim) VALUES(?,?)", (name, dim))
                 conn.commit()
@@ -206,3 +214,79 @@ class Retriever:
             scored.append((r["doc_id"], cosine(q, vec)))
         scored.sort(key=lambda x: x[1], reverse=True)
         return scored[:k]
+
+
+# ---------------------------------------------------------------------------
+# 向量索引重建（恢复 / 快照回放后，vec0 虚表需从 embeddings 反算）
+# ---------------------------------------------------------------------------
+def rebuild_vec(store, chunk_size: int = 500):
+    """重建 vec0 向量索引（由 embeddings 当前数据反算，分块写入）。
+
+    快照/恢复后 vec0 虚表不随数据拷贝（不能 SELECT *），须显式重建。
+    embeddings 是普通表（快照会拷贝），是 vec0 的源数据。
+
+    需要 sqlite_vec 可用；不可用则跳过（暴力余弦检索经 embeddings 表仍可工作），
+    不抛错、不影响主流程（M5/A8：派生索引批量重建）。
+    """
+    ann = (HAVE_VEC and os.environ.get("KHUB_DISABLE_ANN") != "1")
+    if not ann or not HAVE_VEC:
+        logger.warning("[rebuild_vec] sqlite_vec 不可用，跳过 vec0 重建"
+                       "（暴力余弦检索经 embeddings 表仍可用）")
+        return
+    conn = store.conn
+    conn.enable_load_extension(True)
+    sqlite_vec.load(conn)
+    models = [r["model"] for r in
+              conn.execute("SELECT DISTINCT model FROM embeddings").fetchall()]
+    for model in models:
+        if not re.fullmatch(r"\w+", model):
+            continue
+        name = f"vec_{model}"
+        sample = conn.execute(
+            "SELECT vector FROM embeddings WHERE model=? LIMIT 1", (model,)).fetchone()
+        if sample is None:
+            continue
+        # 维度：优先 vec_meta（恢复后可能保留），否则从采样向量推断
+        has_meta = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='vec_meta'").fetchone()
+        dim = None
+        if has_meta:
+            vm = conn.execute("SELECT dim FROM vec_meta WHERE name=?", (name,)).fetchone()
+            dim = vm["dim"] if vm else None
+        if dim is None:
+            dim = len(_unpack(sample["vector"]))
+        # 确保 vec0 虚表存在（与 Retriever._ensure_vec 一致）
+        meta = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+            (name,)).fetchone()
+        if not meta:
+            conn.execute(
+                f"CREATE VIRTUAL TABLE {name} USING vec0("
+                f"embedding float[{dim}] distance=cosine, "
+                f"doc_id TEXT, version_id INTEGER)")
+            conn.execute("CREATE TABLE IF NOT EXISTS "
+                         "vec_meta(name TEXT PRIMARY KEY, dim INTEGER)")
+            conn.execute("INSERT OR IGNORE INTO vec_meta(name, dim) VALUES(?,?)",
+                         (name, dim))
+            conn.commit()
+        # 清空后分块重建（避免与残留 vec0 行重复）
+        conn.execute(f"DELETE FROM {name}")
+        batch = []
+        for er in conn.execute(
+                "SELECT doc_id, version_id, vector FROM embeddings WHERE model=?",
+                (model,)):
+            vec = _unpack(er["vector"])
+            batch.append((er["doc_id"], er["version_id"],
+                          sqlite_vec.serialize_float32(vec)))
+            if len(batch) >= chunk_size:
+                conn.executemany(
+                    f"INSERT INTO {name}(doc_id, version_id, embedding) "
+                    f"VALUES(?,?,?)", batch)
+                batch.clear()
+        if batch:
+            conn.executemany(
+                f"INSERT INTO {name}(doc_id, version_id, embedding) VALUES(?,?,?)",
+                batch)
+        conn.commit()
+        logger.info("[rebuild_vec] 重建 %s：%d 向量", name,
+                    conn.execute(f"SELECT COUNT(*) FROM {name}").fetchone()[0])

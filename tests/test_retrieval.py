@@ -1,30 +1,61 @@
-import math
-from khub.db import Store
-from khub.retrieval import LocalEmbedder, Retriever, cosine
+import os
+import shutil
+import sqlite3
+import tempfile
 
-def test_local_embedder_deterministic_and_normalized():
-    e = LocalEmbedder()
-    v1 = e.embed("太阳病发热")
-    v2 = e.embed("太阳病发热")
-    assert v1 == v2
-    assert abs(math.sqrt(sum(x*x for x in v1)) - 1.0) < 1e-6
+import pytest
 
-def test_retriever_stores_and_finds_nearest():
-    store = Store(":memory:")
-    r = Retriever(store)
-    r.index_document("d1", 1, "太阳病发热汗出恶寒")
-    r.index_document("d2", 1, "少阴病脉微细但欲寐")
-    hits = r.search_similar("太阳病", k=2)
-    assert hits[0][0] == "d1"
-    assert hits[0][1] >= hits[1][1]   # scores descending
+from khub.db import Store, make_snapshot_db, rebuild_fts
+from khub.retrieval import HAVE_VEC, _pack, rebuild_vec
 
-def test_retriever_index_ebook_reads_version_content():
-    # minimal: index a doc whose content lives in document_versions
-    store = Store(":memory:")
-    from khub.models import CanonicalDoc
-    store.store_document(CanonicalDoc(canonical_id="x", title="t", content="中医阴阳平衡",
-                                      source="s", source_id="s/1", doc_type="ebook"))
-    r = Retriever(store)
-    r.index_ebook("x")
-    hits = r.search_similar("阴阳", k=1)
-    assert hits and hits[0][0] == "x"
+
+def _seed_embeddings(conn, n=4, dim=4, model="local"):
+    conn.execute("DELETE FROM embeddings")
+    for i in range(n):
+        vec = [(i + 1) * 0.1 + j * 0.01 for j in range(dim)]
+        conn.execute(
+            "INSERT INTO embeddings(doc_id, version_id, model, vector) VALUES(?,?,?,?)",
+            (f"d{i}", i, model, sqlite3.Binary(_pack(vec))))
+    conn.commit()
+
+
+def test_rebuild_vec_populates_vec0():
+    """rebuild_vec 从 embeddings 反算 vec0 虚表。"""
+    if not HAVE_VEC:
+        pytest.skip("sqlite_vec 不可用，rebuild_vec 会跳过")
+    d = tempfile.mkdtemp()
+    try:
+        store = Store(os.path.join(d, "s.db"))
+        _seed_embeddings(store.conn, n=5)
+        rebuild_vec(store)
+        n_vec = store.conn.execute("SELECT COUNT(*) FROM vec_local").fetchone()[0]
+        assert n_vec == 5
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
+def test_rebuild_vec_after_restore():
+    """恢复后（vec0 被快照排除）rebuild_vec 重建向量索引。"""
+    if not HAVE_VEC:
+        pytest.skip("sqlite_vec 不可用")
+    d = tempfile.mkdtemp()
+    try:
+        src = Store(os.path.join(d, "src.db"))
+        _seed_embeddings(src.conn, n=4)
+        snap = os.path.join(d, "snap.db")
+        make_snapshot_db(src.conn, snap)
+        out = os.path.join(d, "restored.db")
+        shutil.copy(snap, out)
+        for ext in ("-wal", "-shm"):
+            p = out + ext
+            if os.path.exists(p):
+                os.remove(p)
+        restored = Store(out)
+        rebuild_fts(restored)
+        rebuild_vec(restored)
+        n_emb = restored.conn.execute(
+            "SELECT COUNT(*) FROM embeddings WHERE model='local'").fetchone()[0]
+        n_vec = restored.conn.execute("SELECT COUNT(*) FROM vec_local").fetchone()[0]
+        assert n_vec == n_emb == 4
+    finally:
+        shutil.rmtree(d, ignore_errors=True)

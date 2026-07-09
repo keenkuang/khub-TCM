@@ -387,6 +387,7 @@ def main(argv=None):
         from .replication import (LocalFileReplica, SshReplica, ReplicationManager,
                                    verify_store, replay_from)
         from .db import rebuild_fts
+        from .retrieval import rebuild_vec
         import shutil as _shutil
         import socket
 
@@ -548,6 +549,7 @@ def main(argv=None):
                     os.remove(_p)
             restored = Store(out_db)
             rebuild_fts(restored)
+            rebuild_vec(restored)
             restored.set_applied_max(snapshot_lsn)
             applied = replay_from(restored, changes, target_lsn=target_lsn)
             recovered_lsn = restored.applied_max()
@@ -560,6 +562,22 @@ def main(argv=None):
             print(f"  本批回放   : {applied} 条")
             print(f"  恢复 lsn   : {recovered_lsn}")
             print(f"  documents  : {n_docs} 行")
+            # 向量索引（vec0）重建状态
+            try:
+                vec_models = [r["model"] for r in restored.conn.execute(
+                    "SELECT DISTINCT model FROM embeddings").fetchall()]
+                vec_lines = []
+                for m in vec_models:
+                    t = f"vec_{m}"
+                    try:
+                        n = restored.conn.execute(
+                            f"SELECT COUNT(*) FROM {t}").fetchone()[0]
+                        vec_lines.append(f"{t}={n}")
+                    except Exception:
+                        vec_lines.append(f"{t}=缺失")
+                print(f"  vec0       : {', '.join(vec_lines) if vec_lines else '无 embeddings'}")
+            except Exception as e:
+                print(f"  vec0       : 查询失败（{e}）")
             print(f"  integrity  : {vrep['integrity']}")
             print(f"  结果       : {'通过' if vrep['ok'] else '失败（见下方）'}")
             for e in vrep["errors"]:
