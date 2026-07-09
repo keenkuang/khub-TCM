@@ -291,6 +291,9 @@ mark { background: var(--mark-bg); padding: 0 2px; border-radius: 2px; }
 .ai-panel .input-area button:disabled { background: #9ca3af; cursor: default; }
 .ai-panel .hint { font-size: 12px; color: var(--muted); padding: 6px 12px 8px; border-top: 1px solid var(--border); text-align: center; }
 
+/* 最近文档链接 */
+#stats a:hover { text-decoration: underline !important; }
+
 /* 移动端 ≤767px */
 @media (max-width: 767px) {
   .bar { flex-direction: column; gap: 6px; }

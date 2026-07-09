@@ -154,14 +154,77 @@ async function loadStats() {
   try {
     const r = await fetch('/stats').then(x => x.json());
     const s = document.getElementById('stats');
-    let html = '<div class="stat-card" style="background:#e8f5e9;padding:8px 14px;border-radius:8px;text-align:center;min-width:70px"><div style="font-size:20px;font-weight:700">' + r.total + '</div><div style="font-size:11px;color:#555">总计</div></div>';
-    const srcMap = { obsidian: '秘方', ima: 'IMA', imanote: 'IMA笔记', quip: 'Quip', library: '电子书' };
-    for (const [k, v] of Object.entries(srcMap)) {
-      const cnt = r.sources[k] || 0;
-      if (cnt > 0) html += '<div class="stat-card" style="background:#e3f2fd;padding:8px 14px;border-radius:8px;text-align:center;min-width:60px"><div style="font-size:16px;font-weight:700">' + cnt + '</div><div style="font-size:11px;color:#555">' + v + '</div></div>';
-    }
-    html += '<div class="stat-card" style="background:#fff3e0;padding:8px 14px;border-radius:8px;text-align:center;min-width:60px"><div style="font-size:16px;font-weight:700">' + r.today + '</div><div style="font-size:11px;color:#555">今日</div></div>';
+
+    // 【顶部数字卡片】
+    const card = (label, value, bg) => '<div class="stat-card" style="background:' + bg + ';padding:8px 14px;border-radius:8px;text-align:center;min-width:70px"><div style="font-size:20px;font-weight:700">' + value + '</div><div style="font-size:11px;color:#555">' + label + '</div></div>';
+    let html = card('总计', r.total, '#e8f5e9') + card('今日', r.today, '#fff3e0') +
+      card('版本', r.versions, '#e3f2fd') + card('向量', r.embeddings, '#f3e5f5') +
+      (r.conflicts ? card('冲突', r.conflicts, '#ffe0e0') : '');
     s.innerHTML = html;
+
+    // 【来源分布 — SVG 条形图】
+    const srcMap = { obsidian: '秘方', ima: 'IMA', imanote: 'IMA笔记', quip: 'Quip', library: '电子书', kzocr: 'KZOCR', feishu: '飞书', webui: 'WebUI' };
+    const srcKeys = Object.keys(srcMap).filter(k => r.sources[k]);
+    if (srcKeys.length) {
+      const maxVal = Math.max(...srcKeys.map(k => r.sources[k]));
+      let barHtml = '<div style="margin-top:14px"><h2 style="margin:0 0 6px">来源分布</h2><div style="display:flex;flex-direction:column;gap:4px">';
+      srcKeys.forEach(k => {
+        const pct = Math.round((r.sources[k] / maxVal) * 100);
+        barHtml += '<div style="display:flex;align-items:center;gap:8px;font-size:13px">' +
+          '<span style="width:48px;text-align:right;color:#555">' + (srcMap[k] || k) + '</span>' +
+          '<div style="flex:1;height:20px;background:#e5e7eb;border-radius:4px;overflow:hidden">' +
+          '<div style="width:' + pct + '%;height:100%;background:#2563eb;border-radius:4px;display:flex;align-items:center;justify-content:flex-end;padding-right:4px;box-sizing:border-box;min-width:fit-content">' +
+          '<span style="font-size:11px;color:#fff;font-weight:600">' + r.sources[k] + '</span></div></div></div>';
+      });
+      barHtml += '</div></div>';
+      s.innerHTML += barHtml;
+    }
+
+    // 【近 7 天趋势 — SVG 折线图】
+    if (r.weekly && r.weekly.length) {
+      const w = r.weekly;
+      const svgW = 320, svgH = 120, pad = { top: 8, right: 8, bottom: 24, left: 30 };
+      const chartW = svgW - pad.left - pad.right, chartH = svgH - pad.top - pad.bottom;
+      const maxC = Math.max(1, ...w.map(d => d.count));
+      const pts = w.map((d, i) => {
+        const x = pad.left + (i / (w.length - 1 || 1)) * chartW;
+        const y = pad.top + chartH - (d.count / maxC) * chartH;
+        return x + ',' + y;
+      });
+      const polyline = pts.join(' ');
+      // 填充区域
+      const area = polyline + ' ' + (pad.left + chartW) + ',' + (pad.top + chartH) + ' ' + pad.left + ',' + (pad.top + chartH);
+      let trendHtml = '<div style="margin-top:14px"><h2 style="margin:0 0 6px">近 7 天入库趋势</h2>' +
+        '<svg viewBox="0 0 ' + svgW + ' ' + svgH + '" style="width:100%;max-width:' + svgW + 'px;height:auto;background:var(--card-bg);border-radius:8px">' +
+        '<polygon points="' + area + '" fill="rgba(37,99,235,0.08)" stroke="none"/>' +
+        '<polyline points="' + polyline + '" fill="none" stroke="#2563eb" stroke-width="2" stroke-linejoin="round"/>';
+      w.forEach((d, i) => {
+        const x = pad.left + (i / (w.length - 1 || 1)) * chartW;
+        const y = pad.top + chartH - (d.count / maxC) * chartH;
+        trendHtml += '<circle cx="' + x + '" cy="' + y + '" r="3" fill="#2563eb"/>';
+      });
+      // X 轴标签（日期缩略）
+      w.forEach((d, i) => {
+        const x = pad.left + (i / (w.length - 1 || 1)) * chartW;
+        const label = d.date.slice(5); // MM-DD
+        trendHtml += '<text x="' + x + '" y="' + (svgH - 4) + '" text-anchor="middle" font-size="9" fill="#999">' + label + '</text>';
+      });
+      // Y 轴标签
+      trendHtml += '<text x="' + (pad.left - 6) + '" y="' + pad.top + '" text-anchor="end" font-size="9" fill="#999">' + maxC + '</text>' +
+        '<text x="' + (pad.left - 6) + '" y="' + (pad.top + chartH) + '" text-anchor="end" font-size="9" fill="#999">0</text>';
+      trendHtml += '</svg></div>';
+      s.innerHTML += trendHtml;
+    }
+
+    // 【最近文档列表】
+    if (r.recent && r.recent.length) {
+      let recentHtml = '<div style="margin-top:14px"><h2 style="margin:0 0 6px">最近文档</h2><div style="display:flex;flex-direction:column;gap:4px">';
+      r.recent.forEach(d => {
+        recentHtml += '<div style="font-size:13px;padding:4px 0;border-bottom:1px solid var(--border)"><a href="#" onclick="loadDoc(\'' + esc(d.id) + '\',\'' + esc(d.title) + '\');return false" style="color:var(--accent);text-decoration:none">' + esc(d.title || d.id) + '</a> <span style="color:var(--muted);font-size:11px">' + (d.at || '') + '</span></div>';
+      });
+      recentHtml += '</div></div>';
+      s.innerHTML += recentHtml;
+    }
   } catch (e) { /* stats optional */ }
 }
 
