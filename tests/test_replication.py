@@ -369,6 +369,47 @@ def test_standby_replay_no_reentry():
         _rmtree(d)
 
 
+def test_trigger_regenerates_on_schema_change():
+    """L1：迁移新增列后重装触发器，WAL payload 须含新列（不静默漏记）。
+
+    回归点：install_triggers 曾用 `CREATE TRIGGER IF NOT EXISTS`，旧触发器
+    （含旧列清单）不会被更新，新增列写入后 WAL 静默漏记该列，备机回放丢字段。
+    修复后 install_triggers 先 DROP 再 CREATE，按最新 schema 重建。
+    """
+    from khub.models import CanonicalDoc
+    from khub.replication import install_triggers
+
+    d = tempfile.mkdtemp()
+    try:
+        store = Store(os.path.join(d, "live.db"))  # init_schema 装 documents 触发器
+        store.store_document(CanonicalDoc(
+            canonical_id="d1", title="T", content="hello", source="s", source_id="s/1"))
+
+        # 模拟迁移：新增一列
+        store.conn.execute("ALTER TABLE documents ADD COLUMN extra_col TEXT")
+        store.conn.commit()
+        # 重装触发器（模拟重启/迁移后 regenerate），须按最新 schema 重建
+        install_triggers(store.conn, "documents", pk="canonical_id")
+        # 写带新列的行，触发 WAL
+        store.conn.execute(
+            "UPDATE documents SET extra_col='NEWVAL' WHERE canonical_id='d1'")
+        store.conn.commit()
+
+        row = store.conn.execute(
+            "SELECT payload FROM replication_log WHERE table_name='documents' "
+            "ORDER BY lsn DESC LIMIT 1").fetchone()
+        payload = json.loads(row["payload"])
+        assert payload.get("extra_col") == "NEWVAL", \
+            "新增列须进入 WAL payload，否则复制/回放漏记该列（L1 回归）"
+    finally:
+        try:
+            store.conn.close()
+        except Exception:
+            pass
+        import shutil
+        shutil.rmtree(d, ignore_errors=True)
+
+
 def test_replay_idempotent():
     """③ 同一批变更回放两次，行数与 max(lsn) 不变（幂等）。"""
     from khub.models import CanonicalDoc

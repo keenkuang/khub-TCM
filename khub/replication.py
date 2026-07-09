@@ -403,7 +403,11 @@ def install_triggers(conn, table: str, pk: str = None):
         # 故用 WHEN 守卫作为真正的防重入机制（见 replay_from）。
         when = ("WHEN COALESCE((SELECT value FROM ha_state "
                 "WHERE key='__replay_lock'), '0') = '0'")
-        sql = (f"CREATE TRIGGER IF NOT EXISTS {trigger_name} "
+        # 先 DROP 再 CREATE：触发器由当前 schema 代码生成（评审 LOW L1）。
+        # 若只用 IF NOT EXISTS，旧触发器（含旧列清单）不会被更新，迁移新增列后
+        # WAL 静默漏记该列；DROP+CREATE 保证每次（重）安装都按最新 PRAGMA table_info 重建。
+        conn.execute(f"DROP TRIGGER IF EXISTS {trigger_name}")
+        sql = (f"CREATE TRIGGER {trigger_name} "
                f"AFTER {op.upper()} ON {table} {when} BEGIN {body} END;")
         conn.execute(sql)
 
