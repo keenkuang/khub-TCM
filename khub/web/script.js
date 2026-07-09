@@ -78,9 +78,9 @@ async function loadDoc(id, title) {
     if (r.error) { box.innerHTML = '<p class="meta">' + esc(r.error) + '</p>'; return; }
     const backLink = '<p style="margin-bottom:8px"><a href="#" onclick="loadAll();return false">← 返回列表</a></p>';
     let html = backLink;
-    html += '<div id="doc-header"><h2>' + esc(r.title || id) + '</h2>' +
+    html += '<div id="doc-header" data-format="' + esc(r.format || 'plain') + '"><h2>' + esc(r.title || id) + '</h2>' +
       '<p class="meta">' + esc(r.canonical_id) + ' · ' + r.version_count + ' 版本 · ' + (r.updated_at || '') + ' · 格式: ' + esc(r.format || '') + '</p>' +
-      '<div class="edit-actions"><button onclick="editDoc(\'' + esc(r.canonical_id) + '\',\'' + esc(r.title) + '\')">编辑</button></div></div>';
+      '<div class="edit-actions"><button onclick="editDoc(\'' + esc(r.canonical_id) + '\')">编辑</button></div></div>';
     if (r.format === 'html') {
       const safe = (r.content || '').replace(/<script[\s\S]*?<\/script>/gi, '');
       html += '<div class="doc-content">' + safe + '</div>';
@@ -169,13 +169,15 @@ async function loadStats() {
 function editDoc(id, title) {
   const header = document.getElementById('doc-header');
   const contentEl = box.querySelector('.doc-content');
-  const origTitle = title;
-  const origContent = contentEl ? contentEl.textContent : '';
+  const fmt = header ? header.dataset.format : 'plain';
+  // HTML 格式用 innerHTML 保留标签；plain 用 textContent
+  const origContent = contentEl ? (fmt === 'html' ? contentEl.innerHTML : contentEl.textContent) : '';
 
   header.querySelector('.edit-actions').innerHTML = '';
   header.querySelector('h2').outerHTML = '<input class="edit-title" id="edit-title" value="' + esc(title) + '">';
   const textarea = document.createElement('textarea');
   textarea.className = 'edit-content'; textarea.value = origContent;
+  if (fmt === 'html') { textarea.style.fontFamily = 'monospace'; }
   if (contentEl) contentEl.replaceWith(textarea);
 
   const actions = document.createElement('div'); actions.className = 'edit-actions';
@@ -187,12 +189,14 @@ function editDoc(id, title) {
 async function saveDoc(id) {
   const title = document.getElementById('edit-title').value.trim();
   const content = document.querySelector('.edit-content').value;
+  const header = document.getElementById('doc-header');
+  const fmt = header ? header.dataset.format : 'plain';
   if (!title) { toast('标题不能为空'); return; }
   try {
     const r = await fetch('/documents/' + encodeURIComponent(id), {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: title, content: content })
+      body: JSON.stringify({ title: title, content: content, format: fmt })
     });
     const data = await r.json();
     if (r.ok) { toast('保存成功'); loadDoc(id, title); }
