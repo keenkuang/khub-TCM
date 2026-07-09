@@ -289,7 +289,7 @@ class FailoverController:
 
         if "alarm" in dec.actions:
             from .alerting import emit_alert
-            emit_alert(self.store, dec, st)
+            emit_alert(self, dec, st)
         return dec
 
     def _promote(self, st: HAState, now: float):
@@ -321,6 +321,14 @@ class FailoverController:
         return st
 
     # ── 连续运行 ────────────────────────────────────────────────────────────
+    def cycle(self):
+        """单次迭代：拉对端 WAL 回放（备/降级态）+ tick 决策。
+
+        供端到端演练（`khub ha drill`）与外部循环驱动；等价于 `_loop_once` 的
+        公开入口，避免直接调用私有方法。
+        """
+        self._loop_once()
+
     def _loop_once(self):
         st = self.state()
         # 备机/降级态持续从对端拉 WAL 回放（连续热备）

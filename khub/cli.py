@@ -177,6 +177,15 @@ def build_parser():
     pst = ha_sub.add_parser(
         "self-test", help="HA 自我演练：注入场景运行状态机验证")
     pst.add_argument("--scenario", default="all",
+                     choices=["all", "link-down", "promote", "split-brain"],
+                     help="运行指定场景（默认 all 跑全部）")
+    pdri = ha_sub.add_parser(
+        "drill", help="端到端双节点 failover 演练（建临时双库+共享副本，跑完整生命周期）")
+    pdri.add_argument("--docs", type=int, default=5,
+                      help="稳态阶段主库写入文档数（默认 5）")
+    pdri.add_argument("--manual", action="store_true",
+                      help="以 --manual 模式演练（双域丢失仅检测+告警，不自动提升）")
+    pst.add_argument("--scenario", default="all",
                      choices=["link-down", "promote", "split-brain", "all"],
                      help="特定场景或 all（默认）")
     return ap
@@ -689,6 +698,19 @@ def main(argv=None):
             else:
                 results = [_run(args.scenario)]
             print(format_selftest(results))
+        elif args.ha_cmd == "drill":
+            import tempfile as _tf
+            from .ha.drill import run_drill, format_drill
+            _base = _tf.mkdtemp(prefix="khub_drill_")
+            _rep = os.path.join(_base, "replica")
+            _pa = os.path.join(_base, "primary.db")
+            _st = os.path.join(_base, "standby.db")
+            try:
+                result = run_drill(_pa, _st, _rep,
+                                   manual=args.manual, doc_count=args.docs)
+                print(format_drill(result))
+            finally:
+                _shutil.rmtree(_base, ignore_errors=True)
         else:
             pha.print_help()
     else:
