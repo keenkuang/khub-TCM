@@ -494,7 +494,11 @@ def make_handler(app: App):
             self._send(code, obj, ctype)
 
         def do_POST(self):
-            length = int(self.headers.get("Content-Length", 0) or 0)
+            length = self.headers.get("Content-Length", "0")
+            try:
+                length = int(length)
+            except (TypeError, ValueError):
+                length = 0
             if length > _MAX_BODY_SIZE:
                 return self._send(413, {"error": "请求体过大（上限 10MB）"})
             raw = self.rfile.read(length) if length else b"{}"
@@ -529,7 +533,10 @@ def make_handler(app: App):
             self.end_headers()
 
         def do_PUT(self):
-            length = int(self.headers.get("Content-Length", 0) or 0)
+            try:
+                length = int(self.headers.get("Content-Length", "0") or "0")
+            except (TypeError, ValueError):
+                length = 0
             if length > _MAX_BODY_SIZE:
                 return self._send(413, {"error": "请求体过大（上限 10MB）"})
             raw = self.rfile.read(length) if length else b"{}"
@@ -549,7 +556,10 @@ def make_handler(app: App):
             self._send(code, obj, ctype)
 
         def do_DELETE(self):
-            length = int(self.headers.get("Content-Length", 0) or 0)
+            try:
+                length = int(self.headers.get("Content-Length", "0") or "0")
+            except (TypeError, ValueError):
+                length = 0
             if length > _MAX_BODY_SIZE:
                 return self._send(413, {"error": "请求体过大（上限 10MB）"})
             raw = self.rfile.read(length) if length else b"{}"
