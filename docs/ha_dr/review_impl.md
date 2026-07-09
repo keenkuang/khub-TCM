@@ -59,7 +59,7 @@
 - [ ] `replication.py`：新增 `install_triggers(conn, table)`（取列 / `json_object` / BLOB `base64`），挂入各域 `init()`；加 `TRIGGERS_INSTALLED` 过渡开关。
 - [ ] 删除 5 处手动 `_replicate` 调用（过渡期开关保护）。
 - [ ] `replication.py`：`register_replayer`（`threading.Lock` + 导入期注册 + `UnknownTableError` 隔离）；`apply_changes`→`replay_from`（按 lsn 排序 / 幂等 UPSERT / 隔离未知表）。
-- [ ] `ReplicationManager.push_snapshot`：`conn.backup`→ATTACH 逐表 `INSERT…SELECT` 跳过 `ha_state`；`export_snapshot` 表清单补全（embeddings/vec_meta/files/ebook_meta/attachments/sync_states）。
+- [x] `ReplicationManager.push_snapshot`：`conn.backup`→ATTACH 逐表 `INSERT…SELECT` 跳过 `ha_state` / `replication_log` / `lsn_seq`（见 `db.make_snapshot_db`，由 `_EXCLUDE_TABLES` 控制）；`export_snapshot` 表清单补全（embeddings/vec_meta/files/ebook_meta/attachments/sync_states）。
 - [ ] `LocalFileReplica`：多版本快照保留最近 N 份。
 - [ ] 新增 `khub dr verify`（integrity_check + 行数 + lsn + FTS 抽样 + manifest）+ `dr status`/`dr init`/`dr restore --to`。
 - [ ] §13 五条单测落地（同事务落 log / 备机不重入 / 幂等 / 未知表隔离 / tick 全转换）。
