@@ -201,13 +201,20 @@ class App:
                 from .diff import diff_lines, diff_to_html
                 v1 = _safe_int(qs.get("v1", [0])[0], 0)
                 v2 = _safe_int(qs.get("v2", [0])[0], 0)
-                if not v1 or not v2:
-                    return 400, {"error": "请指定 v1 和 v2（版本 ID）"}
+                if not v1 or not v2 or v1 < 0 or v2 < 0:
+                    return 400, {"error": "请指定有效的 v1 和 v2（版本 ID）"}
                 ver1 = self.store.get_version(cid, v1)
                 ver2 = self.store.get_version(cid, v2)
                 if not ver1 or not ver2:
                     return 404, {"error": "版本不存在"}
-                diff = diff_lines(ver1["content"] or "", ver2["content"] or "")
+                # 限 5000 行，防大文档 OOM
+                c1_lines = (ver1["content"] or "").splitlines()
+                c2_lines = (ver2["content"] or "").splitlines()
+                if len(c1_lines) > 5000 or len(c2_lines) > 5000:
+                    return 413, {"error": "文档过大，无法比较（超过 5000 行上限）"}
+                c1 = "\n".join(c1_lines)
+                c2 = "\n".join(c2_lines)
+                diff = diff_lines(c1, c2)
                 return 200, {
                     "canonical_id": cid,
                     "v1": v1, "v2": v2,
