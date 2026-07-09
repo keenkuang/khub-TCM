@@ -674,9 +674,12 @@ class SshReplica(ReplicaTarget):
       {remote_dir}/wal.ndjson                                    （全量 WAL 增量，append）
 
     凭证沿用 `SSH_AUTH_SOCK`/key；`SshTransport` 用 list 传参（禁 shell=True）。
-    说明（设计 §8 简化）：本实现用 scp 直传（非 SFTP put+rename 原子替换），
-    远端保留 keep 份由 `run(["ls"])` 列目录后删最旧实现；若需更强防勒索/原子性
-    可在 P1 换 SFTP 协议。WAL 全量保留未做归档窗口（I5：保留全量历史即满足 PITR）。
+    安全落地（评审 LOW §8）：远端文件经 `scp .part` + 同连接 `ssh mv` 原子替换，
+    读者不会拉到半成品；终态文件 `chmod 600`（私有医疗数据收窄权限）。WAL 全量
+    保留未做归档窗口（I5：保留全量历史即满足 PITR）。远端保留 keep 份由
+    `run(["ls"])` 列目录后删最旧实现。若需更强防勒索（版本不可改写+校验）可在
+    P1 换 SFTP 协议。注：`flock` 仅适用于本地追加，远端 WAL 追加的并发竞争由
+    PITR/快照兜底，不在此处加锁。
     """
 
     def __init__(self, target: str, transport: Transport = None, keep: int = 5):
@@ -709,11 +712,25 @@ class SshReplica(ReplicaTarget):
         json_path = os.path.join(self.stage, "snapshot.json")
         with open(json_path, "w") as f:
             json.dump(meta, f, ensure_ascii=False, indent=2)
-        self.transport.send(json_path, f"{snap_dir}/snapshot.json")
+        self._atomic_send(json_path, f"{snap_dir}/snapshot.json", mode="600")
         if db_path and os.path.isfile(db_path):
-            self.transport.send(db_path, f"{snap_dir}/db.snapshot")
+            self._atomic_send(db_path, f"{snap_dir}/db.snapshot", mode="600")
         self._prune_remote(self.keep)
         return meta
+
+    def _atomic_send(self, local, remote, mode=None):
+        """原子替换远端文件：先 scp 到 `<remote>.part`，再同一条 ssh 连接内
+        `mv` 改名（POSIX rename 原子），读者拉取时不会看到半成品文件。
+
+        设计 §8 安全落地（评审 LOW）：scp 无法跨连接 rename，故用 ssh `mv`
+        完成原子替换，避免远端快照/库被读取到半写入状态（防勒索/防损坏）。
+        mode 非空时对最终文件 `chmod`（如 "600"，私有医疗数据远端收窄权限）。
+        """
+        part = remote + ".part"
+        self.transport.send(local, part)
+        self.transport.run(["mv", part, remote])
+        if mode is not None:
+            self.transport.run(["chmod", str(mode), remote])
 
     def _prune_remote(self, keep: int):
         """远端保留最近 keep 份快照：ls 列目录 → 删最旧。"""
@@ -768,7 +785,7 @@ class SshReplica(ReplicaTarget):
         with open(lp, "a") as f:
             for ch in changes:
                 f.write(json.dumps(_to_wal_dict(ch), ensure_ascii=False) + "\n")
-        self.transport.send(lp, f"{self.remote_dir}/wal.ndjson")
+        self._atomic_send(lp, f"{self.remote_dir}/wal.ndjson", mode="600")
 
     def fetch_snapshot(self) -> dict:
         versions = self.list_remote_versions()

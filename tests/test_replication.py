@@ -698,6 +698,14 @@ class FakeTransport:
                     return subprocess.CompletedProcess(cmd_list, 0, f.read(), "")
             except Exception as e:
                 return subprocess.CompletedProcess(cmd_list, 1, "", str(e))
+        if op == "mv":
+            src = self._rp(cmd_list[1])
+            dst = self._rp(cmd_list[2])
+            os.replace(src, dst)  # POSIX rename 原子替换
+            return subprocess.CompletedProcess(cmd_list, 0, "", "")
+        if op == "chmod":
+            os.chmod(self._rp(cmd_list[-1]), int(cmd_list[1], 8))
+            return subprocess.CompletedProcess(cmd_list, 0, "", "")
         return subprocess.CompletedProcess(cmd_list, 2, "", f"unsupported {op}")
 
     def send(self, local, remote):
@@ -773,6 +781,45 @@ def test_ssh_replica_prune_keeps_recent():
         # 保留最近的 3 份（lsn 3,4,5）
         lsns = sorted(v["lsn"] for v in versions)
         assert lsns == [3, 4, 5]
+    finally:
+        _rmtree(base)
+        _rmtree(remote_root)
+
+
+def test_ssh_replica_atomic_replace():
+    """远端文件经 .part + 同连接 mv 原子替换：终态文件存在、无 .part 残留，
+    且权限为 600（评审 LOW 安全落地 §8）。"""
+    import stat
+    base = tempfile.mkdtemp()
+    remote_root = tempfile.mkdtemp()
+    try:
+        transport = FakeTransport(remote_root)
+        replica = SshReplica("ssh://u@h/dr", transport=transport, keep=5)
+        store = Store(os.path.join(base, "m.db"))
+        replica.push_snapshot(
+            {"at": "t", "tables": {}, "max_replication_id": 1, "total_rows": 1},
+            db_path=store.path)
+
+        snap_dir = os.path.join(remote_root, "dr", "snapshots")
+        snaps = sorted(os.listdir(snap_dir))
+        assert len(snaps) == 1
+        d = os.path.join(snap_dir, snaps[0])
+        # 终态文件齐全，且不应残留 .part 半成品
+        final_files = sorted(os.listdir(d))
+        assert "snapshot.json" in final_files
+        assert "db.snapshot" in final_files
+        assert not any(f.endswith(".part") for f in final_files), final_files
+        # 权限收窄为 600
+        for fn in ("snapshot.json", "db.snapshot"):
+            mode = stat.S_IMODE(os.stat(os.path.join(d, fn)).st_mode)
+            assert mode == 0o600, oct(mode)
+
+        # WAL 推送同样原子且 chmod 600
+        replica.push_changes([Change("insert", "documents", "d1", "{}")])
+        wal = os.path.join(remote_root, "dr", "wal.ndjson")
+        assert os.path.isfile(wal)
+        assert not os.path.exists(wal + ".part")
+        assert stat.S_IMODE(os.stat(wal).st_mode) == 0o600
     finally:
         _rmtree(base)
         _rmtree(remote_root)
