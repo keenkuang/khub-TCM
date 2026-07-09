@@ -185,9 +185,6 @@ def build_parser():
                       help="稳态阶段主库写入文档数（默认 5）")
     pdri.add_argument("--manual", action="store_true",
                       help="以 --manual 模式演练（双域丢失仅检测+告警，不自动提升）")
-    pst.add_argument("--scenario", default="all",
-                     choices=["link-down", "promote", "split-brain", "all"],
-                     help="特定场景或 all（默认）")
     return ap
 
 

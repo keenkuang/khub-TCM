@@ -26,7 +26,7 @@
 | `models` | 数据模型 `CanonicalDoc` / `RawDoc` / `Attachment` / `SyncResult` | — |
 | `crypto` | PII Fernet 对称加密落盘 | `enc`, `dec`, `get_cipher`, `PIICipher` |
 | `audit` | PII 读取访问审计 | `record_access`, `list_access` |
-| `replication` / `ha` | 双机热备与远程灾备：WAL 触发器记账 + lsn + 快照 + SSH 副本 + 回放 | `replay_from`, `ReplicaTarget`, `FailoverController` |
+| `replication` / `ha` | 双机热备与远程灾备：WAL 触发器记账 + lsn + 快照 + SSH 副本 + 回放 + WAL 保留窗口（prune_wal / KHUB_WAL_KEEP） | `replay_from`, `ReplicaTarget`, `FailoverController` |
 | `scheduler` | 定时调度（YAML 任务 + 后台循环，命令以 `shell=False` 执行） | `Scheduler`, `run_tasks` |
 | `watch` | 目录监听自动入库（KZOCR 产出） | `watch_and_ingest` |
 | `normalizer` | 源文档→规范文档归一化 | `normalize` |

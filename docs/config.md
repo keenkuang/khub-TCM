@@ -1,6 +1,6 @@
 # khub 配置参考
 
-**版本**: 0.2.1
+**版本**: 0.2.4
 
 ---
 
@@ -29,6 +29,8 @@
 | `IMA_CLIENT_ID` | IMA 客户端 ID | 空 | `(IMA client id)` |
 | `IMA_API_KEY` | IMA API 密钥 | 空 | `(IMA api key)` |
 | `KHUB_DISABLE_ANN` | 禁用 ANN（近似最近邻）向量索引 | 空 | `1` |
+| `KHUB_WAL_KEEP` | 本地保留最近 N 条已推送 WAL（prune_wal 窗口） | 空（保留全量） | `1000` |
+| `KHUB_WAL_KEEP_DAYS` | 保留最近 D 天内的已推送 WAL（优先级低于 KHUB_WAL_KEEP） | 空（保留全量） | `7` |
 
 ---
 

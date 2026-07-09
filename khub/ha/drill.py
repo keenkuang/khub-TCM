@@ -92,15 +92,17 @@ def run_drill(primary_path: str, standby_path: str, replica_dir: str,
 
     # probe 适配：drill 内部用 DrillProber（可切换状态）；外部 callable 直接传
     prober = probe if isinstance(probe, DrillProber) else (probe or DrillProber())
-    if not isinstance(probe, DrillProber):
-        # 外部 callable：包装成 (hb, lan) 二元
+    if isinstance(probe, DrillProber):
+        _hb, _lan = prober.hb, prober.lan
+    elif callable(probe):
         def _hb():
-            r = probe() if callable(probe) else (True, True)
-            return bool(r[0])
+            r = probe()
+            return bool(r[0]) if isinstance(r, tuple) else bool(r)
         def _lan():
-            r = probe() if callable(probe) else (True, True)
-            return bool(r[1])
+            r = probe()
+            return bool(r[1]) if isinstance(r, tuple) else bool(r)
     else:
+        # probe is None — 使用内部 DrillProber（默认链路正常，由 drill 阶段驱动切换）
         _hb, _lan = prober.hb, prober.lan
 
     A = Store(primary_path)

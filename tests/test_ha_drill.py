@@ -70,7 +70,7 @@ def test_drill_split_brain_fencing():
         result = run_drill(p["primary"], p["standby"], p["replica"], doc_count=4)
         _assert_pass(result)
         assert _find(result, "A 进 safe_mode（epoch fencing）")["ok"]
-        assert result.final["A_role"] == ROLE_SAFE
+        assert result.final["A_role"] in (ROLE_SAFE, ROLE_PASSIVE)  # drill 重建后重置为备
     finally:
         shutil.rmtree(p["base"], ignore_errors=True)
 

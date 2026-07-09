@@ -93,7 +93,7 @@ def tick(now: float, hb_up: bool, lan_up: bool, state: HAState,
         down_since: 对端首次不可达的单调秒（由控制器维护，传入便于决策）。
     """
     # ── epoch fencing：旧主/备见到对端更高 epoch → 立即降级停写 ──
-    if state.peer_epoch > state.epoch and state.role in (ROLE_ACTIVE, ROLE_PASSIVE):
+    if state.peer_epoch > state.epoch and state.role in (ROLE_ACTIVE, ROLE_PASSIVE, ROLE_DEGRADED):
         return Decision(
             ROLE_SAFE, ["alarm", "reconcile"], state.peer_down_s(now), True,
             f"见对端更高 epoch（{state.peer_epoch}>{state.epoch}），"

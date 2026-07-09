@@ -1,5 +1,15 @@
 # 变更日志
 
+## [0.2.4] — 2026-07-09
+
+### HA/DR：端到端双节点 failover 演练
+
+- `khub/ha/drill.py`：新增 `run_drill` / `format_drill`，将真实主库 A、备库 B 与共享 WAL 副本串成完整双机热备生命周期：稳态同步 → 对端双域死 → 备机自动提升（epoch+1）→ 脑裂双写 → epoch fencing 进 safe_mode → reconcile 分歧 → 重建恢复。支持 `--manual`（仅检测不提升）与 `--docs`（稳态写入数）。
+- `khub/ha/controller.py`：新增 `FailoverController.cycle()` 公开入口，供演练与外部循环驱动。
+- `khub/cli.py`：新增 `ha drill` 子命令，临时库生命周期由 `shutil.rmtree` 兜底清理。
+- `tests/test_ha_drill.py`：端到端演练断言覆盖 6 阶段 + 手动模式。
+- 文档与配置：`docs/config.md` 补充 `KHUB_WAL_KEEP` / `KHUB_WAL_KEEP_DAYS`；`README.md` 补充 `dr prune` CLI 条目；`pyproject.toml` / `__init__.py` 版本 bump 至 0.2.4。
+
 ## [0.2.3] — 2026-07-09
 
 ### HA/DR：I5 — WAL 归档窗口（防磁盘膨胀）

@@ -50,6 +50,7 @@ khub dr init                         # 灾备：初始化快照仓库
 khub dr push [--target ssh://...]    # 灾备：推送快照到异地
 khub dr status                       # 灾备：查看快照/lsn 状态
 khub dr list-snapshots               # 灾备：列出可用快照
+khub dr prune [--keep N] [--keep-days D]  # 灾备：手动归档已推送 WAL（按保留窗口收敛）
 khub dr restore --to <lsn|snapshot>  # 灾备：按 lsn/快照恢复到指定时间点
 khub ha status                       # 高可用：查看节点角色/状态
 khub ha promote                      # 高可用：提升为本机为 Primary
