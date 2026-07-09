@@ -4,7 +4,7 @@
 ③ 对端失联时长 ④ safe mode 状态 ⑤ 建议动作（附决策树）。
 """
 
-from .controller import FailoverController, LEASE_SECONDS, ROLE_SAFE
+from .controller import FailoverController, ROLE_SAFE
 
 
 def _suggest(st, dec) -> str:

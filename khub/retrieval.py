@@ -1,6 +1,7 @@
 import json
 import math
 import os
+import re
 import struct
 import sqlite3
 import urllib.request
@@ -88,6 +89,9 @@ def _unpack(blob: bytes) -> List[float]:
 
 
 def cosine(a: List[float], b: List[float]) -> float:
+    # 向量维度不一致时 zip 会静默截断导致错误结果；显式校验。
+    if len(a) != len(b):
+        return 0.0
     return sum(x * y for x, y in zip(a, b))
 
 
@@ -104,6 +108,10 @@ except Exception:  # pragma: no cover - 依赖可选
 
 class Retriever:
     def __init__(self, store: Store, provider=None, model: str = "local", ann: Optional[bool] = None):
+        # model 仅允许 [A-Za-z0-9_]，因为它会被拼入 ANN 虚表名 vec_<model>，
+        # 必须白名单校验以防建/删表 SQL 注入。
+        if not re.fullmatch(r"\w+", model):
+            raise ValueError(f"非法 embedder model 名: {model!r}（仅允许 [A-Za-z0-9_]）")
         self.store = store
         self.provider = provider or get_embedder()
         self.model = model

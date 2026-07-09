@@ -2,6 +2,7 @@ import sqlite3
 import hashlib
 import json
 import os
+import threading
 import time
 from typing import Optional
 from .models import CanonicalDoc
@@ -22,8 +23,13 @@ class Store:
             parent = os.path.dirname(os.path.abspath(self.path))
             if parent:
                 os.makedirs(parent, exist_ok=True)
-        self.conn = sqlite3.connect(path)
+        # check_same_thread=False: API 用 ThreadingHTTPServer 在后台线程访问同一连接，
+        # 必须允许跨线程；isolation_level=None: 关闭隐式事务，由 transaction() 显式管理
+        # BEGIN/COMMIT（避免「cannot start a transaction within a transaction」）。
+        self.conn = sqlite3.connect(self.path, check_same_thread=False,
+                                    isolation_level=None)
         self.conn.row_factory = sqlite3.Row
+        self._lock = threading.RLock()  # 序列化写，避免共享连接并发损坏
         self.init_schema()
 
     def init_schema(self):
@@ -109,18 +115,23 @@ class Store:
         回放/批量写入须包在此内，保证 WAL 与主表同一事务一次性提交。
         """
         class _Tx:
-            def __init__(self, conn):
-                self.conn = conn
+            def __init__(self, store):
+                self.store = store
+                self.conn = store.conn
             def __enter__(self):
+                self.store._lock.acquire()
                 self.conn.execute("BEGIN")
                 return self.conn
             def __exit__(self, exc, *_):
-                if exc:
-                    self.conn.rollback()
-                else:
-                    self.conn.commit()
+                try:
+                    if exc:
+                        self.conn.rollback()
+                    else:
+                        self.conn.commit()
+                finally:
+                    self.store._lock.release()
                 return False
-        return _Tx(self.conn)
+        return _Tx(self)
 
     def _replicate(self, op: str, table: str, row_id: str, payload: dict):
         """P0a：复制改由 DB 触发器自动记账（仅 Primary 安装，见 replication.install_triggers）。
@@ -131,39 +142,40 @@ class Store:
         return
 
     def store_document(self, doc: CanonicalDoc, parent_version: Optional[int] = None) -> int:
-        cur = self.conn
-        existing = cur.execute(
-            "SELECT canonical_id, current_version FROM documents WHERE canonical_id=?",
-            (doc.canonical_id,)).fetchone()
-        if existing is None:
-            cur.execute(
-                "INSERT INTO documents(canonical_id, title, current_version, source_ids, "
-                "created_at, updated_at, doc_type, conflict) VALUES(?,?,?,?,?,?,?,0)",
-                (doc.canonical_id, doc.title, 1, json.dumps([doc.source]),
-                 _now(), doc.updated_at or _now(), doc.doc_type))
-            parent = parent_version
-        else:
-            parent = existing["current_version"]
-        c = cur.execute(
-            "INSERT INTO document_versions(doc_id, content, format, origin, author, "
-            "updated_at, hash, parent_version, note) VALUES(?,?,?,?,?,?,?,?,?)",
-            (doc.canonical_id, doc.content, doc.format, doc.origin, "",
-             doc.updated_at or _now(), doc.hash or compute_hash(doc.content),
-             parent, doc.note))
-        version_id = c.lastrowid
-        cur.execute("UPDATE documents SET current_version=?, title=?, updated_at=? "
-                    "WHERE canonical_id=?", (version_id, doc.title,
-                     doc.updated_at or _now(), doc.canonical_id))
-        if doc.content and doc.content.strip():
-            cur.execute("DELETE FROM docs_fts WHERE doc_id=?", (doc.canonical_id,))
-            cur.execute("INSERT INTO docs_fts(doc_id, title, content) VALUES(?,?,?)",
-                        (doc.canonical_id, doc.title, doc.content))
-        for a in doc.attachments:
-            cur.execute("INSERT INTO attachments(doc_id, version_id, kind, path, hash) "
-                        "VALUES(?,?,?,?,?)", (doc.canonical_id, version_id, a.kind, a.path, a.hash))
-        # WAL 记账已由 documents 表上的 AFTER INSERT/UPDATE 触发器自动完成（与主写入同事务）。
-        self.conn.commit()
-        return version_id
+        with self._lock:
+            cur = self.conn
+            existing = cur.execute(
+                "SELECT canonical_id, current_version FROM documents WHERE canonical_id=?",
+                (doc.canonical_id,)).fetchone()
+            if existing is None:
+                cur.execute(
+                    "INSERT INTO documents(canonical_id, title, current_version, source_ids, "
+                    "created_at, updated_at, doc_type, conflict) VALUES(?,?,?,?,?,?,?,0)",
+                    (doc.canonical_id, doc.title, 1, json.dumps([doc.source]),
+                     _now(), doc.updated_at or _now(), doc.doc_type))
+                parent = parent_version
+            else:
+                parent = existing["current_version"]
+            c = cur.execute(
+                "INSERT INTO document_versions(doc_id, content, format, origin, author, "
+                "updated_at, hash, parent_version, note) VALUES(?,?,?,?,?,?,?,?,?)",
+                (doc.canonical_id, doc.content, doc.format, doc.origin, "",
+                 doc.updated_at or _now(), doc.hash or compute_hash(doc.content),
+                 parent, doc.note))
+            version_id = c.lastrowid
+            cur.execute("UPDATE documents SET current_version=?, title=?, updated_at=? "
+                        "WHERE canonical_id=?", (version_id, doc.title,
+                         doc.updated_at or _now(), doc.canonical_id))
+            if doc.content and doc.content.strip():
+                cur.execute("DELETE FROM docs_fts WHERE doc_id=?", (doc.canonical_id,))
+                cur.execute("INSERT INTO docs_fts(doc_id, title, content) VALUES(?,?,?)",
+                            (doc.canonical_id, doc.title, doc.content))
+            for a in doc.attachments:
+                cur.execute("INSERT INTO attachments(doc_id, version_id, kind, path, hash) "
+                            "VALUES(?,?,?,?,?)", (doc.canonical_id, version_id, a.kind, a.path, a.hash))
+            # WAL 记账已由 documents 表上的 AFTER INSERT/UPDATE 触发器自动完成（与主写入同事务）。
+            self.conn.commit()
+            return version_id
 
     def get_document(self, canonical_id: str):
         return self.conn.execute("SELECT * FROM documents WHERE canonical_id=?",
@@ -175,12 +187,13 @@ class Store:
             (doc_id,)).fetchall()
 
     def set_sync_state(self, source_id: str, doc_id: str, etag: str, h: str):
-        self.conn.execute(
-            "INSERT INTO sync_states(source_id, doc_id, last_sync_at, etag, hash) "
-            "VALUES(?,?,?,?,?) ON CONFLICT(source_id, doc_id) DO UPDATE SET "
-            "last_sync_at=excluded.last_sync_at, etag=excluded.etag, hash=excluded.hash",
-            (source_id, doc_id, _now(), etag, h))
-        self.conn.commit()
+        with self._lock:
+            self.conn.execute(
+                "INSERT INTO sync_states(source_id, doc_id, last_sync_at, etag, hash) "
+                "VALUES(?,?,?,?,?) ON CONFLICT(source_id, doc_id) DO UPDATE SET "
+                "last_sync_at=excluded.last_sync_at, etag=excluded.etag, hash=excluded.hash",
+                (source_id, doc_id, _now(), etag, h))
+            self.conn.commit()
 
     def get_sync_state(self, source_id: str, doc_id: str):
         return self.conn.execute(
@@ -189,15 +202,16 @@ class Store:
 
     def upsert_sync_state(self, source_id, doc_id, etag="", hash="", direction="pull"):
         """插入或更新同步状态。direction: pull/push/both。"""
-        self.conn.execute("""
-            INSERT INTO sync_states(source_id, doc_id, last_sync_at, etag, hash, direction)
-            VALUES(?,?,?,?,?,?)
-            ON CONFLICT(source_id, doc_id) DO UPDATE SET
-            last_sync_at=excluded.last_sync_at, etag=excluded.etag,
-            hash=excluded.hash, direction=excluded.direction
-        """, (source_id, doc_id, time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime()),
-              etag, hash, direction))
-        self.conn.commit()
+        with self._lock:
+            self.conn.execute("""
+                INSERT INTO sync_states(source_id, doc_id, last_sync_at, etag, hash, direction)
+                VALUES(?,?,?,?,?,?)
+                ON CONFLICT(source_id, doc_id) DO UPDATE SET
+                last_sync_at=excluded.last_sync_at, etag=excluded.etag,
+                hash=excluded.hash, direction=excluded.direction
+            """, (source_id, doc_id, time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime()),
+                  etag, hash, direction))
+            self.conn.commit()
 
     def list_pending_push(self, source_name, limit=200):
         """列出从 kHUB 推送到远端源的上次 pull 后 hash 变了的文档。"""
@@ -221,59 +235,10 @@ class Store:
         return [r["source_id"] for r in rows]
 
     def mark_conflict(self, doc_id: str, flag: bool = True):
-        self.conn.execute("UPDATE documents SET conflict=? WHERE canonical_id=?",
-                          (1 if flag else 0, doc_id))
-        self.conn.commit()
-
-    def search(self, text: str):
-        q = (text or "").strip()
-        if not q:
-            return []
-        tokens = [t for t in q.split() if t]
-        if len(tokens) > 1:
-            # 多词联合搜索：每个词独立匹配，求交集（AND 语义）
-            return self._search_multitoken(tokens, q)
-        return self._search_single(tokens[0] if tokens else q)
-
-    def _search_single(self, q: str):
-        """单关键词搜索：>=3 字符走 trigram MATCH，短词走 LIKE。"""
-        if len(q) < 3:
-            return self._search_like(q)
-        try:
-            rows = self.conn.execute(
-                "SELECT doc_id, title, snippet(docs_fts, 2, '[', ']', '...', 10) AS snip "
-                "FROM docs_fts WHERE docs_fts MATCH ? "
-                "ORDER BY rank", (q,)).fetchall()
-        except sqlite3.OperationalError:
-            return self._search_like(q)
-        return [(r["doc_id"], r["title"], r["snip"]) for r in rows]
-
-    def _search_multitoken(self, tokens: list[str], raw_query: str):
-        """多词联合搜索（AND）：对每个 token 搜 LIKE，取交集。"""
-        conditions = []
-        params = []
-        for t in tokens:
-            like = f"%{t}%"
-            conditions.append("(d.title LIKE ? OR v.content LIKE ?)")
-            params.extend([like, like])
-        sql = (
-            "SELECT d.canonical_id, d.title, v.content FROM documents d "
-            "JOIN document_versions v ON v.version_id = d.current_version "
-            "WHERE " + " AND ".join(conditions))
-        rows = self.conn.execute(sql, params).fetchall()
-        # 取前 50 篇避免太长
-        return [(r["canonical_id"], r["title"],
-                 self._snippet(r["content"], raw_query, width=15))
-                for r in rows[:50]]
-
-    def _search_like(self, q: str):
-        like = f"%{q}%"
-        rows = self.conn.execute(
-            "SELECT d.canonical_id, d.title, v.content FROM documents d "
-            "JOIN document_versions v ON v.version_id = d.current_version "
-            "WHERE d.title LIKE ? OR v.content LIKE ?", (like, like)).fetchall()
-        return [(r["canonical_id"], r["title"], self._snippet(r["content"], q))
-                for r in rows]
+        with self._lock:
+            self.conn.execute("UPDATE documents SET conflict=? WHERE canonical_id=?",
+                              (1 if flag else 0, doc_id))
+            self.conn.commit()
 
     @staticmethod
     def _snippet(content, q, width=20):
@@ -298,57 +263,12 @@ class Store:
         rows = self.conn.execute("SELECT canonical_id FROM documents WHERE conflict=1").fetchall()
         return [r["canonical_id"] for r in rows]
 
-    # ---- 搜索（旧接口，保持兼容） ----
+    # ---- 搜索（向后兼容接口：返回 list，委托给新版分页 search） ----
     def search_old(self, text: str) -> list:
-        """旧版 search，返回 list。仅用于向后兼容。"""
-        q = (text or "").strip()
-        if not q:
-            return []
-        tokens = [t for t in q.split() if t]
-        if len(tokens) > 1:
-            return self._search_multitoken_old(tokens, q)
-        return self._search_single_old(tokens[0] if tokens else q)
+        """旧接口兼容：返回 hit 列表（与新版 search 行为一致，仅去掉分页元组）。"""
+        return self.search(text)[0]
 
-    def _search_single_old(self, q: str):
-        """旧版单关键词搜索。"""
-        if len(q) < 3:
-            return self._search_like_old(q)
-        try:
-            rows = self.conn.execute(
-                "SELECT doc_id, title, snippet(docs_fts, 2, '[', ']', '...', 10) AS snip "
-                "FROM docs_fts WHERE docs_fts MATCH ? "
-                "ORDER BY rank", (q,)).fetchall()
-        except sqlite3.OperationalError:
-            return self._search_like_old(q)
-        return [(r["doc_id"], r["title"], r["snip"]) for r in rows]
-
-    def _search_multitoken_old(self, tokens: list[str], raw_query: str):
-        """旧版多词联合搜索。"""
-        conditions = []
-        params = []
-        for t in tokens:
-            like = f"%{t}%"
-            conditions.append("(d.title LIKE ? OR v.content LIKE ?)")
-            params.extend([like, like])
-        sql = (
-            "SELECT d.canonical_id, d.title, v.content FROM documents d "
-            "JOIN document_versions v ON v.version_id = d.current_version "
-            "WHERE " + " AND ".join(conditions))
-        rows = self.conn.execute(sql, params).fetchall()
-        return [(r["canonical_id"], r["title"],
-                 self._snippet(r["content"], raw_query, width=15))
-                for r in rows[:50]]
-
-    def _search_like_old(self, q: str):
-        like = f"%{q}%"
-        rows = self.conn.execute(
-            "SELECT d.canonical_id, d.title, v.content FROM documents d "
-            "JOIN document_versions v ON v.version_id = d.current_version "
-            "WHERE d.title LIKE ? OR v.content LIKE ?", (like, like)).fetchall()
-        return [(r["canonical_id"], r["title"], self._snippet(r["content"], q))
-                for r in rows]
-
-    # ---- 搜索（新版，支持分页与来源过滤） ----
+    # ---- 搜索（支持分页与来源过滤） ----
     def search(self, text: str, page: int = 0, per_page: int = 50,
                source: str = "") -> tuple:
         """返回 (hits: list, total: int)。支持分页和来源过滤。"""
@@ -441,36 +361,38 @@ class Store:
                  for r in rows], total)
 
     def upsert_file(self, sha256: str, path: str, size: int, fmt: str):
-        self.conn.execute(
-            "INSERT INTO files(sha256, path, size, format, stored_at) VALUES(?,?,?,?,?) "
-            "ON CONFLICT(sha256) DO UPDATE SET path=excluded.path, size=excluded.size",
-            (sha256, path, size, fmt, _now()))
-        self.conn.commit()
+        with self._lock:
+            self.conn.execute(
+                "INSERT INTO files(sha256, path, size, format, stored_at) VALUES(?,?,?,?,?) "
+                "ON CONFLICT(sha256) DO UPDATE SET path=excluded.path, size=excluded.size",
+                (sha256, path, size, fmt, _now()))
+            self.conn.commit()
 
     def add_ebook(self, canonical_id: str, title: str, fmt: str, file_hash: str,
                   source_id: str, meta: Optional[dict] = None):
-        now = _now()
-        self.conn.execute(
-            "INSERT INTO documents(canonical_id, title, current_version, source_ids, "
-            "created_at, updated_at, doc_type, conflict, format, ingested, file_hash) "
-            "VALUES(?,?,0,?,?,?,'ebook',0,?,0,?) "
-            "ON CONFLICT(canonical_id) DO UPDATE SET title=excluded.title, "
-            "file_hash=excluded.file_hash, updated_at=excluded.updated_at",
-            (canonical_id, title, json.dumps([source_id]), now, now, fmt, file_hash))
-        if meta:
+        with self._lock:
+            now = _now()
             self.conn.execute(
-                "INSERT INTO ebook_meta(canonical_id, author, isbn, lang, page_count, "
-                "publisher, published_date, cover_path, toc_json) "
-                "VALUES(?,?,?,?,?,?,?,?,?) "
-                "ON CONFLICT(canonical_id) DO UPDATE SET "
-                "author=excluded.author, isbn=excluded.isbn, lang=excluded.lang, "
-                "page_count=excluded.page_count, publisher=excluded.publisher, "
-                "published_date=excluded.published_date, cover_path=excluded.cover_path, "
-                "toc_json=excluded.toc_json",
-                (canonical_id, meta.get("author"), meta.get("isbn"), meta.get("lang"),
-                 meta.get("page_count"), meta.get("publisher"), meta.get("published_date"),
-                 meta.get("cover_path"), meta.get("toc_json")))
-        self.conn.commit()
+                "INSERT INTO documents(canonical_id, title, current_version, source_ids, "
+                "created_at, updated_at, doc_type, conflict, format, ingested, file_hash) "
+                "VALUES(?,?,0,?,?,?,'ebook',0,?,0,?) "
+                "ON CONFLICT(canonical_id) DO UPDATE SET title=excluded.title, "
+                "file_hash=excluded.file_hash, updated_at=excluded.updated_at",
+                (canonical_id, title, json.dumps([source_id]), now, now, fmt, file_hash))
+            if meta:
+                self.conn.execute(
+                    "INSERT INTO ebook_meta(canonical_id, author, isbn, lang, page_count, "
+                    "publisher, published_date, cover_path, toc_json) "
+                    "VALUES(?,?,?,?,?,?,?,?,?) "
+                    "ON CONFLICT(canonical_id) DO UPDATE SET "
+                    "author=excluded.author, isbn=excluded.isbn, lang=excluded.lang, "
+                    "page_count=excluded.page_count, publisher=excluded.publisher, "
+                    "published_date=excluded.published_date, cover_path=excluded.cover_path, "
+                    "toc_json=excluded.toc_json",
+                    (canonical_id, meta.get("author"), meta.get("isbn"), meta.get("lang"),
+                     meta.get("page_count"), meta.get("publisher"), meta.get("published_date"),
+                     meta.get("cover_path"), meta.get("toc_json")))
+            self.conn.commit()
 
     def list_ebooks(self):
         rows = self.conn.execute(
@@ -481,10 +403,11 @@ class Store:
         return [dict(r) for r in rows]
 
     def mark_ingested(self, canonical_id: str, version_id: int):
-        self.conn.execute(
-            "UPDATE documents SET ingested=1, current_version=? WHERE canonical_id=?",
-            (version_id, canonical_id))
-        self.conn.commit()
+        with self._lock:
+            self.conn.execute(
+                "UPDATE documents SET ingested=1, current_version=? WHERE canonical_id=?",
+                (version_id, canonical_id))
+            self.conn.commit()
 
     # ---- HA / 复制状态（不提交，由调用方事务统一提交） ----
     def ha_get(self, key: str, default=None):
@@ -493,8 +416,9 @@ class Store:
         return row["value"] if row else default
 
     def ha_set(self, key: str, value: str):
-        self.conn.execute(
-            "INSERT OR REPLACE INTO ha_state(key, value) VALUES(?,?)", (key, value))
+        with self._lock:
+            self.conn.execute(
+                "INSERT OR REPLACE INTO ha_state(key, value) VALUES(?,?)", (key, value))
 
     def applied_max(self) -> int:
         v = self.ha_get("applied_max", "0")
@@ -511,37 +435,38 @@ class Store:
 
         供备机回放/重同步使用；与 store_document 写入逻辑等价，但绕过 record_change。
         """
-        cid = payload["canonical_id"]
-        cur = self.conn
-        cur.execute(
-            "INSERT OR REPLACE INTO documents("
-            "canonical_id, title, current_version, source_ids, created_at, updated_at, "
-            "doc_type, conflict, format, ingested, file_hash) "
-            "VALUES(?,?,1,?,?,?,?,0,?,0,?)",
-            (cid, payload.get("title", ""), json.dumps([payload.get("source", "")]),
-             _now(), _now(), payload.get("doc_type", ""), payload.get("format", ""),
-             payload.get("hash", "")))
-        c = cur.execute(
-            "INSERT INTO document_versions(doc_id, content, format, origin, author, "
-            "updated_at, hash, parent_version, note) VALUES(?,?,?,?,?,?,?,?,?)",
-            (cid, payload.get("content", ""), payload.get("format", ""),
-             payload.get("origin", ""), "", _now(), payload.get("hash", ""),
-             None, payload.get("note", "")))
-        vid = c.lastrowid
-        cur.execute("UPDATE documents SET current_version=? WHERE canonical_id=?",
-                    (vid, cid))
-        content = payload.get("content", "") or ""
-        title = payload.get("title", "") or ""
-        cur.execute("DELETE FROM docs_fts WHERE doc_id=?", (cid,))
-        if content.strip():
-            cur.execute("INSERT INTO docs_fts(doc_id, title, content) VALUES(?,?,?)",
-                        (cid, title, content))
-        cur.execute("DELETE FROM attachments WHERE doc_id=?", (cid,))
-        for a in payload.get("attachments", []) or []:
+        with self._lock:
+            cid = payload["canonical_id"]
+            cur = self.conn
             cur.execute(
-                "INSERT INTO attachments(doc_id, version_id, kind, path, hash) "
-                "VALUES(?,?,?,?,?)",
-                (cid, vid, a.get("kind", ""), a.get("path", ""), a.get("hash", "")))
+                "INSERT OR REPLACE INTO documents("
+                "canonical_id, title, current_version, source_ids, created_at, updated_at, "
+                "doc_type, conflict, format, ingested, file_hash) "
+                "VALUES(?,?,1,?,?,?,?,0,?,0,?)",
+                (cid, payload.get("title", ""), json.dumps([payload.get("source", "")]),
+                 _now(), _now(), payload.get("doc_type", ""), payload.get("format", ""),
+                 payload.get("hash", "")))
+            c = cur.execute(
+                "INSERT INTO document_versions(doc_id, content, format, origin, author, "
+                "updated_at, hash, parent_version, note) VALUES(?,?,?,?,?,?,?,?,?)",
+                (cid, payload.get("content", ""), payload.get("format", ""),
+                 payload.get("origin", ""), "", _now(), payload.get("hash", ""),
+                 None, payload.get("note", "")))
+            vid = c.lastrowid
+            cur.execute("UPDATE documents SET current_version=? WHERE canonical_id=?",
+                        (vid, cid))
+            content = payload.get("content", "") or ""
+            title = payload.get("title", "") or ""
+            cur.execute("DELETE FROM docs_fts WHERE doc_id=?", (cid,))
+            if content.strip():
+                cur.execute("INSERT INTO docs_fts(doc_id, title, content) VALUES(?,?,?)",
+                            (cid, title, content))
+            cur.execute("DELETE FROM attachments WHERE doc_id=?", (cid,))
+            for a in payload.get("attachments", []) or []:
+                cur.execute(
+                    "INSERT INTO attachments(doc_id, version_id, kind, path, hash) "
+                    "VALUES(?,?,?,?,?)",
+                    (cid, vid, a.get("kind", ""), a.get("path", ""), a.get("hash", "")))
 
 
 # ── WAL / 快照底层工具 ──────────────────────────────────────────────────────

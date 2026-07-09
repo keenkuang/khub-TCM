@@ -14,7 +14,7 @@
 ```bash
 cd khub-m1
 python3 -m pip install -e .        # 安装（含 PyYAML；pypdf 可选，用于 PDF 正文抽取）
-python3 -m pytest -q               # 跑全部测试（31 个，无需联网）
+python3 -m pytest -q               # 跑全部测试（182 个，无需联网）
 ```
 
 ### CLI 用法
@@ -28,8 +28,14 @@ khub list                             # 列出已注册电子书
 khub ingest ebook:<sha256>            # 入库：抽正文 + 建 FTS 索引
 khub doc-add --title 伤寒论 --file 产出.md --source-id kzocr-xxx   # 直接入库一份文档（KZOCR/OCR 产出）
 khub watch /path/to/kzocr-out --interval 3   # 监听目录，KZOCR 产出 .md 落盘即自动入库
+khub query 桂枝汤                    # 全文检索（支持分页/来源过滤）
 khub quip-sync --token xxx [--root ROOT]    # 从 Quip 拉取文档归档到本地库
 khub obsidian-import /path/to/vault          # 导入 Obsidian vault（.md 目录）
+khub feishu-sync                      # 同步飞书文档
+khub ima-note-sync                    # 拉取 IMA 笔记
+khub ima-sync                        # 同步 IMA 文档
+khub ima-probe --once                # 探测 IMA API 配额状态（单次）
+khub ima-probe                       # 持续科学探测配额规律
 khub schedule --config tasks.yaml            # 运行定时调度器
 khub desktop                                  # 启动桌面 GUI（浏览器模式）
 khub desktop --electron                       # 启动桌面 GUI（Electron 原生窗口，需先 npm install electron）
@@ -40,9 +46,18 @@ khub twin-summary p1                  # 生成患者数字孪生摘要
 khub ops-book p1 2026-07-10 王医生    # 预约挂号
 khub exam-gen 少阳证                  # 生成一道中医考题
 khub serve --port 8000               # 启动 REST API（默认 127.0.0.1，含轻量 Web UI 于 /）
-khub ima-note-sync                # 拉取 IMA 笔记
-khub ima-probe --once             # 探测 IMA API 配额状态
-khub ima-probe                    # 持续科学探测配额规律
+khub dr init                         # 灾备：初始化快照仓库
+khub dr push [--target ssh://...]    # 灾备：推送快照到异地
+khub dr status                       # 灾备：查看快照/lsn 状态
+khub dr list-snapshots               # 灾备：列出可用快照
+khub dr restore --to <lsn|snapshot>  # 灾备：按 lsn/快照恢复到指定时间点
+khub ha status                       # 高可用：查看节点角色/状态
+khub ha promote                      # 高可用：提升为本机为 Primary
+khub ha demote                       # 高可用：降级为 Standby
+khub ha run                          # 高可用：启动备机回放循环
+khub ha reconcile                    # 高可用：检测并协调主备差异
+khub ha resolve <id>                 # 高可用：解决脑裂
+khub ha self-test                    # 高可用：自检
 ```
 
 ### REST API
@@ -53,10 +68,14 @@ khub ima-probe                    # 持续科学探测配额规律
 | POST | `/ebooks/register` `{path, move?}` | 注册一本 |
 | POST | `/ebooks/{cid}/ingest` | 入库（抽文本+索引） |
 | GET  | `/` | 轻量本地 Web UI（文档浏览 / 检索 / 冲突清单） |
+| GET  | `/health` | 健康检查（版本 / 文档数 / 运行时长） |
+| GET  | `/stats` | 数据看板（总数 / 各来源 / 今日入库 / 最近文档） |
 | GET  | `/documents` | 列出全部文档 |
+| GET  | `/documents/{cid}` | 获取单篇文档（最新版本全文，截断至 100k 字符） |
 | GET  | `/conflicts` | 列出冲突文档 |
-| GET  | `/search?q=关键词` | 全文检索（中文子串；<3 字符自动退回 LIKE） |
+| GET  | `/search?q=关键词` | 全文检索（中文子串；<3 字符自动退回 LIKE；支持 page/per/source） |
 | GET  | `/semantic?q=关键词&k=5` | 语义检索（向量 / ANN，接真实模型后质量提升） |
+| GET  | `/web/*` | 静态资源（路径穿越已防护） |
 | POST | `/documents` `{title, content, source?, source_id?, format?, metadata?}` | 直接入库一份文档（KZOCR/OCR 产出，不依赖原始文件） |
 | POST | `/exam/questions` | 新增考题 |
 | GET  | `/exam/questions?kind=` | 列出考题 |
@@ -139,8 +158,9 @@ docs/
 
 ## 安全
 
-- REST API 默认绑定 `127.0.0.1`；远程访问只在 API 层加认证，不动核心。
+- REST API 默认绑定 `127.0.0.1`；一旦设置环境变量 `KHUB_API_TOKEN`，**所有**端点（含读）均需 `Authorization: Bearer <token>`，避免本地任意进程裸读病历/问诊等 PII。未设置则不鉴权（仅本地使用）。
 - FTS 查询参数化，无注入；非法查询兜底返回空。
-- 涉及 PII（病历/孪生体）时启用加密落盘 + 访问审计（见 `docs/architecture.md` §安全）。
+- ANN 向量表名由 `model` 经白名单校验（仅 `[A-Za-z0-9_]`），防建/删表 SQL 注入；定时调度命令以 `shell=False` 执行，防命令注入。
+- 涉及 PII（病历/孪生体）时启用加密落盘 + 访问审计（见 `docs/architecture.md` §安全）。PII 加密默认关闭，需 `KHUB_PII_ENCRYPT=1` + `KHUB_PII_KEY`（或 `KHUB_PII_KEY_FILE`）启用；docker-compose 默认开启。
 
 详见 `docs/architecture.md` 与 `docs/testing.md`。

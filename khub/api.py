@@ -13,6 +13,14 @@ from .models import CanonicalDoc
 from .storage import ManagedLibrary
 
 
+def _safe_int(value, default: int) -> int:
+    """把查询参数安全转 int，失败回退默认，避免非法输入抛 500。"""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
 class App:
     """薄 REST 层：直接复用核心库 API，不重写业务逻辑。"""
 
@@ -23,12 +31,11 @@ class App:
 
     def dispatch(self, method: str, raw_path: str, body: Optional[dict] = None,
                  auth_header: str = ""):
-        # 写操作鉴权（可选，由 KHUB_API_TOKEN 环境变量控制）
-        if method in ("POST", "PUT", "DELETE"):
-            token = os.environ.get("KHUB_API_TOKEN")
-            if token:
-                if auth_header != f"Bearer {token}":
-                    return 401, {"error": "unauthorized"}
+        # 鉴权（可选，由 KHUB_API_TOKEN 环境变量控制）：一旦配置，所有方法（含读）均需 Bearer 令牌，
+        # 避免本地任意进程裸读病历/问诊等 PII。未配置则不鉴权（仅本地使用）。
+        token = os.environ.get("KHUB_API_TOKEN")
+        if token and auth_header != f"Bearer {token}":
+            return 401, {"error": "unauthorized"}
         parsed = urlparse(raw_path)
         path = parsed.path
         qs = parse_qs(parsed.query)
@@ -96,8 +103,8 @@ class App:
 
         if method == "GET" and path == "/search":
             q = qs.get("q", [""])[0]
-            page = int(qs.get("page", ["0"])[0])
-            per = int(qs.get("per", ["50"])[0])
+            page = _safe_int(qs.get("page", ["0"])[0], 0)
+            per = _safe_int(qs.get("per", ["50"])[0], 50)
             source = qs.get("source", [""])[0]
             hits, total = self.store.search(q, page=page, per_page=per, source=source)
             return 200, {"hits": [{"doc_id": d, "title": t, "snippet": s}
@@ -136,7 +143,7 @@ class App:
         if method == "GET" and path == "/semantic":
             from .retrieval import Retriever
             q = qs.get("q", [""])[0]
-            k = int(qs.get("k", ["5"])[0] or 5)
+            k = _safe_int(qs.get("k", ["5"])[0], 5)
             hits = Retriever(self.store).search_similar(q, k=k)
             return 200, [{"doc_id": d, "score": round(s, 4)} for d, s in hits]
 

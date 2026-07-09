@@ -41,7 +41,8 @@ def watch_and_ingest(store: Store, directory: str, interval: float = 3.0, stop=N
                 if seen.get(sid) == mtime:
                     continue
                 try:
-                    content = open(fp, encoding="utf-8").read()
+                    with open(fp, encoding="utf-8") as fh:
+                        content = fh.read()
                 except OSError:
                     continue
                 # 内容未变则跳过（跨进程也幂等）

@@ -10,7 +10,9 @@ WorkingDirectory=/home/keen/khub-m1
 Environment=KHUB_DB=%h/.khub/khub.db
 Environment=KHUB_LIBRARY=%h/.khub/library
 Environment=KHUB_LOG_FILE=/var/log/khub/khub.log
-ExecStart={{KHUB_BIN}} serve --port 8765
+# ExecStart 须指向实际安装的 khub 可执行文件（pip install -e . 后用 which khub 查看）。
+# 常见位置：/usr/local/bin/khub 或 ~/.local/bin/khub。
+ExecStart=/usr/local/bin/khub serve --port 8765
 Restart=on-failure
 RestartSec=10
 StandardOutput=append:/var/log/khub/khub.log

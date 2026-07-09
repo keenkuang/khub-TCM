@@ -11,10 +11,6 @@ from khub.api import App, make_handler
 from khub.db import Store
 from khub.storage import ManagedLibrary
 
-# 使 SQLite 连接可在线程间共享（仅用于 :memory: 测试 server）
-_orig_connect = sqlite3.connect
-sqlite3.connect = lambda *a, **kw: _orig_connect(*a, **kw, check_same_thread=False)
-
 
 def test_serve_health_endpoint():
     """实际 HTTP 服务应返回健康检查。"""

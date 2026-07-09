@@ -1,5 +1,41 @@
 # 变更日志
 
+## [0.2.1] — 2026-07-09
+
+### 修复（M1 代码评审）
+
+#### 核心存储 / 并发
+- `Store` 连接改为 `check_same_thread=False` + `isolation_level=None`，并用 `threading.RLock` 串行化所有写操作，修复 REST 服务（`ThreadingHTTPServer`）跨线程共享连接导致的 `ProgrammingError` 与并发写入损坏风险。
+- 修复 `sqlite3.connect` 误用未展开的 `path`（曾导致 `~/x.db` 落到工作目录而非家目录的数据丢失隐患）。
+- 修复 `transaction()` 与隐式事务冲突（显式 `BEGIN` + `isolation_level=None`，并修正 `replay_from` 缺失的 `BEGIN`，恢复回放中途异常整体 rollback）。
+- 删除 `Store.search` 被新版分页 `search` 覆盖而产生的死代码，并保留 `search_old` 作为兼容薄封装（委托给新版 `search`）。
+
+#### 安全
+- REST 鉴权从「仅写操作」扩展为「设置 `KHUB_API_TOKEN` 后所有端点（含读）均需 Bearer 令牌」，避免本地任意进程裸读病历/问诊 PII。
+- ANN 向量表名由 `model` 经白名单（`[A-Za-z0-9_]`）校验，防建/删表 SQL 注入。
+- 定时调度命令由 `shell=True` 改为 `shell=False`（`shlex` 拆词），防命令注入。
+- PII Fernet 密钥在加载时即校验格式，非法密钥给出明确错误而非在写入时崩溃。
+- 检索 `/search`、`/semantic` 的 `page`/`k` 参数非法时安全回退默认，避免 500。
+
+#### 子系统正确性
+- 考题生成：提示并要求模型以 JSON/标签格式返回，解析出题干/选项/答案/解析；无模型时退回占位题干。
+- 考题判分：用户答错且配置 LLM 时真正调用 provider 复核，而非返回死逻辑。
+- `cosine` 相似度对不等长向量显式校验，避免 `zip` 静默截断导致错误结果。
+- `watch` 文件读取改用 `with open`，修复文件句柄泄露。
+
+### 文档同步
+- `pyproject.toml` 版本 0.1.0 → 0.2.1，并补 `khub.ha` 子包（此前漏装）；`khub/__init__.py` 版本同步。
+- `systemd/khub.service`：将模板占位 `{{KHUB_BIN}}` 替换为实际可执行文件路径并说明渲染方式。
+- `README.md`：CLI/REST 补全 `query`、`dr *`、`ha *`、`feishu-sync`、`ima-*` 等命令与 `/health`、`/stats`、`/documents/{cid}`、`/web/*` 端点；测试数 31 → 182；安全章节补充鉴权/注入防护。
+- `docs/config.md`：新增 `KHUB_API_TOKEN`/`KHUB_PII_KEY_FILE`/`KHUB_EMBED_MODEL`/`IMA_*` 等环境变量；澄清核心**不读取**全局 `config.yaml`（仅调度器用 `tasks.yaml`）。
+- `docs/api.md`：补充 `GET /documents/{cid}` 与 `/web/*` 端点，版本号同步。
+- `docs/architecture.md`：模块表补齐 `sync_engine`/`crypto`/`audit`/`replication`/`ha`/`scheduler`/`watch`/`normalizer`/数据源适配器等；扩展点标记 ANN/加密/真实模型为「已实现」并补充并发安全说明。
+
+### 测试
+- 182 个测试全部通过（`tests/` 目录，2 个跳过），端到端覆盖全链路。
+
+---
+
 ## [0.2.0] — 2026-07-07
 
 ### 新增
@@ -40,7 +76,7 @@
 - `khub desktop` CLI 命令支持浏览器模式和 Electron 原生窗口模式
 
 ### 测试
-- 97 个测试全部通过（`tests/` 目录）
+- 182 个测试全部通过（`tests/` 目录）
 - 端到端集成测试覆盖全链路：患者→病历→问诊→孪生→电子书→KZOCR→检索→PII 加密→审计
 - 整体行覆盖率 73%，核心模块 >85%
 

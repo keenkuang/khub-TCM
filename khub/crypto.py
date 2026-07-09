@@ -15,12 +15,15 @@ def load_key() -> bytes:
     """
     key = os.environ.get("KHUB_PII_KEY")
     if key:
+        _validate_key(key.encode("ascii"))
         return key.encode("ascii")
 
     key_file = os.environ.get("KHUB_PII_KEY_FILE", os.path.expanduser("~/.khub/pii.key"))
     if os.path.exists(key_file):
         with open(key_file, "rb") as f:
-            return f.read().strip()
+            data = f.read().strip()
+        _validate_key(data)
+        return data
 
     if os.environ.get("KHUB_PII_ENCRYPT") == "1":
         key = Fernet.generate_key()
@@ -38,6 +41,16 @@ def load_key() -> bytes:
         return key
 
     return b""
+
+
+def _validate_key(key: bytes):
+    """校验 Fernet key 格式（44 字节 base64url），非法时给出明确错误而非崩溃。"""
+    try:
+        Fernet(key)
+    except Exception as e:
+        raise ValueError(
+            f"KHUB_PII_KEY 不是合法的 Fernet 密钥（应为 44 字符 base64url 串）：{e}"
+        ) from e
 
 
 class PIICipher:

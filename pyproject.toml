@@ -1,6 +1,6 @@
 [project]
 name = "khub"
-version = "0.1.0"
+version = "0.2.1"
 requires-python = ">=3.11"
 dependencies = ["PyYAML>=6.0"]
 [project.optional-dependencies]
@@ -13,7 +13,7 @@ khub = "khub.cli:main"
 requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 [tool.setuptools]
-packages = ["khub", "khub.adapters", "khub.extractors", "khub.llm", "khub.exam", "khub.clinical", "khub.ops"]
+packages = ["khub", "khub.adapters", "khub.extractors", "khub.llm", "khub.exam", "khub.clinical", "khub.ops", "khub.ha"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]

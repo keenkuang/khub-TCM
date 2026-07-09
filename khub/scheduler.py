@@ -1,6 +1,7 @@
 """内置定时调度器模块，支持按时间间隔周期性执行 khub CLI 命令。"""
 
 import os
+import shlex
 import subprocess
 import threading
 import time
@@ -65,11 +66,19 @@ class Scheduler:
 
 
 def _run_cmd(cmd: str):
-    """执行 shell 命令。"""
+    """执行命令。
+
+    使用 shell=False（命令经 shlex 拆为列表），避免 YAML 配置中的命令被当作
+    shell 解释执行而引入命令注入风险。因此不支持管道/重定向等 shell 语法——
+    如需复杂逻辑请写成独立脚本后调用。
+    """
     try:
+        args = shlex.split(cmd)
+        if not args:
+            return
         subprocess.run(
-            cmd,
-            shell=True,
+            args,
+            shell=False,
             timeout=_TASK_TIMEOUT,
             capture_output=True,
         )

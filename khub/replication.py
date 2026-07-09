@@ -482,9 +482,6 @@ def replay_from(store, changes: list, target_lsn: int = None) -> int:
     replays = _ensure_replayers()
     conn = store.conn
     conn.execute("PRAGMA recursive_triggers=OFF")
-    # 防重入：设置回放锁，使本机复制触发器（WHEN 守卫）整体跳过。
-    conn.execute("INSERT OR REPLACE INTO ha_state(key, value) "
-                 "VALUES('__replay_lock', '1')")
     ordered = sorted(
         changes,
         key=lambda c: (c.get("lsn") if c.get("lsn") is not None
@@ -493,6 +490,13 @@ def replay_from(store, changes: list, target_lsn: int = None) -> int:
     max_lsn = applied_max
     applied = 0
     try:
+        # autocommit 模式下需显式 BEGIN，使回放锁、各 replayer 直写、applied_max、
+        # 解锁在同一事务内一次性提交；中途异常由下方 rollback 整体撤销。
+        conn.execute("BEGIN")
+        # 防重入：设置回放锁，使本机复制触发器（WHEN 守卫）整体跳过。
+        conn.execute("INSERT OR REPLACE INTO ha_state(key, value) "
+                     "VALUES('__replay_lock', '1')")
+
         for ch in ordered:
             lsn = ch.get("lsn")
             if lsn is None:

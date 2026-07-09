@@ -22,6 +22,15 @@
 | `exam` | 中医考试：题库 CRUD + 生成/评判（占位） | `add_question`, `generate`, `grade` |
 | `clinical` | 患者数字孪生体：patients/records/consultations/twin | `add_patient`, `add_record`, `add_consultation`, `build_summary`/`persist_summary` |
 | `ops` | 门诊运营：排班/预约/就诊 | `add_schedule`, `book_appointment`, `checkin_visit` |
+| `sync_engine` | OCR 入库/同步引擎（多版本、冲突标记） | `ingest`, `sync_source`, `conflicts` |
+| `models` | 数据模型 `CanonicalDoc` / `RawDoc` / `Attachment` / `SyncResult` | — |
+| `crypto` | PII Fernet 对称加密落盘 | `enc`, `dec`, `get_cipher`, `PIICipher` |
+| `audit` | PII 读取访问审计 | `record_access`, `list_access` |
+| `replication` / `ha` | 双机热备与远程灾备：WAL 触发器记账 + lsn + 快照 + SSH 副本 + 回放 | `replay_from`, `ReplicaTarget`, `FailoverController` |
+| `scheduler` | 定时调度（YAML 任务 + 后台循环，命令以 `shell=False` 执行） | `Scheduler`, `run_tasks` |
+| `watch` | 目录监听自动入库（KZOCR 产出） | `watch_and_ingest` |
+| `normalizer` | 源文档→规范文档归一化 | `normalize` |
+| `obsidian` / `quip` / `ima` | 数据源适配器（push-in / pull） | `pull`, `push`, `normalize` |
 
 ## 3. 数据模型（表）
 
@@ -42,18 +51,19 @@
 - `consultations(id, patient_id, date, chief_complaint, tongue_pulse, differentiation, plan, created_at)`
 - `schedules(id, date, doctor, slot)` / `appointments(id, patient_id, date, doctor, status, created_at)` / `visits(id, appointment_id, patient_id, checkin_at, note)`
 
-## 4. 扩展点（未来实现的位置）
+## 4. 扩展点（已实现 / 未来）
 
-- **真实嵌入 / LLM**：实现 `LLMProvider`（如 OpenAI / 本地模型 / 国产模型），`register_provider` 注册后，`retrieval` / `exam.generator` / `exam.grader` / `clinical.twin` 自动生效，无需改业务代码。
-- **ANN 向量检索**：替换 `Retriever.search_similar` 的暴力实现为 `sqlite-vec` 或独立向量库；接口不变。
-- **封面/向量化入库**：在 `ingest_ebook` 中补 `extract_cover` 与逐块 `embeddings` 写入（当前仅整篇文本）。
-- **加密落盘**：对 `patients`/`records`/`consultations`/`twin` 启用 SQLCipher 或文件系统加密 + 访问审计。
+- **真实嵌入 / LLM（已实现）**：`LLMProvider` 抽象 + `RemoteLLMProvider`（OpenAI 风格 `/v1/chat/completions`）、`RemoteEmbedder`（/v1/embeddings）；设 `KHUB_LLM_URL` / `KHUB_EMBEDDING_URL` 即启用，否则 `NoOpProvider` / `LocalEmbedder` 兜底。`retrieval` / `exam.generator` / `exam.grader` / `clinical.twin` 自动生效。
+- **ANN 向量检索（已实现）**：`Retrieval` 用 `sqlite-vec` 虚表（余弦）近似检索，不可用时退回暴力余弦；`KHUB_DISABLE_ANN=1` 关闭。`model` 名经白名单校验（`[A-Za-z0-9_]`）防 SQL 注入。
+- **封面/向量化入库（已实现）**：入库自动抽封面 + 整篇文本向量化写入 `embeddings`。
+- **加密落盘（已实现）**：`crypto.PIICipher`（Fernet）覆盖患者/病历/问诊 PII；`KHUB_PII_ENCRYPT=1` + `KHUB_PII_KEY`（或 `KHUB_PII_KEY_FILE`）启用；`audit` 记录每次 PII 读取。
 
 ## 5. 安全
 
-- 网络：REST 默认 `127.0.0.1`；远程仅 API 层加认证。
-- 注入：FTS `MATCH ?` 参数化；非法查询 `search()` 兜底返回 `[]`。
-- 数据：本地文件；PII 模块（M6）启用加密 + 审计；备份 = 复制 `~/.khub/`。
+- 网络：REST 默认 `127.0.0.1`；设置 `KHUB_API_TOKEN` 后**所有**端点（含读）均需 `Bearer` 令牌，防本地任意进程裸读 PII。
+- 注入：FTS `MATCH ?` 与 SQL 均参数化；ANN 向量表名经白名单校验；定时调度命令以 `shell=False` 执行，防命令注入；静态资源 `realpath` + 前缀校验防路径穿越。
+- 数据：本地文件；PII 模块（M6）启用加密 + 审计；备份 = 复制 `~/.khub/` 或灾备快照（`khub dr`）。
+- 并发：单 `Store` 连接跨线程访问（`ThreadingHTTPServer`）时以 `check_same_thread=False` + `threading.RLock` 串行化写，避免共享连接并发损坏。
 - 去重：sha256 防同文件多份冗余与泄漏面扩大。
 
 > 电子书入库/存储的详细设计见 `plan_ebook.md`。

@@ -10,12 +10,14 @@
 |------|------|------|--------|----------|
 | GET | `/` | Web UI 首页 | — | HTML 页面 |
 | GET | `/stats` | 数据看板统计 | — | `{"total":1861, "sources":{"obsidian":1711,...}, "today":0, "recent":[...]}` |
-| GET | `/health` | 健康检查 | — | `{"status":"ok","version":"0.2.0","documents":42,"uptime_sec":3600.0}` |
+| GET | `/health` | 健康检查 | — | `{"status":"ok","version":"0.2.1","documents":42,"uptime_sec":3600.0}` |
 | GET | `/ebooks` | 列出电子书 | — | `[{"canonical_id":"sha256-xxx","title":"伤寒论",...}]` |
 | POST | `/ebooks/register` | 注册电子书 | `{"path":"...", "move":false}` | `{"canonical_id":"sha256-xxx"}` |
 | POST | `/ebooks/{cid}/ingest` | 入库电子书 | — | `{"canonical_id":"sha256-xxx","version_id":3}` |
 | GET | `/documents` | 列出全部文档 | — | `[{"canonical_id":"sha256-xxx","title":"伤寒论",...}]` |
+| GET | `/documents/{cid}` | 获取单篇文档（最新版本全文） | — | `{"canonical_id":"...","title":"...","content":"...","version_count":3,...}` |
 | GET | `/conflicts` | 列出冲突文档 | — | `[{"canonical_id":"sha256-xxx","title":"伤寒论"}]` |
+| GET | `/web/*` | 静态资源（路径穿越已防护） | — | 文件字节流 |
 | POST | `/documents` | 直接入库文档 | `{"title":"...","content":"...","source":"KZOCR"}` | `{"status":"ok","doc_id":"sha256-xxx","version_id":1}` |
 | GET | `/search?q=关键词&page=0&per=20&source=obsidian` | 全文检索（分页+来源过滤） | — | `{"hits":[...], "total":264, "page":0, "per_page":20}` |
 | GET | `/semantic?q=关键词&k=5` | 语义检索 | — | `[{"doc_id":"sha256-xxx","score":0.9234}]` |
@@ -55,7 +57,7 @@
 ```json
 {
   "status": "ok",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "documents": 42,
   "uptime_sec": 3600.0
 }
@@ -176,6 +178,43 @@
   }
 ]
 ```
+
+### `GET /documents/{cid}`
+
+获取单篇文档的最新版本全文（内容截断至 100k 字符，防止超大文本）。
+
+**路径参数：**
+
+| 参数 | 说明 |
+|------|------|
+| `cid` | 文档 `canonical_id`（需 URL 编码） |
+
+**响应：** `200`
+
+```json
+{
+  "canonical_id": "sha256-xxx",
+  "title": "伤寒论",
+  "content": "（最新版本正文，最多 100000 字符）",
+  "version_count": 3,
+  "source_ids": "[\"kzocr\"]",
+  "created_at": "2026-04-01T12:00:00",
+  "updated_at": "2026-04-02T08:00:00",
+  "format": "markdown"
+}
+```
+
+**错误：**
+
+| 状态码 | 说明 |
+|--------|------|
+| `404` | 指定 `cid` 未找到 |
+
+### `GET /web/*`
+
+静态资源服务（Web UI 依赖的前端资源）。路径经 `realpath` + 前缀校验，已防目录穿越；非文件返回 `404`。
+
+**响应：** `200` — 文件字节流（`application/octet-stream`）
 
 ### `POST /documents`
 
