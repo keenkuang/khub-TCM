@@ -1,0 +1,11 @@
+**/__pycache__
+*.pyc
+.env
+.git
+.gitignore
+desktop/
+docs/
+node_modules/
+tests/
+venv/
+*.log

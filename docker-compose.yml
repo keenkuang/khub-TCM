@@ -1,0 +1,45 @@
+services:
+  khub:
+    build: .
+    restart: unless-stopped
+    volumes:
+      - khub-data:/data
+      - ./config.yaml:/app/config.yaml:ro
+      # PII 密钥文件（可选，取消注释并创建 pii.key）
+      # - ./pii.key:/root/.khub/pii.key:ro
+    environment:
+      - KHUB_DB=/data/khub.db
+      - KHUB_LIBRARY=/data/library
+      - KHUB_CONFIG=/app/config.yaml
+      # 真实模型（可选，注释掉时为离线模式）
+      # - KHUB_EMBEDDING_URL=http://host.docker.internal:8080/v1/embeddings
+      # - KHUB_EMBED_API_KEY=...
+      # - KHUB_EMBED_MODEL=...
+      # - KHUB_LLM_URL=http://host.docker.internal:8080/v1/chat/completions
+      # - KHUB_LLM_API_KEY=...
+      # - KHUB_LLM_MODEL=...
+      # PII 加密（可选，建议用密钥文件方式）
+      # - KHUB_PII_ENCRYPT=1
+      # - KHUB_PII_KEY=...               # 方式1：直接传密钥（注意不提交到 git）
+      # - KHUB_PII_KEY_FILE=...          # 方式2：从文件加载（推荐）
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/khub-docker.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      khub:
+        condition: service_healthy
+
+volumes:
+  khub-data:
