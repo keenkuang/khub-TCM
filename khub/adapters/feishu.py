@@ -48,8 +48,8 @@ class FeishuAdapter:
             "Content-Type": "application/json; charset=utf-8",
         }
 
-    def _get(self, path: str, params: dict = None) -> dict:
-        """GET 请求 + 自动重试（token 过期时刷新）。"""
+    def _get(self, path: str, params: dict = None, _retry: int = 1) -> dict:
+        """GET 请求 + 自动重试（token 过期时刷新，最多 _retry 次）。"""
         url = f"{API_BASE}{path}"
         if params:
             qs = "&".join(f"{k}={urllib.parse.quote(str(v))}" for k, v in params.items())
@@ -59,11 +59,13 @@ class FeishuAdapter:
             with urllib.request.urlopen(req, timeout=30) as resp:
                 return json.loads(resp.read().decode())
         except urllib.error.HTTPError as e:
-            if e.code == 999914:  # token 过期
+            if e.code == 999914 and _retry > 0:
                 warnings.warn("Feishu token 过期，刷新后重试")
                 self._auth._refresh()  # 强制刷新
-                return self._get(path, params)
+                return self._get(path, params, _retry - 1)
             raise RuntimeError(f"Feishu HTTP {e.code}: {e.reason}")
+        except urllib.error.URLError as e:
+            raise RuntimeError(f"Feishu 请求失败: {e.reason}")
 
     # ── 知识空间遍历 ────────────────────────────────────────────────────
 

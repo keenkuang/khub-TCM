@@ -324,23 +324,14 @@ def main(argv=None):
         print(f"Quip 同步完成：入库 {ingested}，跳过 {skipped}")
     elif args.cmd == "feishu-sync":
         from .adapters import create_adapter
-        from .sync_engine import TwoWaySyncEngine
         adapter = create_adapter("feishu", space_id=args.space_id)
         raw_docs = adapter.pull()
-        engine = TwoWaySyncEngine(store)
-        items = []
+        ingested = 0
         for raw in raw_docs:
             canonical = adapter.normalize(raw)
             store.store_document(canonical)
-            items.append({
-                "source_id": canonical.canonical_id,
-                "title": canonical.title,
-                "content": canonical.content,
-                "hash": canonical.hash,
-            })
-        result = engine.sync_pull("feishu", items)
-        print(f"飞书同步完成：入库 {result['ingested']} 篇"
-              f"{'，跳过 ' + str(result.get('skipped', 0)) + ' 篇' if result.get('skipped') else ''}")
+            ingested += 1
+        print(f"飞书同步完成：入库 {ingested} 篇")
     elif args.cmd == "obsidian-import":
         from .obsidian import import_vault
         ingested, skipped = import_vault(store, args.vault_path, recursive=args.recursive)
