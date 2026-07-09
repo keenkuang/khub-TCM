@@ -61,11 +61,15 @@ class FeishuAdapter:
         except urllib.error.HTTPError as e:
             if e.code == 999914 and _retry > 0:
                 warnings.warn("Feishu token 过期，刷新后重试")
-                self._auth._refresh()  # 强制刷新
+                try:
+                    self._auth._refresh()  # 强制刷新
+                except RuntimeError as refresh_err:
+                    raise RuntimeError(
+                        f"Feishu token 刷新失败: {refresh_err}") from refresh_err
                 return self._get(path, params, _retry - 1)
-            raise RuntimeError(f"Feishu HTTP {e.code}: {e.reason}")
+            raise RuntimeError(f"Feishu HTTP {e.code}: {e.reason}") from e
         except urllib.error.URLError as e:
-            raise RuntimeError(f"Feishu 请求失败: {e.reason}")
+            raise RuntimeError(f"Feishu 请求失败: {e.reason}") from e
 
     # ── 知识空间遍历 ────────────────────────────────────────────────────
 
@@ -80,7 +84,7 @@ class FeishuAdapter:
             data = self._get("/wiki/v2/spaces", params)
             resp_data = data.get("data", {})
             items.extend(resp_data.get("items", []))
-            if not resp_data.get("has_more", False):
+            if not resp_data.get("has_more", False) or not page_token:
                 break
             page_token = resp_data.get("page_token", "")
             time.sleep(0.3)
@@ -102,7 +106,7 @@ class FeishuAdapter:
                 if item.get("has_child", False):
                     children = self._list_node_children(space_id, item["node_token"])
                     nodes.extend(children)
-            if not resp_data.get("has_more", False):
+            if not resp_data.get("has_more", False) or not page_token:
                 break
             page_token = resp_data.get("page_token", "")
             time.sleep(0.3)
@@ -127,7 +131,7 @@ class FeishuAdapter:
                 if item.get("has_child", False):
                     sub = self._list_node_children(space_id, item["node_token"])
                     children.extend(sub)
-            if not resp_data.get("has_more", False):
+            if not resp_data.get("has_more", False) or not page_token:
                 break
             page_token = resp_data.get("page_token", "")
             time.sleep(0.3)
