@@ -37,6 +37,9 @@ def build_parser():
     ps.add_argument("--host", default="127.0.0.1")
     ps.add_argument("--port", type=int, default=8000)
 
+    pq = sub.add_parser("query", help="全文检索本地知识库")
+    pq.add_argument("keywords", nargs="+")
+
     pg = sub.add_parser("exam-gen", help="根据主题生成一道中医考题")
     pg.add_argument("topic")
     pg.add_argument("--source-doc", default="", dest="source_doc")
@@ -241,6 +244,12 @@ def main(argv=None):
         print(f"{args.canonical_id} -> version {vid}")
     elif args.cmd == "serve":
         serve(store, lib, args.host, args.port)
+    elif args.cmd == "query":
+        q = " ".join(args.keywords)
+        for doc_id, title, snip in store.search(q):
+            print(f"{doc_id}\t{title}")
+            if snip:
+                print(f"  {snip}")
     elif args.cmd == "exam-gen":
         q = generate(args.topic, source_doc=args.source_doc)
         print(q.stem)
@@ -514,9 +523,22 @@ def main(argv=None):
                 # 指向线上库时避免误毁当前数据；如需覆盖删备份或换路径即可。
                 bak = f"{out_db}.bak-{int(time.time())}"
                 os.rename(out_db, bak)
+                # 旧库若使用 WAL 模式，关联的 -wal/-shm 文件也要一起改名，
+                # 否则备份库打开时会找不到对应的 WAL 导致 I/O 错误
+                for _ext in ("-wal", "-shm"):
+                    _p_src = out_db + _ext
+                    if os.path.exists(_p_src):
+                        os.rename(_p_src, bak + _ext)
                 print(f"警告：目标库 {out_db} 已存在，已备份为 {bak}；"
                       "如需覆盖请先删除备份或换路径。")
             _shutil.copy(snap_db, out_db)
+            # 清理快照可能残留的 WAL / SHM 文件（前身 Store 若启用 WAL 模式
+            # 会留下 -wal/-shm 文件，与新内容不兼容，须删除以防 SQLite
+            # 尝试从过期 WAL 恢复导致数据异常）
+            for _ext in ("-wal", "-shm"):
+                _p = out_db + _ext
+                if os.path.exists(_p):
+                    os.remove(_p)
             restored = Store(out_db)
             rebuild_fts(restored)
             restored.set_applied_max(snapshot_lsn)

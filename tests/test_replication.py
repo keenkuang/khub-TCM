@@ -160,6 +160,8 @@ def test_local_replica_push_snapshot_with_db():
     store.conn.execute("CREATE TABLE t(x)")
     store.conn.execute("INSERT INTO t VALUES(42)")
     store.conn.commit()
+    # WAL mode: checkpoint before file copy, ensure data in main DB
+    store.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
 
     target_dir = tempfile.mkdtemp()
     try:
@@ -476,10 +478,11 @@ def test_dr_restore_target_backs_up_existing():
 
         assert rc == 0, "restore 应成功"
         # 旧库已被备份（生成 out.db.bak-<ts>），原文件名被新恢复库占用
-        baks = [f for f in os.listdir(base) if f.startswith("out.db.bak-")]
+        baks = sorted(f for f in os.listdir(base)
+                      if f.startswith("out.db.bak-") and not f.endswith(("-wal", "-shm")))
         assert baks, "应生成旧库备份 out.db.bak-*，避免静默覆盖"
         # 备份保留旧库数据，未被覆盖
-        bak_store = Store(os.path.join(base, baks[0]))
+        bak_store = Store(os.path.join(base, baks[-1]))
         assert bak_store.get_document("LIVE") is not None, "备份须保留旧库数据"
         # 新恢复库含恢复的数据、不含旧标记
         new_store = Store(target_db)

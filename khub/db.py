@@ -75,6 +75,8 @@ class Store:
             self.conn.execute("INSERT INTO lsn_seq(seq) VALUES(0)")
         self._migrate()
         self.conn.commit()
+        # WAL 模式：允许并发读/写，避免 delete 模式的读写锁互相阻塞
+        self.conn.execute("PRAGMA journal_mode=WAL")
         # documents 复制触发器（仅 Primary 自动记账；备机回放前关 recursive_triggers）
         from .replication import install_triggers
         install_triggers(self.conn, "documents", pk="canonical_id")
@@ -580,6 +582,11 @@ def make_snapshot_db(src_conn, dst_path: str):
     """
     import re
     import sqlite3  # noqa: F401（保证 sqlite3 可用）
+
+    # 将 WAL checkpoint 到主 DB，确保快照包含全部已提交数据
+    # 注意：FULL 会阻塞等待，TRUNCATE 会重置 WAL（可能影响 vec0 虚表），
+    # 用 PASSIVE 只 checkpoint 已完成的帧，不等待活跃读事务
+    src_conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
 
     if os.path.exists(dst_path):
         os.remove(dst_path)

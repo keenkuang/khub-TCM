@@ -2,31 +2,42 @@ services:
   khub:
     build: .
     restart: unless-stopped
+    stop_grace_period: 60s
     volumes:
-      - khub-data:/data
+      - khub-db:/data/db
+      - khub-library:/data/library
       - ./config.yaml:/app/config.yaml:ro
+      # SSH agent 转发（可选，用于 SshReplica 远程灾备）
+      # - $SSH_AUTH_SOCK:/ssh-agent:ro
+      # SSH 密钥挂载（可选，次选方案）
+      # - ~/.ssh/id_ed25519:/root/.ssh/id_ed25519:ro
+      # - ~/.ssh/known_hosts:/root/.ssh/known_hosts:ro
       # PII 密钥文件（可选，取消注释并创建 pii.key）
       # - ./pii.key:/root/.khub/pii.key:ro
     environment:
-      - KHUB_DB=/data/khub.db
+      - KHUB_DB=/data/db/khub.db
       - KHUB_LIBRARY=/data/library
-      - KHUB_CONFIG=/app/config.yaml
+      # PII 加密（默认启用，生产环境建议用密钥文件）
+      - KHUB_PII_ENCRYPT=1
+      # PII 密钥由容器自动生成（首次启动），或通过 KHUB_PII_KEY 传入
+      # - KHUB_PII_KEY=...               # 方式1：环境变量（注意不提交到 git）
+      # - KHUB_PII_KEY_FILE=/root/.khub/pii.key  # 方式2：从文件加载（推荐）
       # 真实模型（可选，注释掉时为离线模式）
       # - KHUB_EMBEDDING_URL=http://host.docker.internal:8080/v1/embeddings
-      # - KHUB_EMBED_API_KEY=...
-      # - KHUB_EMBED_MODEL=...
+      # - KHUB_EMBED_API_KEY=${KHUB_EMBED_API_KEY:-}
+      # - KHUB_EMBED_MODEL=bge-small-zh-v1.5
       # - KHUB_LLM_URL=http://host.docker.internal:8080/v1/chat/completions
-      # - KHUB_LLM_API_KEY=...
-      # - KHUB_LLM_MODEL=...
-      # PII 加密（可选，建议用密钥文件方式）
-      # - KHUB_PII_ENCRYPT=1
-      # - KHUB_PII_KEY=...               # 方式1：直接传密钥（注意不提交到 git）
-      # - KHUB_PII_KEY_FILE=...          # 方式2：从文件加载（推荐）
+      # - KHUB_LLM_API_KEY=${KHUB_LLM_API_KEY:-}
+      # - KHUB_LLM_MODEL=qwen2.5-7b
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/health')"]
-      interval: 30s
-      timeout: 10s
+      interval: 10s
+      timeout: 5s
       retries: 3
+      start_period: 15s
+    mem_limit: 1g
+    mem_reservation: 512m
+    cpus: "2"
 
   nginx:
     image: nginx:alpine
@@ -42,4 +53,5 @@ services:
         condition: service_healthy
 
 volumes:
-  khub-data:
+  khub-db:
+  khub-library:
