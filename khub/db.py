@@ -277,11 +277,38 @@ class Store:
             (doc_id, version_id)).fetchone()
 
     def resolve_conflict(self, canonical_id: str, keep_version_id: int):
-        """解决冲突：清除冲突标记。keep_version_id 表示用户选择保留的版本。"""
+        """解决冲突：将所选版本内容写入新版本，清除冲突标记。"""
         with self._lock:
+            ver = self.conn.execute(
+                "SELECT * FROM document_versions WHERE version_id=? AND doc_id=?",
+                (keep_version_id, canonical_id)).fetchone()
+            if not ver:
+                raise ValueError(
+                    f"version {keep_version_id} not found for doc {canonical_id}")
+            # 写入新版本表示解决结果
+            c = self.conn.execute(
+                "INSERT INTO document_versions(doc_id, content, format, origin, "
+                "author, updated_at, hash, parent_version, note) "
+                "VALUES(?,?,?,?,?,?,?,?,?)",
+                (canonical_id, ver["content"], ver["format"], "webui-resolve", "",
+                 _now(), compute_hash(ver["content"]), keep_version_id,
+                 f"conflict resolved, kept version {keep_version_id}"))
+            vid = c.lastrowid
             self.conn.execute(
-                "UPDATE documents SET conflict=0 WHERE canonical_id=?",
-                (canonical_id,))
+                "UPDATE documents SET conflict=0, current_version=?, updated_at=? "
+                "WHERE canonical_id=?",
+                (vid, _now(), canonical_id))
+            # 同步 FTS
+            self.conn.execute("DELETE FROM docs_fts WHERE doc_id=?",
+                              (canonical_id,))
+            if ver["content"] and ver["content"].strip():
+                title_row = self.conn.execute(
+                    "SELECT title FROM documents WHERE canonical_id=?",
+                    (canonical_id,)).fetchone()
+                title_row = title_row["title"] if title_row else ""
+                self.conn.execute(
+                    "INSERT INTO docs_fts(doc_id, title, content) VALUES(?,?,?)",
+                    (canonical_id, title_row, ver["content"]))
             self.conn.commit()
 
     def set_sync_state(self, source_id: str, doc_id: str, etag: str, h: str):

@@ -94,6 +94,7 @@ async function loadDoc(id, title) {
 async function search(q, source) {
   if (q === undefined) q = document.getElementById('q').value.trim();
   if (!q) return;
+  currentPage = 0;  // 新查询重置分页
   lastQuery = q;
   lastSource = source !== undefined ? source : document.getElementById('sourceFilter').value;
   renderSkeletons(3, 'list');
@@ -208,8 +209,10 @@ async function loadConflictView(id) {
     const vers = await fetch('/documents/' + encodeURIComponent(id) + '/versions').then(x => x.json());
     if (vers.length < 2) { box.innerHTML = '<p class="meta">数据异常：冲突标记但只有一个版本</p>'; return; }
     const v1 = vers[vers.length - 2], v2 = vers[vers.length - 1];
-    const c1 = await fetch('/documents/' + encodeURIComponent(id) + '/versions/' + v1.version_id).then(x => x.json());
-    const c2 = await fetch('/documents/' + encodeURIComponent(id) + '/versions/' + v2.version_id).then(x => x.json());
+    const [c1, c2] = await Promise.all([
+      fetch('/documents/' + encodeURIComponent(id) + '/versions/' + v1.version_id).then(x => x.json()),
+      fetch('/documents/' + encodeURIComponent(id) + '/versions/' + v2.version_id).then(x => x.json()),
+    ]);
     const back = '<p><a href="#" onclick="loadConflicts();return false">← 返回冲突列表</a></p>';
     box.innerHTML = back + '<h2>冲突解决：' + esc(doc.title || id) + '</h2>';
     const grid = document.createElement('div'); grid.className = 'conflict-grid';
@@ -283,6 +286,11 @@ async function aiAsk() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ question: q, k: 5, stream: true })
     });
+    if (!resp.ok) {
+      const errData = await resp.json().catch(() => ({ error: resp.statusText }));
+      aiAppendToken(aiBubble, '[请求失败: ' + (errData.error || resp.status) + ']');
+      return;
+    }
     const reader = resp.body.getReader();
     const decoder = new TextDecoder();
     let buf = '', sourcesReceived = false;

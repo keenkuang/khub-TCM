@@ -152,6 +152,16 @@ class App:
                 return 404, {"error": "not found"}
             vers = self.store.get_versions(cid)
             content = vers[-1]["content"] if vers else ""
+            fmt = vers[-1]["format"] if (vers and "format" in vers[-1]) else "plain"
+            # 安全：format=html 时剥离危险标签，仅保留安全富文本子集
+            if fmt == "html":
+                import re as _re
+                safe_tags = r"p|br|b|i|u|em|strong|h[1-6]|ul|ol|li|div|span|pre|code|blockquote|table|tr|td|th|a"
+                content = _re.sub(r"(?s)<(?!\/?(?:" + safe_tags + r")(?:\s[^>]*)?>).*?<", "<", content)
+                content = _re.sub(r"(?s)<(script|style|iframe|object|embed|form|input|select|textarea|button|svg|math)[^>]*>.*?</\1>", "", content)
+                content = _re.sub(r'\s+on\w+\s*=\s*["\'][^"\']*["\']', "", content)
+                content = _re.sub(r'\s+on\w+\s*=\S+', "", content)
+                content = _re.sub(r'href\s*=\s*["\']javascript:', "href='#'", content, flags=_re.I)
             return 200, {
                 "canonical_id": doc["canonical_id"],
                 "title": doc["title"],
@@ -160,20 +170,23 @@ class App:
                 "source_ids": doc["source_ids"],
                 "created_at": doc["created_at"],
                 "updated_at": doc["updated_at"],
-                "format": vers[-1]["format"] if (vers and "format" in vers[-1]) else "plain",
+                "format": fmt,
             }
 
         # PUT /documents/{id} — 更新文档
         if method == "PUT" and path.startswith("/documents/") and len(path) > len("/documents/"):
-            cid = unquote(path[len("/documents/"):])
+            rest = path[len("/documents/"):]
+            if "/" in rest:
+                return 400, {"error": "invalid document id (path too deep)"}
+            cid = unquote(rest)
             title = (body or {}).get("title", "").strip()
-            content = (body or {}).get("content", "").strip()
-            if not title or not content:
+            new_content = (body or {}).get("content", "").strip()
+            if not title or not new_content:
                 return 400, {"error": "title 与 content 必填"}
             doc = CanonicalDoc(
                 canonical_id=cid,
                 title=title,
-                content=content,
+                content=new_content,
                 source="webui",
                 source_id="",
                 origin="webui",
@@ -181,6 +194,8 @@ class App:
                 updated_at=time.strftime("%Y-%m-%dT%H:%M:%S"),
             )
             version_id = self.store.store_document(doc)
+            # 编辑文档时自动清除冲突标记（新版本写入即表示用户确认）
+            self.store.resolve_conflict(cid, version_id)
             return 200, {"status": "ok", "version_id": version_id}
 
         # POST /documents/{id}/resolve — 解决冲突
@@ -189,7 +204,14 @@ class App:
             keep_id = (body or {}).get("keep_version")
             if not keep_id:
                 return 400, {"error": "keep_version 必填"}
-            self.store.resolve_conflict(cid, int(keep_id))
+            try:
+                keep_id = int(keep_id)
+            except (TypeError, ValueError):
+                return 400, {"error": "keep_version 必须是有效整数"}
+            try:
+                self.store.resolve_conflict(cid, keep_id)
+            except ValueError as exc:
+                return 400, {"error": str(exc)}
             return 200, {"status": "ok"}
 
         if method == "GET" and path == "/conflicts":
