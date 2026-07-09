@@ -435,6 +435,12 @@ def make_handler(app: App):
             # 安全响应头
             self.send_header("X-Content-Type-Options", "nosniff")
             self.send_header("X-Frame-Options", "DENY")
+            self.send_header("Referrer-Policy", "no-referrer")
+            self.send_header("Permissions-Policy",
+                "camera=(), microphone=(), geolocation=(), interest-cohort=()")
+            if code == 200:
+                self.send_header("Strict-Transport-Security",
+                    "max-age=31536000; includeSubDomains")
             if ctype == "text/html; charset=utf-8":
                 self.send_header("Content-Security-Policy",
                     "default-src 'self'; script-src 'self' 'unsafe-inline'; "
