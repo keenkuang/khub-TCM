@@ -147,6 +147,23 @@ class App:
             hits = Retriever(self.store).search_similar(q, k=k)
             return 200, [{"doc_id": d, "score": round(s, 4)} for d, s in hits]
 
+        # ---- RAG 问答 ----
+        if method == "POST" and path == "/ask":
+            from .llm.rag import RAGEngine
+            question = (body or {}).get("question", "").strip()
+            if not question:
+                return 400, {"error": "question 必填"}
+            if len(question) > 2000:
+                return 400, {"error": "question 超过 2000 字符上限"}
+            if body.get("stream"):
+                # 流式请求由 Handler 的 _send_sse 处理，此处不处理
+                return 400, {"error": "流式请求请通过 SSE 端点（stream=true）"}
+            k = _safe_int(body.get("k", 5), 5)
+            k = max(1, min(k, 20))  # 范围 1–20
+            engine = RAGEngine(self.store)
+            answer, sources = engine.ask(question, k=k)
+            return 200, {"answer": answer, "sources": sources}
+
         if method == "GET" and path == "/":
             return 200, self._html_page(), "text/html; charset=utf-8"
 
@@ -280,6 +297,30 @@ class App:
  .meta{color:#999;font-size:12px;margin-top:4px}
  .tag{display:inline-block;background:#fee2e2;color:#b91c1c;border-radius:6px;padding:1px 7px;font-size:12px}
  h2{font-size:15px;color:#555;margin:18px 0 8px}
+ /* AI 助手对话框 */
+ .fab{position:fixed;bottom:24px;right:24px;width:52px;height:52px;border-radius:26px;background:#2563eb;color:#fff;font-size:26px;border:0;cursor:pointer;z-index:1000;box-shadow:0 4px 12px rgba(37,99,235,0.35);display:flex;align-items:center;justify-content:center}
+ .fab:hover{background:#1d4ed8}
+ .ai-panel{position:fixed;bottom:88px;right:24px;width:380px;max-height:560px;background:#fff;border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,0.15);z-index:999;display:none;flex-direction:column;overflow:hidden;font-size:14px}
+ .ai-panel.open{display:flex}
+ .ai-panel .hdr{padding:12px 16px;font-weight:600;border-bottom:1px solid #e5e7eb;display:flex;justify-content:space-between;align-items:center;background:#f9fafb}
+ .ai-panel .hdr .close{background:none;border:0;font-size:18px;cursor:pointer;padding:0;color:#999}
+ .ai-panel .msgs{flex:1;overflow-y:auto;padding:10px 12px;display:flex;flex-direction:column;gap:10px}
+ .ai-panel .msg{max-width:85%;padding:8px 12px;border-radius:12px;line-height:1.5;word-wrap:break-word}
+ .ai-panel .msg.user{background:#2563eb;color:#fff;align-self:flex-end;border-bottom-right-radius:4px}
+ .ai-panel .msg.ai{background:#f3f4f6;color:#222;align-self:flex-start;border-bottom-left-radius:4px}
+ .ai-panel .msg .sources{font-size:11px;color:#666;margin-top:6px;display:flex;gap:6px;flex-wrap:wrap}
+ .ai-panel .msg .sources a{color:#2563eb;text-decoration:none}
+ .ai-panel .input-area{display:flex;padding:8px 12px;border-top:1px solid #e5e7eb;gap:6px}
+ .ai-panel .input-area input{flex:1;padding:7px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;outline:0}
+ .ai-panel .input-area input:focus{border-color:#2563eb}
+ .ai-panel .input-area button{padding:7px 14px;border:0;border-radius:8px;background:#2563eb;color:#fff;cursor:pointer;font-size:13px;white-space:nowrap}
+ .ai-panel .input-area button:disabled{background:#9ca3af;cursor:default}
+ .ai-panel .hint{font-size:12px;color:#999;padding:6px 12px 8px;border-top:1px solid #f3f4f6;text-align:center}
+ @media(max-width:640px){
+   .ai-panel{width:calc(100vw - 32px);max-height:70vh;right:16px;bottom:80px}
+   .fab{width:44px;height:44px;font-size:22px;right:16px;bottom:16px}
+   .ai-panel .msg{font-size:13px}
+ }
 </style></head>
 <body>
 <header>kHUB · 个人知识中枢</header>
@@ -401,7 +442,81 @@ async function loadStats(){
 loadStats();
 document.getElementById('q').addEventListener('keydown',e=>{if(e.key==='Enter')search();});
 loadAll();
+// ── AI 助手对话框 ──
+const aiState={open:false,streaming:false,abortController:null};
+const aiMsgs=document.getElementById('ai-msgs');
+const aiInput=document.getElementById('ai-q');
+function aiToggle(){aiState.open=!aiState.open;
+  document.getElementById('ai-panel').classList.toggle('open',aiState.open);
+  if(aiState.open)aiInput&&aiInput.focus();}
+function aiAddMsg(role,text,streaming){const d=document.createElement('div');
+  d.className='msg '+role;
+  if(streaming)d.innerHTML=`<span class="streaming-text">${esc(text)}</span>`;
+  else d.innerHTML=esc(text).replace(/\n/g,'<br>');
+  aiMsgs.appendChild(d);aiMsgs.scrollTop=aiMsgs.scrollHeight;return d;}
+function aiAppendToken(msgEl,token){
+  const t=msgEl.querySelector('.streaming-text');
+  if(t)t.textContent+=token;else msgEl.textContent+=token;
+  aiMsgs.scrollTop=aiMsgs.scrollHeight;}
+function aiRenderSources(msgEl,sources){
+  if(!sources||!sources.length)return;
+  const d=document.createElement('div');d.className='sources';
+  d.innerHTML='📖 ';sources.forEach(s=>{
+    d.innerHTML+=`<a href="#" onclick="loadDoc('${esc(s.id)}','${esc(s.title)}');return false">${esc(s.title)}</a><span style="color:#999">(${s.score})</span> `;});
+  msgEl.appendChild(d);}
+async function aiAsk(){const q=aiInput.value.trim();
+  if(!q||aiState.streaming)return;
+  aiAddMsg('user',q);aiInput.value='';
+  const aiBubble=aiAddMsg('ai','',true);
+  aiState.streaming=true;
+  const useStream=true; // 默认流式
+  try{
+    if(useStream){
+      const resp=await fetch('/ask',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({question:q,k:5,stream:true})});
+      const reader=resp.body.getReader();const decoder=new TextDecoder();
+      let buf='',sourcesReceived=false;
+      while(true){
+        const {done,value}=await reader.read();if(done)break;
+        buf+=decoder.decode(value,{stream:true});
+        const parts=buf.split('\n\n');buf=parts.pop()||'';
+        for(const block of parts){
+          const lines=block.split('\n');
+          const ev=lines.find(l=>l.startsWith('event: '));
+          const dl=lines.find(l=>l.startsWith('data: '));
+          if(!dl)continue;
+          const event=ev?ev.slice(7).trim():'';const data=JSON.parse(dl.slice(6));
+          if(event==='sources'&&!sourcesReceived){
+            aiRenderSources(aiBubble,data.sources);sourcesReceived=true;}
+          else if(event==='token'){aiAppendToken(aiBubble,data.token);}
+          else if(event==='error'){aiAppendToken(aiBubble,'[错误: '+data.error+']');}
+          // done — nothing to do, stream ends
+        }
+      }
+    }else{
+      const resp=await fetch('/ask',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({question:q,k:5,stream:false})});
+      const data=await resp.json();
+      aiBubble.querySelector('.streaming-text').textContent=data.answer||'';
+      aiRenderSources(aiBubble,data.sources);
+    }
+  }catch(e){aiAppendToken(aiBubble,'[请求失败: '+e.message+']');
+  }finally{aiState.streaming=false;}
+}
+document.getElementById('ai-send').addEventListener('click',aiAsk);
+aiInput.addEventListener('keydown',e=>{if(e.key==='Enter')aiAsk();});
 </script>
+<!-- AI 助手对话框 -->
+<button class="fab" id="ai-fab" onclick="aiToggle()" title="AI 助手">✨</button>
+<div class="ai-panel" id="ai-panel">
+  <div class="hdr"><span>✨ AI 助手</span><button class="close" onclick="aiToggle()">✕</button></div>
+  <div class="msgs" id="ai-msgs"></div>
+  <div class="input-area">
+    <input id="ai-q" type="text" placeholder="输入问题..." maxlength="2000">
+    <button id="ai-send">发送</button>
+  </div>
+  <div class="hint">基于知识库语义检索 + LLM 回答</div>
+</div>
 </body></html>"""
 
 
@@ -417,6 +532,40 @@ def make_handler(app: App):
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
             self.wfile.write(data)
+
+        def _send_sse(self, body):
+            """处理 SSE 流式问答请求。body: dict"""
+            token = os.environ.get("KHUB_API_TOKEN")
+            if token and self.headers.get("Authorization", "") != f"Bearer {token}":
+                return self._send(401, {"error": "unauthorized"})
+
+            question = (body or {}).get("question", "").strip()
+            if not question:
+                return self._send(400, {"error": "question 必填"})
+            if len(question) > 2000:
+                return self._send(400, {"error": "question 超过 2000 字符上限"})
+            k = int(body.get("k", 5))
+            k = max(1, min(k, 20))
+
+            from .llm.rag import RAGEngine
+            engine = RAGEngine(app.store)
+
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Connection", "keep-alive")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+
+            try:
+                for event in engine.ask_stream(question, k=k):
+                    ev = event["event"]
+                    data = json.dumps(event["data"], ensure_ascii=False)
+                    line = f"event: {ev}\ndata: {data}\n\n"
+                    self.wfile.write(line.encode("utf-8"))
+                    self.wfile.flush()
+            except (BrokenPipeError, ConnectionResetError):
+                pass  # 客户端断开，静默结束
 
         def do_GET(self):
             try:
@@ -437,6 +586,11 @@ def make_handler(app: App):
                 body = json.loads(raw) if raw else {}
             except json.JSONDecodeError:
                 return self._send(400, {"error": "bad json"})
+
+            # 流式 RAG 问答：不走 dispatch（SSE 需直接写 wfile）
+            if body and body.get("stream") and self.path == "/ask":
+                return self._send_sse(body)
+
             try:
                 res = app.dispatch("POST", self.path, body,
                                    auth_header=self.headers.get("Authorization", ""))

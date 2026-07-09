@@ -199,6 +199,52 @@ def test_api_semantic_search():
     assert "score" in obj[0]
 
 
+class TestAsk:
+    def test_post_ask_returns_answer_and_sources(self):
+        from khub.api import App
+        from khub.db import Store
+        from khub.storage import ManagedLibrary
+        import tempfile, os
+        store = Store()
+        lib = ManagedLibrary(tempfile.mkdtemp())
+        app = App(store, lib)
+        # 先入库文档使之可被检索
+        from khub.models import CanonicalDoc
+        store.store_document(CanonicalDoc(
+            canonical_id="rag-test", title="测试方剂",
+            content="小青龙汤：麻黄、芍药、细辛、干姜、甘草、桂枝、五味子、半夏。",
+            source="test", source_id="t/r"))
+        from khub.retrieval import Retriever
+        Retriever(store).index_ebook("rag-test")
+        code, obj = app.dispatch("POST", "/ask",
+                                 {"question": "小青龙汤的组成？", "k": 3})
+        assert code == 200
+        assert "answer" in obj
+        assert "sources" in obj
+        assert isinstance(obj["sources"], list)
+
+    def test_post_ask_missing_question(self):
+        from khub.api import App
+        from khub.db import Store
+        from khub.storage import ManagedLibrary
+        import tempfile
+        app = App(Store(), ManagedLibrary(tempfile.mkdtemp()))
+        code, obj = app.dispatch("POST", "/ask", {})
+        assert code == 400
+        assert "必填" in obj["error"]
+
+    def test_post_ask_too_long_question(self):
+        from khub.api import App
+        from khub.db import Store
+        from khub.storage import ManagedLibrary
+        import tempfile
+        app = App(Store(), ManagedLibrary(tempfile.mkdtemp()))
+        code, obj = app.dispatch("POST", "/ask",
+                                 {"question": "字" * 2001})
+        assert code == 400
+        assert "2000 字符" in obj["error"]
+
+
 def test_api_not_found():
     app, _, _ = _app()
     code, _ = app.dispatch("GET", "/nope")

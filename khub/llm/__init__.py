@@ -2,7 +2,7 @@ import json
 import os
 import urllib.error
 import urllib.request
-from typing import Optional, Protocol, runtime_checkable
+from typing import Generator, Optional, Protocol, runtime_checkable
 
 
 @runtime_checkable
@@ -10,6 +10,11 @@ class LLMProvider(Protocol):
     """未来考试/问诊/病历模块依赖的 LLM 抽象。现在只定义接口，不绑定任何厂商。"""
 
     def complete(self, prompt: str, **kwargs) -> str:
+        ...
+
+    def complete_stream(self, prompt: str, **kwargs) -> Generator[str, None, None]:
+        """流式补全，逐 token yield（Generator[str, None, None]）。
+        非流式 Provider 返回空 generator（不 yield 任何值）。"""
         ...
 
     def embed(self, text: str) -> list[float]:
@@ -21,6 +26,11 @@ class NoOpProvider:
 
     def complete(self, prompt: str, **kwargs) -> str:
         return ""
+
+    def complete_stream(self, prompt: str, **kwargs) -> Generator[str, None, None]:
+        """流式占位：不 yield 任何值。"""
+        if False:
+            yield ""
 
     def embed(self, text: str) -> list[float]:
         return []
@@ -59,6 +69,34 @@ class RemoteLLMProvider:
         except Exception as exc:
             raise
         return str(payload["choices"][0]["message"]["content"])
+
+    def complete_stream(self, prompt: str, **kwargs) -> Generator[str, None, None]:
+        """流式补全，逐 token yield。使用 SSE 协议解析 /v1/chat/completions 流式响应。"""
+        endpoint = self.url + "/v1/chat/completions"
+        body = {
+            "model": self.model or "default",
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": kwargs.get("temperature", 0.3),
+            "stream": True,
+        }
+        data = json.dumps(body).encode("utf-8")
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        req = urllib.request.Request(endpoint, data=data, headers=headers, method="POST")
+        with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+            for raw_line in resp:
+                line = raw_line.decode("utf-8", errors="replace").strip()
+                if not line.startswith("data: "):
+                    continue
+                payload = line[6:]
+                if payload.strip() == "[DONE]":
+                    return
+                obj = json.loads(payload)
+                delta = obj.get("choices", [{}])[0].get("delta", {})
+                content = delta.get("content", "")
+                if content:
+                    yield content
 
     def embed(self, text: str) -> list[float]:
         # 向量由独立的 RemoteEmbedder 负责；provider 仅满足协议。
