@@ -7,7 +7,7 @@ import subprocess
 import tempfile
 from dataclasses import asdict
 
-from khub.db import Store, rebuild_fts
+from khub.db import Store, rebuild_fts, make_snapshot_db
 from khub.replication import (
     Change,
     WALLog,
@@ -186,6 +186,47 @@ def test_local_replica_push_snapshot_with_db():
     finally:
         _rmtree(tmp)
         _rmtree(target_dir)
+
+
+def test_make_snapshot_db_excludes_internal_tables():
+    """快照必须排除 ha_state / replication_log / lsn_seq。
+
+    这三类表是节点本机的复制记账状态：拷入恢复库会导致
+    ① replication_log 被二次回放；② lsn_seq 与主库对齐、
+    备机升主后产生重复/错乱 lsn；③ ha_state 覆盖备机自身角色/锁状态。
+    """
+    tmp = tempfile.mkdtemp()
+    try:
+        db_path = os.path.join(tmp, "source.db")
+        store = Store(db_path)
+        store.conn.execute("CREATE TABLE t(x)")
+        store.conn.execute("INSERT INTO t VALUES(42)")
+        # 填充内部记账表
+        store.conn.execute(
+            "INSERT INTO replication_log(op, table_name, row_id, payload) "
+            "VALUES('insert','t','1','{}')")
+        store.conn.execute("UPDATE lsn_seq SET seq=seq+1")
+        store.ha_set("ha_epoch", "5")
+        store.conn.commit()
+        store.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+
+        snap_path = os.path.join(tmp, "snap.db")
+        make_snapshot_db(store.conn, snap_path)
+
+        import sqlite3
+        c2 = sqlite3.connect(snap_path)
+        c2.row_factory = sqlite3.Row
+        names = {r[0] for r in c2.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+        # 用户表保留
+        assert "t" in names
+        assert c2.execute("SELECT x FROM t").fetchone()[0] == 42
+        # 内部记账表必须被排除
+        for excluded in ("ha_state", "replication_log", "lsn_seq"):
+            assert excluded not in names, f"{excluded} 不应出现在快照中"
+        c2.close()
+    finally:
+        _rmtree(tmp)
 
 
 def test_local_replica_push_changes():

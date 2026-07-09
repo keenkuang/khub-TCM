@@ -522,8 +522,15 @@ def make_snapshot_db(src_conn, dst_path: str):
             "SELECT name FROM sqlite_master WHERE sql LIKE 'CREATE VIRTUAL TABLE%'"
         ).fetchall()]
 
+        # 复制记账表（WAL 日志 + 全局 lsn 序列器）不进入快照：
+        # - replication_log：主库的 WAL 变更流水，恢复时若一并拷入会被二次回放。
+        # - lsn_seq：全局 lsn 分配器；备机恢复应自起 lsn（各自 epoch），拷贝会令
+        #   恢复库 lsn_seq 与主库对齐，后续升主可能产生重复/错乱 lsn。
+        # - ha_state：节点角色/复制锁等本机状态，备机须保留自身状态。
+        _EXCLUDE_TABLES = {"ha_state", "replication_log", "lsn_seq"}
+
         def _is_virtual(name):
-            if name in ("ha_state",):
+            if name in _EXCLUDE_TABLES:
                 return True
             if name.startswith("sqlite_"):
                 return True

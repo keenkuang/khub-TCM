@@ -9,6 +9,7 @@
 - 修复 `sqlite3.connect` 误用未展开的 `path`（曾导致 `~/x.db` 落到工作目录而非家目录的数据丢失隐患）。
 - 修复 `transaction()` 与隐式事务冲突（显式 `BEGIN` + `isolation_level=None`，并修正 `replay_from` 缺失的 `BEGIN`，恢复回放中途异常整体 rollback）。
 - 删除 `Store.search` 被新版分页 `search` 覆盖而产生的死代码，并保留 `search_old` 作为兼容薄封装（委托给新版 `search`）。
+- 快照（`make_snapshot_db`）排除复制记账表 `replication_log` / `lsn_seq` / `ha_state`，避免恢复库复用主库 lsn 序列器与角色/锁状态，升主后产生重复/错乱 lsn。
 
 #### 安全
 - REST 鉴权从「仅写操作」扩展为「设置 `KHUB_API_TOKEN` 后所有端点（含读）均需 Bearer 令牌」，避免本地任意进程裸读病历/问诊 PII。
