@@ -70,8 +70,8 @@ class TestExcelImport:
         imp = LegacyImporter(s)
         result = imp.import_excel(path)
         assert result["patients"] == 1
-        assert result["records"] == 0
-        assert result["consultations"] == 0
+        assert result["records"] == 1
+        assert result["consultations"] == 1  # 无主诉时标记为复诊
 
     def test_fuzzy_header_matching(self):
         s = Store()
