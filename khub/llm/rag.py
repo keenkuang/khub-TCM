@@ -81,7 +81,6 @@ class RAGEngine:
             context = self._assemble_context(sources)
             self._clean_sources(sources)  # _assemble_context 用完后移除内部字段
             yield {"event": "sources", "data": {"sources": sources}}
-            context = self._assemble_context(sources)
             prompt = self._build_prompt(question, context)
         except Exception as exc:
             logger.error("RAG retrieval/assembly failed: %s", exc)
