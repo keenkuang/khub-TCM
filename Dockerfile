@@ -12,7 +12,7 @@ RUN addgroup --system app && adduser --system --ingroup app app
 # === 3. 预装第三方依赖（缓存层） ===
 WORKDIR /app
 COPY pyproject.toml ./
-RUN pip install --no-cache-dir ".[all]" && \
+RUN pip install --no-cache-dir ".[all]"
 
 # === 4. 复制源码并安装 ===
 COPY . .
