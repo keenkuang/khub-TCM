@@ -84,9 +84,10 @@ class FeishuAdapter:
             data = self._get("/wiki/v2/spaces", params)
             resp_data = data.get("data", {})
             items.extend(resp_data.get("items", []))
-            if not resp_data.get("has_more", False) or not page_token:
+            next_token = resp_data.get("page_token", "")
+            if not resp_data.get("has_more", False) or not next_token:
                 break
-            page_token = resp_data.get("page_token", "")
+            page_token = next_token
             time.sleep(0.3)
         return items
 
@@ -106,9 +107,10 @@ class FeishuAdapter:
                 if item.get("has_child", False):
                     children = self._list_node_children(space_id, item["node_token"])
                     nodes.extend(children)
-            if not resp_data.get("has_more", False) or not page_token:
+            next_token = resp_data.get("page_token", "")
+            if not resp_data.get("has_more", False) or not next_token:
                 break
-            page_token = resp_data.get("page_token", "")
+            page_token = next_token
             time.sleep(0.3)
         return nodes
 
@@ -131,7 +133,8 @@ class FeishuAdapter:
                 if item.get("has_child", False):
                     sub = self._list_node_children(space_id, item["node_token"])
                     children.extend(sub)
-            if not resp_data.get("has_more", False) or not page_token:
+            next_token = resp_data.get("page_token", "")
+            if not resp_data.get("has_more", False) or not next_token:
                 break
             page_token = resp_data.get("page_token", "")
             time.sleep(0.3)
