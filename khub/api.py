@@ -71,10 +71,8 @@ class App:
                     first = parsed[0] if isinstance(parsed, list) and parsed else None
                 except (json.JSONDecodeError, IndexError, TypeError):
                     first = None
-                for src in ("obsidian", "ima", "imanote", "quip", "kzocr", "library", "feishu", "webui"):
-                    if first and src in str(first):
-                        sources[src] = sources.get(src, 0) + 1
-                        break
+                if first in ("obsidian", "ima", "imanote", "quip", "kzocr", "library", "feishu", "webui"):
+                    sources[first] = sources.get(first, 0) + 1
             today = time.strftime("%Y-%m-%d")
             today_count = cur.execute(
                 "SELECT count(*) FROM documents WHERE updated_at >= ?",
