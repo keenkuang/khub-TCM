@@ -499,12 +499,14 @@ def make_handler(app: App):
             self._send(code, obj, ctype)
 
         def do_POST(self):
-            if self.headers.get("Transfer-Encoding", "").lower() == "chunked":
+            if "chunked" in self.headers.get("Transfer-Encoding", "").lower():
                 return self._send(411, {"error": "请使用 Content-Length，不接受 Transfer-Encoding: chunked"})
             length = self.headers.get("Content-Length", "0")
             try:
                 length = int(length)
             except (TypeError, ValueError):
+                length = 0
+            if length < 0:
                 length = 0
             if length > _MAX_BODY_SIZE:
                 return self._send(413, {"error": "请求体过大（上限 10MB）"})
@@ -540,11 +542,13 @@ def make_handler(app: App):
             self.end_headers()
 
         def do_PUT(self):
-            if self.headers.get("Transfer-Encoding", "").lower() == "chunked":
+            if "chunked" in self.headers.get("Transfer-Encoding", "").lower():
                 return self._send(411, {"error": "请使用 Content-Length，不接受 Transfer-Encoding: chunked"})
             try:
                 length = int(self.headers.get("Content-Length", "0") or "0")
             except (TypeError, ValueError):
+                length = 0
+            if length < 0:
                 length = 0
             if length > _MAX_BODY_SIZE:
                 return self._send(413, {"error": "请求体过大（上限 10MB）"})
@@ -565,11 +569,13 @@ def make_handler(app: App):
             self._send(code, obj, ctype)
 
         def do_DELETE(self):
-            if self.headers.get("Transfer-Encoding", "").lower() == "chunked":
+            if "chunked" in self.headers.get("Transfer-Encoding", "").lower():
                 return self._send(411, {"error": "请使用 Content-Length，不接受 Transfer-Encoding: chunked"})
             try:
                 length = int(self.headers.get("Content-Length", "0") or "0")
             except (TypeError, ValueError):
+                length = 0
+            if length < 0:
                 length = 0
             if length > _MAX_BODY_SIZE:
                 return self._send(413, {"error": "请求体过大（上限 10MB）"})
