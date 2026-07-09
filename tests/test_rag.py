@@ -141,11 +141,15 @@ class TestBuildPrompt:
         assert "资料中未找到相关信息" in prompt
 
     def test_prompt_template_roundtrip(self):
-        question = "小青龙汤的组成？"
-        context = "--- 文档：方剂学 (0.92) ---\n小青龙汤：麻黄..."
-        prompt = PROMPT_TEMPLATE.format(question=question, context=context)
+        """使用 .replace() 替换后问题/文档含 {} 不崩溃。"""
+        question = "小青龙汤的{组成}？"
+        context = "--- 文档：方剂学 (0.92) ---\n小青龙汤：{麻黄}..."
+        prompt = PROMPT_TEMPLATE.replace("{context}", context).replace("{question}", question)
         assert question in prompt
         assert context in prompt
+        # 确保 {} 不被当成 format 占位符解析
+        assert "{question}" not in prompt
+        assert "{context}" not in prompt
 
 
 class TestAsk:

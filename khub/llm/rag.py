@@ -60,6 +60,7 @@ class RAGEngine:
         except Exception as exc:
             logger.error("LLM complete failed: %s", exc)
             answer = f"（回答生成失败：{exc}）"
+        self._clean_sources(sources)  # 移除内部字段，防止全文泄露
         return answer, sources
 
     def ask_stream(self, question: str, k: int = 5) -> Generator[dict, None, None]:
@@ -74,6 +75,7 @@ class RAGEngine:
         try:
             hits = self.retriever.search_similar(question, k=k)
             sources = self._fetch_sources(hits)
+            self._clean_sources(sources)  # 移除内部字段，防止全文泄露
             yield {"event": "sources", "data": {"sources": sources}}
             context = self._assemble_context(sources)
             prompt = self._build_prompt(question, context)
@@ -130,6 +132,12 @@ class RAGEngine:
                 f"{truncated}"
             )
         return "\n\n".join(parts)
+
+    @staticmethod
+    def _clean_sources(sources: list[dict]):
+        """移除内部字段（如 `_content`），避免通过 API 响应泄露全文内容。"""
+        for src in sources:
+            src.pop("_content", None)
 
     @staticmethod
     def _build_prompt(question: str, context: str) -> str:
