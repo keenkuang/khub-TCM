@@ -21,7 +21,6 @@ RECOVERY_WAIT = 90       # 触顶后等待时间（秒）
 
 # 不同权重端点的探测 URL / body 模板
 ENDPOINTS = [
-    ("search_knowledge_base", BASE, {"query": "", "cursor": "", "limit": 1}, "轻量"),
     ("list_notebook", NOTE_BASE, {"cursor": "0", "limit": 1}, "中量"),
     ("get_knowledge_list", BASE, {"cursor": "", "limit": 1, "knowledge_base_id": "__PLACEHOLDER__", "folder_id": ""}, "中量"),
 ]
@@ -81,7 +80,7 @@ def run_multi_endpoint(log_path: str = LOG_FILE):
     burst_count = 0
     burst_start = time.time()
 
-    print(f"[ima_probe] 多端点探测启动 — 轮询 3 个端点, 爆发间隔 {BURST_INTERVAL}s")
+    print(f"[ima_probe] 多端点探测启动 — 轮询 {len(ENDPOINTS)} 个端点, 爆发间隔 {BURST_INTERVAL}s")
     cols = f"{'#':>5} {'时间':16s} {'结果':8s} {'端点':28s} {'权重':6s} {'code':>6s}  {'耗时'}"
     print(cols)
     print("-" * len(cols))

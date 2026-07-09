@@ -1,0 +1,2 @@
+[console_scripts]
+khub = khub.cli:main
