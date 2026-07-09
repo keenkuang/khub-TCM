@@ -10,6 +10,7 @@ from .db import Store
 from .ingest import ingest_ebook, register_ebook
 from .log import get_logger
 from .models import CanonicalDoc
+from .ratelimit import make_ratelimit, PersistentTokenBucket
 from .storage import ManagedLibrary
 
 # 请求体大小限制（10MB）
@@ -44,6 +45,7 @@ class App:
         self.store = store
         self.library = library
         self._started = time.time()
+        self.ratelimit: PersistentTokenBucket | None = make_ratelimit(store)
 
     def dispatch(self, method: str, raw_path: str, body: Optional[dict] = None,
                  auth_header: str = ""):
@@ -450,7 +452,8 @@ class App:
 
 def make_handler(app: App):
     class Handler(BaseHTTPRequestHandler):
-        def _send(self, code, obj, ctype="application/json; charset=utf-8"):
+        def _send(self, code, obj, ctype="application/json; charset=utf-8",
+                  retry_after=None):
             if ctype.startswith("application/json"):
                 data = json.dumps(obj, ensure_ascii=False).encode("utf-8")
             else:
@@ -472,6 +475,8 @@ def make_handler(app: App):
                     "style-src 'self' 'unsafe-inline'; "
                     "img-src 'self' data:; form-action 'none'; "
                     "frame-ancestors 'none'; base-uri 'self'; object-src 'none'")
+            if retry_after is not None:
+                self.send_header("Retry-After", str(int(retry_after)))
             self.end_headers()
             self.wfile.write(data)
 
@@ -513,6 +518,11 @@ def make_handler(app: App):
                 pass  # 客户端断开，静默结束
 
         def do_GET(self):
+            if app.ratelimit is not None:
+                client_ip = self.client_address[0]
+                if not app.ratelimit.allow(client_ip):
+                    return self._send(429, {"error": "too many requests"},
+                                      retry_after=1)
             try:
                 res = app.dispatch("GET", self.path,
                                    auth_header=self.headers.get("Authorization", ""))
@@ -525,6 +535,11 @@ def make_handler(app: App):
             self._send(code, obj, ctype)
 
         def do_POST(self):
+            if app.ratelimit is not None:
+                client_ip = self.client_address[0]
+                if not app.ratelimit.allow(client_ip):
+                    return self._send(429, {"error": "too many requests"},
+                                      retry_after=1)
             if "chunked" in self.headers.get("Transfer-Encoding", "").lower():
                 return self._send(411, {"error": "请使用 Content-Length，不接受 Transfer-Encoding: chunked"})
             length = self.headers.get("Content-Length", "0")
