@@ -53,6 +53,8 @@ class RAGEngine:
             return "", []
         hits = self.retriever.search_similar(question, k=k)
         sources = self._fetch_sources(hits)
+        if not sources:
+            return "（未检索到相关文档，无法回答）", []
         context = self._assemble_context(sources)
         prompt = self._build_prompt(question, context)
         try:
@@ -78,6 +80,9 @@ class RAGEngine:
         try:
             hits = self.retriever.search_similar(question, k=k)
             sources = self._fetch_sources(hits)
+            if not sources:
+                yield {"event": "error", "data": {"error": "未检索到相关文档，无法回答"}}
+                return
             context = self._assemble_context(sources)
             self._clean_sources(sources)  # _assemble_context 用完后移除内部字段
             yield {"event": "sources", "data": {"sources": sources}}
