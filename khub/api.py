@@ -1248,6 +1248,19 @@ class App:
                               current_user=getattr(self,"_current_user",None))
             return 200, {"results": results}
 
+        # 2.2 KG service — 知识图谱搜索+统计+自动抽取
+        if method == "GET" and path == "/api/kg/search":
+            from .knowledge.search import search_kg
+            q = qs.get("q", [""])[0]
+            return 200, {"results": search_kg(store, q)}
+        if method == "GET" and path == "/api/kg/stats":
+            from .knowledge.search import kg_stats
+            return 200, kg_stats(store)
+        if method == "POST" and path == "/api/kg/extract":
+            from .knowledge.extractor import extract_from_text, cache_names
+            cache_names(store)
+            return 200, extract_from_text(store, body.get("text", ""))
+
         # 0.9.1 多租户管理（仅 admin）
         cu = getattr(self, "_current_user", None) or current_user
         if not check_permission(cu, "users", "create"):
