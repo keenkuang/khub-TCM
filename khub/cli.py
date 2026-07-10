@@ -402,6 +402,14 @@ def build_parser():
     pa_r = sub.add_parser("agent-run", help="运行 Agent")
     pa_r.add_argument("agent_id", type=int); pa_r.add_argument("--input", default="")
 
+    # 0.9.1 多租户
+    ptc = sub.add_parser("tenant-create", help="创建租户")
+    ptc.add_argument("name"); ptc.add_argument("slug"); ptc.add_argument("--plan", default="free")
+    sub.add_parser("tenant-list", help="租户列表")
+    ptm = sub.add_parser("tenant-add-member", help="添加租户成员")
+    ptm.add_argument("tenant_id", type=int); ptm.add_argument("user_id", type=int)
+    ptm.add_argument("--role", default="member")
+
     return ap
 
 
@@ -1435,6 +1443,19 @@ esac""")
         print(f"Agent [{result['agent_name']}] 执行完成")
         for r in result['results']:
             print(f"  {r['tool']}: {str(r['result'])[:200]}")
+    # 0.9.1 多租户
+    elif args.cmd == "tenant-create":
+        from .tenants import create_tenant
+        tid = create_tenant(store, args.name, args.slug, plan=args.plan)
+        print(f"租户 #{tid} 已创建")
+    elif args.cmd == "tenant-list":
+        from .tenants import list_tenants
+        for t in list_tenants(store):
+            print(f"  #{t['id']} {t['name']} ({t['slug']}) [{t['plan']}] {t['status']}")
+    elif args.cmd == "tenant-add-member":
+        from .tenants import add_member
+        add_member(store, args.tenant_id, args.user_id, role=args.role)
+        print(f"用户 #{args.user_id} 已添加到租户 #{args.tenant_id}（角色：{args.role}）")
     else:
         build_parser().print_help()
 

@@ -62,7 +62,7 @@ class App:
         self.ratelimit: PersistentTokenBucket | None = make_ratelimit(store)
 
     def dispatch(self, method: str, raw_path: str, body: Optional[dict] = None,
-                 auth_header: str = ""):
+                 auth_header: str = "", tenant_header: str = ""):
         parsed = urlparse(raw_path)
         path = parsed.path
         qs = parse_qs(parsed.query)
@@ -89,6 +89,10 @@ class App:
             return 401, {"error": "unauthorized", "error_code": "AUTH_001", "message": "请提供有效的认证令牌"}
         # 将当前用户存入请求上下文供后续端点使用
         setattr(self, "_current_user", current_user)
+        # 租户检测（0.9.1）
+        from .tenants import detect_tenant
+        current_tenant = detect_tenant(self.store, tenant_header)
+        setattr(self, "_current_tenant", current_tenant)
         # RBAC 权限检查
         from .auth import check_permission
         _resource_map = {
@@ -1177,6 +1181,25 @@ class App:
             result = run_with_llm(store, aid, user_input=body.get("input",""), current_user=getattr(self,"_current_user",None))
             return 200, result
 
+        # 0.9.1 多租户管理
+        if method == "POST" and path == "/api/tenants":
+            from .tenants import create_tenant
+            tid = create_tenant(store, body.get("name", ""), body.get("slug", ""),
+                                plan=body.get("plan", "free"))
+            return 201, {"tenant_id": tid}
+        if method == "GET" and path == "/api/tenants":
+            from .tenants import list_tenants
+            return 200, {"tenants": list_tenants(store)}
+        if method == "POST" and path == "/api/tenants/members":
+            from .tenants import add_member
+            add_member(store, body.get("tenant_id", 0), body.get("user_id", 0),
+                       role=body.get("role", "member"))
+            return 200, {"status": "added"}
+        if method == "GET" and path.startswith("/api/tenants/") and path.endswith("/members"):
+            from .tenants import list_members
+            tid = _safe_int([parts[2]], 0)
+            return 200, {"members": list_members(store, tid)}
+
         return 404, {"error": "not found"}
 
     @staticmethod
@@ -1301,7 +1324,8 @@ def make_handler(app: App):
                                       retry_after=1)
             try:
                 res = app.dispatch("GET", self.path,
-                                   auth_header=self.headers.get("Authorization", ""))
+                                   auth_header=self.headers.get("Authorization", ""),
+                                   tenant_header=self.headers.get("X-Tenant-ID", ""))
                 if len(res) == 3:
                     code, obj, ctype = res
                 else:
@@ -1339,7 +1363,8 @@ def make_handler(app: App):
 
             try:
                 res = app.dispatch("POST", self.path, body,
-                                   auth_header=self.headers.get("Authorization", ""))
+                                   auth_header=self.headers.get("Authorization", ""),
+                                   tenant_header=self.headers.get("X-Tenant-ID", ""))
                 if len(res) == 3:
                     code, obj, ctype = res
                 else:
@@ -1355,7 +1380,7 @@ def make_handler(app: App):
             self.send_header("Access-Control-Allow-Methods",
                              "GET, POST, PUT, DELETE, OPTIONS")
             self.send_header("Access-Control-Allow-Headers",
-                             "Content-Type, Authorization")
+                             "Content-Type, Authorization, X-Tenant-ID")
             self.end_headers()
 
         def do_PUT(self):
@@ -1376,7 +1401,8 @@ def make_handler(app: App):
                 return self._send(400, {"error": "bad json"})
             try:
                 res = app.dispatch("PUT", self.path, body,
-                                   auth_header=self.headers.get("Authorization", ""))
+                                   auth_header=self.headers.get("Authorization", ""),
+                                   tenant_header=self.headers.get("X-Tenant-ID", ""))
                 if len(res) == 3:
                     code, obj, ctype = res
                 else:
@@ -1403,7 +1429,8 @@ def make_handler(app: App):
                 return self._send(400, {"error": "bad json"})
             try:
                 res = app.dispatch("DELETE", self.path, body,
-                                   auth_header=self.headers.get("Authorization", ""))
+                                   auth_header=self.headers.get("Authorization", ""),
+                                   tenant_header=self.headers.get("X-Tenant-ID", ""))
                 if len(res) == 3:
                     code, obj, ctype = res
                 else:

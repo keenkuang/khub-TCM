@@ -231,6 +231,19 @@ class Store:
             client_id TEXT PRIMARY KEY, name TEXT, last_sync_at TEXT,
             last_version INTEGER DEFAULT 0, created_at TEXT DEFAULT (datetime('now')))""")
         _syntrig(self.conn, "devices")
+        # 0.9.1 多租户 SaaS
+        from .replication import install_triggers as _ttrig
+        self.conn.execute("""CREATE TABLE IF NOT EXISTS tenants (
+            id INTEGER PRIMARY KEY, name TEXT NOT NULL, slug TEXT NOT NULL UNIQUE,
+            plan TEXT DEFAULT 'free', status TEXT DEFAULT 'active',
+            max_users INTEGER DEFAULT 5, max_storage_mb INTEGER DEFAULT 100,
+            settings TEXT, created_at TEXT DEFAULT (datetime('now')))""")
+        _ttrig(self.conn, "tenants")
+        self.conn.execute("""CREATE TABLE IF NOT EXISTS tenant_members (
+            id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL, role TEXT DEFAULT 'member',
+            UNIQUE(tenant_id, user_id))""")
+        _ttrig(self.conn, "tenant_members")
         # 0.9.0 AI Agent 平台
         from .replication import install_triggers as _atrig
         self.conn.execute("""CREATE TABLE IF NOT EXISTS agent_definitions (
@@ -265,6 +278,9 @@ class Store:
             "CREATE INDEX IF NOT EXISTS idx_followup_plans_patient ON followup_plans(patient_id)",
             "CREATE INDEX IF NOT EXISTS idx_workflow_instances_def ON workflow_instances(definition_id)",
             "CREATE INDEX IF NOT EXISTS idx_wechat_articles_status ON wechat_articles(status)",
+            "CREATE INDEX IF NOT EXISTS idx_tenants_slug ON tenants(slug)",
+            "CREATE INDEX IF NOT EXISTS idx_tenant_members_tenant ON tenant_members(tenant_id)",
+            "CREATE INDEX IF NOT EXISTS idx_tenant_members_user ON tenant_members(user_id)",
         ]
         for idx in indexes:
             try:
