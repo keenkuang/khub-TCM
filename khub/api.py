@@ -229,7 +229,19 @@ class App:
             page = _safe_int(qs.get("page", ["0"])[0], 0)
             per = _safe_int(qs.get("per", ["50"])[0], 50)
             source = qs.get("source", [""])[0]
-            hits, total = self.store.search(q, page=page, per_page=per, source=source)
+            tag_filter = qs.get("tag", [None])[0]
+            if tag_filter:
+                tagged_ids = [r["doc_id"] for r in store.conn.execute(
+                    "SELECT doc_id FROM doc_tags WHERE tag=?", (tag_filter,)).fetchall()]
+                if not tagged_ids:
+                    return 200, {"hits": [], "total": 0, "page": page, "per_page": per}
+                hits, total = store.search(q, page=page, per_page=per, source=source)
+                id_set = set(tagged_ids)
+                hits = [(d, t, s) for d, t, s in hits if d in id_set]
+                total = len(hits)
+                hits = hits[page * per: (page + 1) * per]
+            else:
+                hits, total = store.search(q, page=page, per_page=per, source=source)
             return 200, {"hits": [{"doc_id": d, "title": t, "snippet": s}
                                    for d, t, s in hits],
                          "total": total, "page": page, "per_page": per}
@@ -298,6 +310,11 @@ class App:
                     "changes": sum(1 for d in diff if d["type"] != "equal"),
                 }
 
+            # GET /documents/{id}/tags
+            if len(parts) >= 3 and parts[1] == "tags":
+                from .tags import get_doc_tags
+                return 200, {"tags": get_doc_tags(self.store, cid)}
+
             # GET /documents/{id}
             doc = self.store.get_document(cid)
             if doc is None:
@@ -314,7 +331,17 @@ class App:
                 content = _re.sub(r'\s+on\w+\s*=\s*["\'][^"\']*["\']', "", content)
                 content = _re.sub(r'\s+on\w+\s*=\S+', "", content)
                 content = _re.sub(r'href\s*=\s*["\']javascript:', "href='#'", content, flags=_re.I)
-            return 200, {
+            # 0.2.9 Markdown 渲染
+            if fmt == "markdown" and content:
+                try:
+                    import markdown as _md
+                    content = _md.markdown(content, extensions=["fenced_code", "codehilite"])
+                    fmt = "html"
+                except ImportError:
+                    pass
+            from .tags import get_doc_tags
+            from .favorites import is_favorite
+            result = {
                 "canonical_id": doc["canonical_id"],
                 "title": doc["title"],
                 "content": content[:100000],
@@ -323,7 +350,10 @@ class App:
                 "created_at": doc["created_at"],
                 "updated_at": doc["updated_at"],
                 "format": fmt,
+                "tags": get_doc_tags(self.store, cid),
+                "favorited": is_favorite(self.store, cid),
             }
+            return 200, result
 
         # PUT /documents/{id} — 更新文档
         if method == "PUT" and path.startswith("/documents/") and len(path) > len("/documents/"):
@@ -629,6 +659,38 @@ class App:
             struct = extract_structured(store, text)
             apply_struct(store, source, source_id, struct)
             return 200, {"structured": struct}
+
+        # 0.2.9 knowledge base — tags
+        parts = path.strip("/").split("/")
+        if method == "POST" and path.startswith("/documents/") and path.endswith("/tags") and len(parts) >= 3:
+            from .tags import add_tag
+            doc_id = parts[1]
+            tag = body.get("tag", "")
+            if not tag:
+                return 400, {"error": "tag required"}
+            add_tag(store, doc_id, tag)
+            return 200, {"status": "ok", "tag": tag}
+        if method == "DELETE" and path.startswith("/documents/") and path.endswith("/tags"):
+            from .tags import remove_tag
+            doc_id = parts[1]
+            tag = qs.get("tag", [""])[0]
+            if not tag:
+                return 400, {"error": "tag query param required"}
+            remove_tag(store, doc_id, tag)
+            return 200, {"status": "ok"}
+        if method == "GET" and path == "/tags":
+            from .tags import list_tags
+            return 200, {"tags": list_tags(store)}
+
+        # 0.2.9 knowledge base — favorites
+        if method == "POST" and path.startswith("/documents/") and path.endswith("/favorite"):
+            from .favorites import toggle_favorite
+            doc_id = parts[1]
+            is_fav = toggle_favorite(store, doc_id)
+            return 200, {"favorited": is_fav}
+        if method == "GET" and path == "/favorites":
+            from .favorites import list_favorites
+            return 200, {"favorites": list_favorites(store)}
 
         # /metrics — Prometheus 格式指标
         if method == "GET" and path == "/metrics":

@@ -78,11 +78,14 @@ async function loadDoc(id, title) {
     if (r.error) { box.innerHTML = '<p class="meta">' + esc(r.error) + '</p>'; return; }
     const backLink = '<p style="margin-bottom:8px"><a href="#" onclick="loadAll();return false">← 返回列表</a></p>';
     let html = backLink;
-    html += '<div id="doc-header" data-format="' + esc(r.format || 'plain') + '"><h2>' + esc(r.title || id) + '</h2>' +
+    html += '<div id="doc-header" data-format="' + esc(r.format || 'plain') + '"><h2>' + esc(r.title || id) + '<span class="fav-star" onclick="toggleFav(\'' + esc(id) + '\')">' + (r.favorited ? '★' : '☆') + '</span></h2>' +
       '<p class="meta">' + esc(r.canonical_id) + ' · ' + r.version_count + ' 版本 · ' + (r.updated_at || '') + ' · 格式: ' + esc(r.format || '') + '</p>' +
       '<div class="edit-actions"><button onclick="editDoc(\'' + esc(r.canonical_id) + '\')">编辑</button>' +
       (r.version_count >= 2 ? '<button class="ghost" onclick="loadDiff(\'' + esc(r.canonical_id) + '\',' + r.version_count + ')">比较</button>' : '') +
-      '</div></div>';
+      '</div></div>' +
+      '<div class="doc-tags">' +
+      (r.tags ? r.tags.map(t => '<span class="tag-badge">' + esc(t) + ' <a href="#" onclick="removeTag(\'' + esc(id) + "','" + esc(t) + '\');return false">×</a></span>').join('') : '') +
+      '<input class="tag-input" placeholder="添加标签" onkeydown="if(event.key===\'Enter\')addTag(\'' + esc(id) + '\',this.value)"></div>';
     if (r.format === 'html') {
       const safe = (r.content || '').replace(/<script[\s\S]*?<\/script>/gi, '');
       html += '<div class="doc-content">' + safe + '</div>';
@@ -103,7 +106,8 @@ async function search(q, source) {
   lastSource = source !== undefined ? source : document.getElementById('sourceFilter').value;
   renderSkeletons(3, 'list');
   try {
-    const r = await fetch('/search?q=' + encodeURIComponent(q) + '&page=' + currentPage + '&per=' + PER_PAGE + '&source=' + encodeURIComponent(lastSource), { signal: window._searchAbort.signal }).then(x => x.json());
+    const tagVal = document.getElementById('tagFilter') ? document.getElementById('tagFilter').value : '';
+    const r = await fetch('/search?q=' + encodeURIComponent(q) + '&page=' + currentPage + '&per=' + PER_PAGE + '&source=' + encodeURIComponent(lastSource) + '&tag=' + encodeURIComponent(tagVal), { signal: window._searchAbort.signal }).then(x => x.json());
     box.innerHTML = '';
     if (!r.total) { box.innerHTML = '<p class="meta">无结果</p>'; return; }
     const h = document.createElement('h2'); h.textContent = '命中 ' + r.total + ' 篇';
@@ -514,6 +518,43 @@ async function doCancel(id) {
 async function doComplete(id) { showToast('完成功能待实现'); }
 async function doNoShow(id) { showToast('标记缺诊待实现'); }
 
+// ── 标签与收藏 ──
+async function addTag(docId, tag) {
+  if (!tag.trim()) return;
+  await fetch('/documents/' + encodeURIComponent(docId) + '/tags', {
+    method:'POST', body:JSON.stringify({tag}), headers:{'Content-Type':'application/json'}
+  });
+  loadDoc(docId);
+}
+async function removeTag(docId, tag) {
+  await fetch('/documents/' + encodeURIComponent(docId) + '/tags?tag=' + encodeURIComponent(tag), {method:'DELETE'});
+  loadDoc(docId);
+}
+async function toggleFav(docId) {
+  await fetch('/documents/' + encodeURIComponent(docId) + '/favorite', {method:'POST'});
+  loadDoc(docId);
+}
+async function loadFavorites() {
+  const box = document.getElementById('results');
+  box.innerHTML = '<h2>收藏夹</h2>';
+  try {
+    const r = await fetch('/favorites').then(x=>x.json());
+    if (!r.favorites || !r.favorites.length) { box.innerHTML += '<p class="meta">暂无收藏</p>'; return; }
+    let html = '<div class="card-list">';
+    for (const f of r.favorites) html += '<div class="card" onclick="loadDoc(\'' + esc(f.doc_id) + '\')"><h3>' + esc(f.title||f.doc_id) + '</h3><p class="meta">' + esc(f.created_at||'') + '</p></div>';
+    html += '</div>';
+    box.innerHTML += html;
+  } catch(e) { box.innerHTML += '<p class="meta">加载失败</p>'; }
+}
+async function loadTagFilter() {
+  try {
+    const r = await fetch('/tags').then(x=>x.json());
+    const sel = document.getElementById('tagFilter');
+    if (!sel) return;
+    for (const t of (r.tags||[])) { const o = document.createElement('option'); o.value=t.tag; o.textContent=t.tag+' ('+t.count+')'; sel.appendChild(o); }
+  } catch(e) {}
+}
+
 // ── 键盘快捷键 ──
 document.addEventListener('keydown', function(e) {
   if (e.key === '/' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
@@ -528,6 +569,7 @@ document.addEventListener('keydown', function(e) {
 // ── 初始化 ──
 initTheme();
 loadStats();
+loadTagFilter();
 document.getElementById('q').addEventListener('keydown', e => { if (e.key === 'Enter') search(); });
 document.getElementById('ai-send').addEventListener('click', aiAsk);
 aiInput.addEventListener('keydown', e => { if (e.key === 'Enter') aiAsk(); });

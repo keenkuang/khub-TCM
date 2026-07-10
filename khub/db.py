@@ -101,6 +101,17 @@ class Store:
             self.wal_flusher.start()
         # 0.2.7 临床增强业务表
         self._init_clinical_v2_tables(self.conn)
+        # 0.2.9 知识库增强：标签 + 收藏
+        from .replication import install_triggers as _it
+        self.conn.execute("""CREATE TABLE IF NOT EXISTS doc_tags (
+            id INTEGER PRIMARY KEY, doc_id TEXT NOT NULL,
+            tag TEXT NOT NULL, created_at TEXT DEFAULT (datetime('now')),
+            UNIQUE(doc_id, tag))""")
+        _it(self.conn, "doc_tags")
+        self.conn.execute("""CREATE TABLE IF NOT EXISTS favorites (
+            id INTEGER PRIMARY KEY, doc_id TEXT NOT NULL UNIQUE,
+            created_at TEXT DEFAULT (datetime('now')))""")
+        _it(self.conn, "favorites")
 
     def _migrate(self):
         cols = {r["name"] for r in self.conn.execute("PRAGMA table_info(documents)")}
