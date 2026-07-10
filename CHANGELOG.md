@@ -1,5 +1,34 @@
 # 变更日志
 
+## [0.4.0] — 2026-07-10
+
+### 临床智能增强（四线合一）
+
+**跃升至 0.4.x 系列——从数据管理升级为智能分析。**
+
+#### 临床知识图谱（`analysis.py`）
+- `build_syndrome_formula_matrix(store)`：全库/按患者统计（辨证→方剂）关联频次矩阵
+- `analyze_constitution_evolution(store, pid)`：患者证型变化序列、去重计数、首末对比
+
+#### 孪生可视化（`visualize.py`）
+- `get_health_trends(store, pid)`：返回时间线 + 治疗序列 + 体质画像的结构化数据（前端渲染用）
+- `_infer_constitution()`：朴素规则体质推断（7 种偏颇体质关键词匹配）
+
+#### AI 辅助辨证（`diagnosis.py`）
+- `_SYNDROME_FORMULA_MAP`：14 种证型 ↔ 50+ 经典方剂离线知识库
+- `suggest_formula(syndrome, provider)`：LLM 推荐 + 离线知识库降级
+- `check_incompatibility(formulas)`：十八反十九畏基础配伍检查（10 对禁忌）
+
+#### 疗效追踪（`tracking.py`）
+- `evaluate_efficacy(store, pid)`：就诊频次 + 随访依从性 → 疗效评估（good/needs_improvement/consistent/early_stage）
+
+#### 接口
+- REST：5 个端点（`GET /clinical/analysis/{id}/matrix|evolution`、`GET /clinical/tracking/{id}`、`GET /clinical/trends/{id}`、`POST /clinical/diagnosis/suggest`）
+- CLI：`clinical-matrix`、`clinical-trends`、`clinical-suggest`、`clinical-tracking`
+
+### 测试
+- 新增 8 个测试（analysis 2 + diagnosis 4 + tracking 2），全部通过
+
 ## [0.3.2] — 2026-07-10
 
 ### 数据隔离（0.3.x 迭代三）
