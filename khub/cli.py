@@ -512,24 +512,36 @@ def main(argv=None):
         run_tasks(store, tasks, blocking=True)
     elif args.cmd == "desktop":
         port = args.port
-        t = threading.Thread(target=serve, args=(store, lib, "127.0.0.1", port), daemon=True)
-        t.start()
-        time.sleep(1.5)
-        url = f"http://127.0.0.1:{port}/"
         desktop_dir = os.path.join(os.path.dirname(__file__), "..", "desktop")
         if args.electron:
+            # Electron 模式：Electron main.js 自己启动后端，cli 不再启动
+            url = f"http://127.0.0.1:{port}/"
             print(f"启动 Electron 窗口 -> {url}")
-            subprocess.Popen(["npx", "electron", "main.js"], cwd=desktop_dir,
-                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.Popen(["npx", "electron", "main.js"],
+                             cwd=desktop_dir,
+                             stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL,
+                             env={**os.environ, "KHUB_PORT": str(port)})
+            print("按 Ctrl+C 停止服务")
+            try:
+                while True:
+                    time.sleep(1)
+            except KeyboardInterrupt:
+                print("\n服务停止")
         else:
+            # 浏览器模式：cli 启动后端，打开浏览器
+            t = threading.Thread(target=serve, args=(store, lib, "127.0.0.1", port), daemon=True)
+            t.start()
+            time.sleep(1.5)
+            url = f"http://127.0.0.1:{port}/"
             print(f"在浏览器中打开 -> {url}")
             webbrowser.open(url)
-        print("按 Ctrl+C 停止服务")
-        try:
-            while True:
-                time.sleep(1)
-        except KeyboardInterrupt:
-            print("\n服务停止")
+            print("按 Ctrl+C 停止服务")
+            try:
+                while True:
+                    time.sleep(1)
+            except KeyboardInterrupt:
+                print("\n服务停止")
     elif args.cmd == "ima-probe":
         from .ima_probe import _log, _probe as _p, run_multi_endpoint
         if not os.environ.get("IMA_CLIENT_ID") or not os.environ.get("IMA_API_KEY"):
