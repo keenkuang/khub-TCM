@@ -372,6 +372,14 @@ def build_parser():
     psl = sub.add_parser("sync-pull", help="拉取变更")
     psl.add_argument("--client", default="cli"); psl.add_argument("--since", type=int, default=0)
 
+    # 0.8.1 安全合规
+    pa = sub.add_parser("audit-search", help="搜索审计日志")
+    pa.add_argument("--event", default=""); pa.add_argument("--actor", default="")
+    pa.add_argument("--since", default=""); pa.add_argument("--limit", type=int, default=50)
+
+    pr = sub.add_parser("retention-clean", help="清理过期数据")
+    pr.add_argument("--table", default=""); pr.add_argument("--dry-run", action="store_true")
+
     return ap
 
 
@@ -1323,6 +1331,23 @@ def main(argv=None):
         import json as _json
         result = sync_pull(store, args.client, args.since)
         print(_json.dumps(result, ensure_ascii=False, indent=2))
+    elif args.cmd == "audit-search":
+        from .audit import search_audit
+        logs = search_audit(store, event=args.event or None,
+                            actor=args.actor or None,
+                            since=args.since or None,
+                            limit=args.limit)
+        if not logs:
+            print("无匹配审计记录")
+        else:
+            for row in logs:
+                print(f"[{row['at']}] {row['event']} by {row['actor']}  scope={row.get('scope','')}")
+    elif args.cmd == "retention-clean":
+        from .retention import clean
+        result = clean(store, table=args.table, dry_run=args.dry_run)
+        for tbl, cnt in result.items():
+            flag = "（模拟）" if args.dry_run else ""
+            print(f"{tbl}: {cnt} 条{flag}")
     else:
         build_parser().print_help()
 

@@ -806,6 +806,21 @@ function showEnrollForm(courseId) {
     .catch(function(){ showToast('报名失败'); });
 }
 
+async function loadAuditLog() {
+  var box = document.getElementById('admin-content');
+  if (!box) return;
+  box.innerHTML = '<p class="meta">加载中…</p>';
+  try {
+    var r = await fetch('/api/admin/audit').then(x=>x.json());
+    if (!r.audit_logs || !r.audit_logs.length) { box.innerHTML = '<p class="meta">暂无审计记录</p>'; return; }
+    var html = '<h3>审计日志</h3><table class="ops-table"><tr><th>时间</th><th>事件</th><th>操作者</th><th>详情</th></tr>';
+    r.audit_logs.slice(0, 50).forEach(function(a){
+      html += '<tr><td>' + esc(a.at||'') + '</td><td>' + esc(a.event||'') + '</td><td>' + esc(a.actor||'') + '</td><td>' + esc(JSON.stringify(a.details||a.scope||'')) + '</td></tr>';
+    });
+    html += '</table>'; box.innerHTML = html;
+  } catch(e) { box.innerHTML = '<p class="meta">加载失败</p>'; }
+}
+
 async function loadUsers() {
   var box = document.getElementById('admin-content');
   box.innerHTML = '<p class="meta">加载中…</p>';

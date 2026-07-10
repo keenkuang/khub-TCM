@@ -1126,6 +1126,16 @@ class App:
             from .sync2 import status
             return 200, status(store)
 
+        # 0.8.1 安全合规——审计日志查询
+        if method == "GET" and path == "/api/admin/audit":
+            from .audit import search_audit
+            event = qs.get("event", [None])[0]
+            actor = qs.get("actor", [None])[0]
+            since = qs.get("since", [None])[0]
+            limit = int(qs.get("limit", [100])[0])
+            results = search_audit(store, event=event, actor=actor, since=since, limit=limit)
+            return 200, {"audit_logs": results}
+
         return 404, {"error": "not found"}
 
     @staticmethod

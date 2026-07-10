@@ -259,6 +259,13 @@ class Store:
                 self.conn.execute(idx)
             except Exception:
                 pass
+        # 0.8.1 审计表索引
+        try:
+            self.conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_event ON audit_log(event)")
+            self.conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_actor ON audit_log(actor)")
+            self.conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_at ON audit_log(at)")
+        except Exception:
+            pass
 
     def _migrate(self):
         cols = {r["name"] for r in self.conn.execute("PRAGMA table_info(documents)")}
