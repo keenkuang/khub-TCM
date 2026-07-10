@@ -1136,6 +1136,20 @@ class App:
             results = search_audit(store, event=event, actor=actor, since=since, limit=limit)
             return 200, {"audit_logs": results}
 
+        # 0.8.2 analytics
+        if method == "GET" and path == "/api/analytics/cohorts":
+            from .analytics import patient_cohorts
+            return 200, patient_cohorts(store)
+        if method == "GET" and path == "/api/analytics/efficacy":
+            from .analytics import syndrome_efficacy
+            return 200, {"efficacy": syndrome_efficacy(store)}
+        if method == "GET" and path == "/api/analytics/forecast":
+            from .analytics import visit_forecast
+            return 200, visit_forecast(store)
+        if method == "GET" and path == "/api/analytics/trends":
+            from .analytics import appointment_trends
+            return 200, {"trends": appointment_trends(store)}
+
         return 404, {"error": "not found"}
 
     @staticmethod

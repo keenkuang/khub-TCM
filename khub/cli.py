@@ -380,6 +380,12 @@ def build_parser():
     pr = sub.add_parser("retention-clean", help="清理过期数据")
     pr.add_argument("--table", default=""); pr.add_argument("--dry-run", action="store_true")
 
+    # 0.8.2 analytics
+    sub.add_parser("analytics-cohorts", help="患者分群分析")
+    sub.add_parser("analytics-efficacy", help="辨证方剂疗效分析")
+    sub.add_parser("analytics-forecast", help="就诊量预测")
+    sub.add_parser("analytics-trends", help="预约趋势")
+
     return ap
 
 
@@ -1348,6 +1354,23 @@ def main(argv=None):
         for tbl, cnt in result.items():
             flag = "（模拟）" if args.dry_run else ""
             print(f"{tbl}: {cnt} 条{flag}")
+    # 0.8.2 analytics
+    elif args.cmd == "analytics-cohorts":
+        from .analytics import patient_cohorts
+        import json as _j
+        print(_j.dumps(patient_cohorts(store), ensure_ascii=False, indent=2))
+    elif args.cmd == "analytics-efficacy":
+        from .analytics import syndrome_efficacy
+        import json as _j
+        print(_j.dumps({"efficacy": syndrome_efficacy(store)}, ensure_ascii=False, indent=2))
+    elif args.cmd == "analytics-forecast":
+        from .analytics import visit_forecast
+        import json as _j
+        print(_j.dumps(visit_forecast(store), ensure_ascii=False, indent=2))
+    elif args.cmd == "analytics-trends":
+        from .analytics import appointment_trends
+        import json as _j
+        print(_j.dumps({"trends": appointment_trends(store)}, ensure_ascii=False, indent=2))
     else:
         build_parser().print_help()
 
