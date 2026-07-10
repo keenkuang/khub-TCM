@@ -1162,6 +1162,21 @@ class App:
             from .integrations.status import check_all
             return 200, {"integrations": check_all()}
 
+        # 0.9.0 agents
+        if method == "POST" and path == "/api/agents":
+            from .agents.store import create_agent
+            aid = create_agent(store, body.get("name",""), system_prompt=body.get("system_prompt",""),
+                               tools=body.get("tools",[]), description=body.get("description",""))
+            return 201, {"agent_id": aid}
+        if method == "GET" and path == "/api/agents":
+            from .agents.store import list_agents
+            return 200, {"agents": list_agents(store)}
+        if method == "POST" and path.startswith("/api/agents/") and path.endswith("/run"):
+            from .agents.engine import run_with_llm
+            aid = _safe_int([parts[2]], 0)
+            result = run_with_llm(store, aid, user_input=body.get("input",""), current_user=getattr(self,"_current_user",None))
+            return 200, result
+
         return 404, {"error": "not found"}
 
     @staticmethod

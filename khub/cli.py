@@ -392,6 +392,16 @@ def build_parser():
     pcomp.add_argument("--bash", action="store_true", help="Bash 补全")
     pcomp.add_argument("--zsh", action="store_true", help="Zsh 补全")
 
+    # 0.9.0 agents
+    pa_c = sub.add_parser("agent-create", help="创建 Agent")
+    pa_c.add_argument("name"); pa_c.add_argument("--prompt", default="")
+    pa_c.add_argument("--tools", default=""); pa_c.add_argument("--desc", default="")
+
+    pa_l = sub.add_parser("agent-list", help="Agent 列表")
+
+    pa_r = sub.add_parser("agent-run", help="运行 Agent")
+    pa_r.add_argument("agent_id", type=int); pa_r.add_argument("--input", default="")
+
     return ap
 
 
@@ -1407,6 +1417,24 @@ case $state in
 esac""")
         else:
             print("使用 --bash 或 --zsh 生成补全脚本")
+    # 0.9.0 agents
+    elif args.cmd == "agent-create":
+        from .agents.store import create_agent
+        tools = [t.strip() for t in args.tools.split(",") if t.strip()] if args.tools else []
+        aid = create_agent(store, args.name, system_prompt=args.prompt,
+                           tools=tools, description=args.desc)
+        print(f"Agent #{aid} 已创建")
+    elif args.cmd == "agent-list":
+        from .agents.store import list_agents
+        for a in list_agents(store):
+            print(f"  #{a['id']} {a['name']} — {a['description'] or '(无描述)'} "
+                  f"{'✓' if a['active'] else '✗'}")
+    elif args.cmd == "agent-run":
+        from .agents.engine import run
+        result = run(store, args.agent_id, args.input)
+        print(f"Agent [{result['agent_name']}] 执行完成")
+        for r in result['results']:
+            print(f"  {r['tool']}: {str(r['result'])[:200]}")
     else:
         build_parser().print_help()
 

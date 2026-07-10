@@ -231,6 +231,18 @@ class Store:
             client_id TEXT PRIMARY KEY, name TEXT, last_sync_at TEXT,
             last_version INTEGER DEFAULT 0, created_at TEXT DEFAULT (datetime('now')))""")
         _syntrig(self.conn, "devices")
+        # 0.9.0 AI Agent 平台
+        from .replication import install_triggers as _atrig
+        self.conn.execute("""CREATE TABLE IF NOT EXISTS agent_definitions (
+            id INTEGER PRIMARY KEY, name TEXT NOT NULL, description TEXT,
+            system_prompt TEXT, tools TEXT, schedule TEXT,
+            active INTEGER DEFAULT 1, created_at TEXT DEFAULT (datetime('now')))""")
+        _atrig(self.conn, "agent_definitions")
+        self.conn.execute("""CREATE TABLE IF NOT EXISTS agent_schedules (
+            id INTEGER PRIMARY KEY, agent_id INTEGER NOT NULL,
+            cron TEXT, last_run TEXT, status TEXT DEFAULT 'active',
+            created_at TEXT DEFAULT (datetime('now')))""")
+        _atrig(self.conn, "agent_schedules")
         # 0.8.0 性能索引
         indexes = [
             "CREATE INDEX IF NOT EXISTS idx_documents_source_ids ON documents(source_ids)",
