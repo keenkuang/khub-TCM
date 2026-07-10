@@ -319,6 +319,28 @@ def build_parser():
     pck = sub.add_parser("clinical-tracking", help="疗效评估")
     pck.add_argument("patient_id", type=int)
 
+    # 0.5.0 knowledge graph
+    pki = sub.add_parser("kg-infer", help="证型推理")
+    pki.add_argument("syndrome")
+    pkh = sub.add_parser("kg-herbs", help="中药查询")
+    pkh.add_argument("--channel", default=""); pkh.add_argument("--nature", default="")
+    pkf = sub.add_parser("kg-formulas", help="方剂列表")
+    pkf.add_argument("--category", default="")
+    pks = sub.add_parser("kg-similarity", help="方剂相似度")
+    pks.add_argument("f1"); pks.add_argument("f2")
+
+    # 0.6.0 开放平台
+    ppl = sub.add_parser("plugin-list", help="列出已加载的插件")
+    pwh = sub.add_parser("webhook-add", help="添加 Webhook 订阅")
+    pwh.add_argument("--event", required=True)
+    pwh.add_argument("--url", required=True)
+    pwh.add_argument("--secret", default="")
+    pwl = sub.add_parser("webhook-list", help="列出 Webhook 订阅")
+
+    # 0.6.1 notifications
+    pn = sub.add_parser("notify-list", help="列出通知")
+    pn.add_argument("user_id", type=int)
+
     return ap
 
 
@@ -1160,6 +1182,49 @@ def main(argv=None):
         print(f"就诊次数：{e['visit_count']}")
         print(f"随访依从性：{e['followup_compliance']} ({e['adherence_rate']})")
         print(f"治疗连续性：{e['treatment_continuity']}")
+    # 0.5.0 knowledge graph
+    elif args.cmd == "kg-infer":
+        from .knowledge.inference import infer; import json as _j
+        print(_j.dumps(infer(store, args.syndrome), ensure_ascii=False, indent=2))
+    elif args.cmd == "kg-herbs":
+        from .knowledge.herbs import search_herbs
+        for h in search_herbs(store, channel=args.channel, nature=args.nature):
+            print(f"  {h['name']} [{h['nature']}/{h['flavor']}] 归经:{h['channel']}")
+    elif args.cmd == "kg-formulas":
+        from .knowledge.formulas import list_formulas
+        for f in list_formulas(store, category=args.category):
+            print(f"  {f['name']} [{f['source']}] {f.get('功效','')}")
+    elif args.cmd == "kg-similarity":
+        from .knowledge.formulas import formula_similarity
+        print(f"相似度：{formula_similarity(store, args.f1, args.f2):.3f}")
+    # 0.6.0 开放平台
+    elif args.cmd == "plugin-list":
+        from .plugins.registry import list_plugins
+        plugins = list_plugins()
+        if not plugins:
+            print("未加载任何插件")
+        for p in plugins:
+            print(f"  {p['name']} v{p['version']} — {p['description']}")
+    elif args.cmd == "webhook-add":
+        from .webhook import subscribe
+        try:
+            sid = subscribe(store, args.event, args.url, args.secret)
+            print(f"Webhook #{sid} 已创建")
+        except ValueError as e:
+            print(f"失败：{e}")
+    elif args.cmd == "webhook-list":
+        from .webhook import list_subscriptions
+        subs = list_subscriptions(store)
+        if not subs:
+            print("无 Webhook 订阅")
+        for s in subs:
+            active_symbol = "✓" if s["active"] else "✗"
+            print(f"  #{s['id']} {s['event']} → {s['url']} {active_symbol}")
+    elif args.cmd == "notify-list":
+        from .notifications import list_recent, unread_count
+        for n in list_recent(store, args.user_id):
+            print(f"  [{n['created_at']}] {'✓' if n['read'] else '○'} {n['title']} — {n['body'] or ''}")
+        print(f"未读：{unread_count(store, args.user_id)}")
     else:
         build_parser().print_help()
 

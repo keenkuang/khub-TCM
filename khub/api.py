@@ -1,5 +1,6 @@
 import json
 import os
+import queue
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Optional
@@ -93,7 +94,8 @@ class App:
             "/documents": "docs", "/search": "docs", "/semantic": "docs",
         }
         _action_map = {"GET": "read", "POST": "create", "PUT": "update", "DELETE": "delete"}
-        _public_paths = ("/auth/login", "/web/", "/health", "/api/info")
+        _public_paths = ("/auth/login", "/web/", "/health", "/api/info",
+                         "/api/openapi.json", "/api/docs")
         skip_check = any(path.startswith(p) for p in _public_paths)
         if not skip_check:
             resource = None
@@ -964,6 +966,59 @@ class App:
                 "api_version": "0.5.1",
             }
 
+        # 0.6.0 开放平台
+        if method == "GET" and path == "/api/openapi.json":
+            from .openapi import get_spec
+            return 200, get_spec()
+        if method == "GET" and path == "/api/docs":
+            html = ("<!DOCTYPE html><html><head><title>kHUB API</title>"
+                    "<link rel='stylesheet' href='https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css'>"
+                    "</head><body><div id='swagger-ui'></div>"
+                    "<script src='https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js'></script>"
+                    "<script>SwaggerUIBundle({url:'/api/openapi.json',dom_id:'#swagger-ui'})</script>"
+                    "</body></html>")
+            return 200, html
+        if method == "GET" and path == "/api/plugins":
+            from .plugins.registry import list_plugins
+            return 200, {"plugins": list_plugins()}
+        if method == "POST" and path == "/api/webhooks":
+            from .webhook import subscribe
+            try:
+                sid = subscribe(store, body.get("event", ""), body.get("url", ""),
+                                secret=body.get("secret", ""))
+                return 201, {"subscription_id": sid}
+            except ValueError as e:
+                return 400, {"error": str(e)}
+        if method == "GET" and path == "/api/webhooks":
+            from .webhook import list_subscriptions
+            return 200, {"subscriptions": list_subscriptions(store)}
+        parts = path.strip("/").split("/")
+        if method == "DELETE" and path.startswith("/api/webhooks/") and len(parts) == 3:
+            from .webhook import unsubscribe
+            try:
+                unsubscribe(store, int(parts[2]))
+                return 200, {"status": "deleted"}
+            except Exception as e:
+                return 400, {"error": str(e)}
+
+        # 0.6.1 notifications
+        if method == "GET" and path == "/api/notifications":
+            from .notifications import list_recent, unread_count
+            uid = getattr(self, "_current_user", {}).get("user_id", 0)
+            return 200, {"notifications": list_recent(store, uid),
+                         "unread": unread_count(store, uid)}
+        if method == "POST" and path.startswith("/api/notifications/") and path.endswith("/read"):
+            from .notifications import mark_read
+            nid = _safe_int([parts[2]], 0)
+            uid = getattr(self, "_current_user", {}).get("user_id", 0)
+            mark_read(store, nid, uid)
+            return 200, {"status": "ok"}
+        if method == "POST" and path == "/api/notifications/read-all":
+            from .notifications import mark_all_read
+            uid = getattr(self, "_current_user", {}).get("user_id", 0)
+            mark_all_read(store, uid)
+            return 200, {"status": "ok"}
+
         return 404, {"error": "not found"}
 
     @staticmethod
@@ -1051,6 +1106,36 @@ def make_handler(app: App):
                 pass  # 客户端断开，静默结束
 
         def do_GET(self):
+            # 0.6.1 SSE 事件流端点（需要在标准 dispatch 前拦截，直接写 wfile）
+            if self.path == "/events":
+                from .auth import get_current_user
+                cu = get_current_user(app.store, self.headers.get("Authorization", ""))
+                if not cu:
+                    return self._send(401, {"error": "unauthorized"})
+                from .events import subscribe, unsubscribe
+                sub_id, q = subscribe()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream")
+                self.send_header("Cache-Control", "no-cache")
+                self.send_header("Connection", "keep-alive")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+                self.wfile.write(b"event: connected\ndata: {}\n\n")
+                self.wfile.flush()
+                try:
+                    while True:
+                        try:
+                            msg = q.get(timeout=30)
+                            self.wfile.write(f"data: {msg}\n\n".encode())
+                            self.wfile.flush()
+                        except queue.Empty:
+                            self.wfile.write(b": heartbeat\n\n")
+                            self.wfile.flush()
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+                finally:
+                    unsubscribe(sub_id)
+                return
             if app.ratelimit is not None:
                 client_ip = self.client_address[0]
                 if not app.ratelimit.allow(client_ip):
@@ -1178,12 +1263,17 @@ def make_handler(app: App):
 
 
 def serve(store: Store, library: ManagedLibrary, host: str = "127.0.0.1", port: int = 8000):
+    # 0.6.0 插件系统初始化
+    from .plugins.registry import discover, load_plugins, shutdown_plugins
+    discover()
+    load_plugins(store)
     app = App(store, library)
     httpd = ThreadingHTTPServer((host, port), make_handler(app))
     import signal
 
     def _stop(*a):
         print("\n收到停止信号，正在关闭...")
+        shutdown_plugins(store)
         httpd.shutdown()
 
     signal.signal(signal.SIGTERM, _stop)

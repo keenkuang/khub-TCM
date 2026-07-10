@@ -172,6 +172,28 @@ class Store:
             token TEXT NOT NULL UNIQUE, expires_at TEXT,
             created_at TEXT DEFAULT (datetime('now')))""")
         _authtrig(self.conn, "auth_tokens")
+        # 0.5.0 中医知识图谱
+        from .knowledge.schema import init as _kg_init
+        _kg_init(self.conn)
+        # 0.6.0 开放平台 Webhook 订阅与投递
+        from .replication import install_triggers as _whtrig
+        self.conn.execute("""CREATE TABLE IF NOT EXISTS webhook_subscriptions (
+            id INTEGER PRIMARY KEY, event TEXT NOT NULL, url TEXT NOT NULL,
+            secret TEXT DEFAULT '', active INTEGER DEFAULT 1,
+            created_at TEXT DEFAULT (datetime('now')))""")
+        _whtrig(self.conn, "webhook_subscriptions")
+        self.conn.execute("""CREATE TABLE IF NOT EXISTS webhook_deliveries (
+            id INTEGER PRIMARY KEY, subscription_id INTEGER, event TEXT,
+            payload TEXT, status TEXT, response_code INTEGER, response_body TEXT,
+            created_at TEXT DEFAULT (datetime('now')))""")
+        _whtrig(self.conn, "webhook_deliveries")
+        # 0.6.1 实时协作与消息推送：通知系统
+        from .replication import install_triggers as _ntrig
+        self.conn.execute("""CREATE TABLE IF NOT EXISTS notifications (
+            id INTEGER PRIMARY KEY, user_id INTEGER, title TEXT NOT NULL,
+            body TEXT, event_type TEXT, resource_type TEXT, resource_id TEXT,
+            read INTEGER DEFAULT 0, created_at TEXT DEFAULT (datetime('now')))""")
+        _ntrig(self.conn, "notifications")
 
     def _migrate(self):
         cols = {r["name"] for r in self.conn.execute("PRAGMA table_info(documents)")}

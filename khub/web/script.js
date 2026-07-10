@@ -479,6 +479,48 @@ async function aiAsk() {
   finally { aiState.streaming = false; }
 }
 
+// ── 通知系统 ──
+var notifSource = null;
+
+function connectEvents() {
+  if (notifSource) notifSource.close();
+  try {
+    notifSource = new EventSource('/events');
+    notifSource.addEventListener('connected', function() { refreshNotifBadge(); });
+    notifSource.onmessage = function(e) {
+      try { var d = JSON.parse(e.data); refreshNotifBadge(); } catch(ex) {}
+    };
+    notifSource.onerror = function() { setTimeout(connectEvents, 5000); };
+  } catch(e) {}
+}
+
+async function refreshNotifBadge() {
+  var badge = document.getElementById('notifBadge');
+  try {
+    var r = await fetch('/api/notifications').then(function(x){return x.json();});
+    if (r.unread > 0) { badge.style.display = 'inline'; badge.textContent = r.unread > 99 ? '99+' : r.unread; }
+    else { badge.style.display = 'none'; }
+    var list = document.getElementById('notifList');
+    if (list && r.notifications) {
+      list.innerHTML = r.notifications.slice(0,10).map(function(n){
+        return '<div class="notif-item" style="padding:8px 12px;border-bottom:1px solid var(--border);cursor:pointer' + (n.read ? '' : ';background:var(--accent);color:#fff') + '">' +
+          '<div style="font-size:13px">' + esc(n.title) + '</div>' +
+          '<div style="font-size:11px;opacity:0.7">' + esc(n.created_at||'') + '</div></div>';
+      }).join('') || '<div style="padding:12px;text-align:center;color:var(--muted)">暂无通知</div>';
+    }
+  } catch(e) {}
+}
+
+function toggleNotifications() {
+  var panel = document.getElementById('notifPanel');
+  panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+  if (panel.style.display === 'block') refreshNotifBadge();
+}
+
+async function markAllRead() {
+  try { await fetch('/api/notifications/read-all', {method:'POST'}); refreshNotifBadge(); } catch(e) {}
+}
+
 // ── 深色模式 ──
 function initTheme() {
   const saved = localStorage.getItem('khub-theme');
@@ -609,6 +651,7 @@ document.addEventListener('keydown', function(e) {
 // ── 初始化 ──
 initTheme();
 checkLogin().then(function() {
+  connectEvents();
   loadStats();
   loadTagFilter();
   loadAll();
