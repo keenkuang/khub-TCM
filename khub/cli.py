@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -621,6 +622,11 @@ def main(argv=None):
                     "SELECT DISTINCT model FROM embeddings").fetchall()]
                 vec_lines = []
                 for m in vec_models:
+                    # 表名标识符拼接前校验：model 来自 embeddings.model，
+                    # 须限定为 \w+ 才能进入 vec_{model}（与 retrieval._vec_table 约定一致）
+                    if not re.fullmatch(r"\w+", m or ""):
+                        vec_lines.append(f"{m}=非法模型名")
+                        continue
                     t = f"vec_{m}"
                     try:
                         n = restored.conn.execute(
