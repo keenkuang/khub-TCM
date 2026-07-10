@@ -231,6 +231,34 @@ class Store:
             client_id TEXT PRIMARY KEY, name TEXT, last_sync_at TEXT,
             last_version INTEGER DEFAULT 0, created_at TEXT DEFAULT (datetime('now')))""")
         _syntrig(self.conn, "devices")
+        # 0.8.0 性能索引
+        indexes = [
+            "CREATE INDEX IF NOT EXISTS idx_documents_source_ids ON documents(source_ids)",
+            "CREATE INDEX IF NOT EXISTS idx_documents_updated ON documents(updated_at)",
+            "CREATE INDEX IF NOT EXISTS idx_document_versions_doc ON document_versions(doc_id)",
+            "CREATE INDEX IF NOT EXISTS idx_embeddings_doc_id ON embeddings(doc_id)",
+            "CREATE INDEX IF NOT EXISTS idx_patients_name ON patients(name)",
+            "CREATE INDEX IF NOT EXISTS idx_records_patient ON records(patient_id)",
+            "CREATE INDEX IF NOT EXISTS idx_records_visit_date ON records(visit_date)",
+            "CREATE INDEX IF NOT EXISTS idx_consultations_patient ON consultations(patient_id)",
+            "CREATE INDEX IF NOT EXISTS idx_consultations_date ON consultations(date)",
+            "CREATE INDEX IF NOT EXISTS idx_appointments_patient ON appointments(patient_id)",
+            "CREATE INDEX IF NOT EXISTS idx_appointments_date ON appointments(date)",
+            "CREATE INDEX IF NOT EXISTS idx_appointments_doctor ON appointments(doctor)",
+            "CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id)",
+            "CREATE INDEX IF NOT EXISTS idx_notifications_created ON notifications(created_at)",
+            "CREATE INDEX IF NOT EXISTS idx_sync_changes_entity ON sync_changes(entity_type, entity_id)",
+            "CREATE INDEX IF NOT EXISTS idx_kg_relations_source ON kg_relations(source_type, source_id)",
+            "CREATE INDEX IF NOT EXISTS idx_kg_relations_target ON kg_relations(target_type, target_id)",
+            "CREATE INDEX IF NOT EXISTS idx_followup_plans_patient ON followup_plans(patient_id)",
+            "CREATE INDEX IF NOT EXISTS idx_workflow_instances_def ON workflow_instances(definition_id)",
+            "CREATE INDEX IF NOT EXISTS idx_wechat_articles_status ON wechat_articles(status)",
+        ]
+        for idx in indexes:
+            try:
+                self.conn.execute(idx)
+            except Exception:
+                pass
 
     def _migrate(self):
         cols = {r["name"] for r in self.conn.execute("PRAGMA table_info(documents)")}
@@ -248,6 +276,21 @@ class Store:
                     "ALTER TABLE sync_states ADD COLUMN direction TEXT DEFAULT 'pull'")
         except Exception:  # nosec B110
             pass  # 列已存在
+
+    def _exec(self, sql: str, params=None):
+        """带慢查询日志的 SQL 执行。"""
+        import logging as _logging
+        import time as _time
+        t0 = _time.time()
+        try:
+            if params is not None:
+                return self.conn.execute(sql, params)
+            return self.conn.execute(sql)
+        finally:
+            elapsed = _time.time() - t0
+            if elapsed > 0.5:
+                _logging.getLogger("khub.db.slow").warning(
+                    "慢查询(%.2fs): %s", elapsed, sql[:200])
 
     def transaction(self):
         """上下文管理器：统一 begin/commit/rollback。

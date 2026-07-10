@@ -163,6 +163,10 @@ class App:
                          "uptime_sec": int(time.time() - self._started), "checks": checks}
 
         if method == "GET" and path == "/stats":
+            from .cache import get as _cache_get, set as _cache_set
+            cached = _cache_get("stats")
+            if cached is not None:
+                return 200, cached
             cur = self.store.conn
             total = cur.execute("SELECT count(*) FROM documents").fetchone()[0]
             source_counts: dict[str, int] = {}
@@ -253,6 +257,7 @@ class App:
                     stats[f"table_rows.{tbl}"] = cnt
                 except Exception:
                     pass
+            _cache_set("stats", stats, ttl=5)
             return 200, stats
 
         if method == "GET" and path == "/ebooks":
@@ -273,6 +278,16 @@ class App:
 
         if method == "GET" and path == "/search":
             q = qs.get("q", [""])[0]
+            cursor = qs.get("cursor", [None])[0]
+            if cursor:
+                limit = min(int(qs.get("per", ["20"])[0]), 100)
+                rows = self.store.conn.execute(
+                    "SELECT d.canonical_id as id, d.title, d.updated_at FROM documents d "
+                    "WHERE (d.title LIKE ? OR d.canonical_id LIKE ?) "
+                    "AND d.updated_at < ? ORDER BY d.updated_at DESC LIMIT ?",
+                    (f"%{q}%", f"%{q}%", cursor, limit)).fetchall()
+                next_cursor = rows[-1]["updated_at"] if len(rows) == limit else None
+                return 200, {"results": [dict(r) for r in rows], "next_cursor": next_cursor}
             page = _safe_int(qs.get("page", ["0"])[0], 0)
             per = _safe_int(qs.get("per", ["50"])[0], 50)
             source = qs.get("source", [""])[0]
@@ -958,13 +973,19 @@ class App:
 
         # 0.5.1 deployment info
         if method == "GET" and path == "/api/info":
-            return 200, {
+            from .cache import get as _cache_get, set as _cache_set
+            cached = _cache_get("api_info")
+            if cached is not None:
+                return 200, cached
+            info = {
                 "name": os.environ.get("KHUB_BRAND_NAME", "kHUB"),
                 "version": __version__,
                 "logo_url": os.environ.get("KHUB_BRAND_LOGO", ""),
                 "uptime_sec": int(time.time() - _START),
                 "api_version": "0.5.1",
             }
+            _cache_set("api_info", info, ttl=5)
+            return 200, info
 
         # 0.6.0 开放平台
         if method == "GET" and path == "/api/openapi.json":
