@@ -1,5 +1,26 @@
 # 变更日志
 
+## [0.6.2] — 2026-07-10
+
+### 高级 BI 与报表
+
+#### 报表引擎
+- `report_templates` / `report_jobs` 表（接 WAL 复制）
+- `khub/reports.py`：`create_template` / `list_templates` / `execute` / `export_csv`
+- REST 端点：创建/列表/运行/CSV 导出
+- CLI：`report-create` / `report-list` / `report-run` / `report-export`
+
+#### 数据看板
+- Web UI 经营看板：文档总数、今日入库、预约统计、排班利用率（4 卡片布局）
+- 报表模板管理（新建/运行/CSV 下载）
+
+#### 导出
+- CSV 格式导出（`GET /api/reports/{id}/csv`）
+- 自定义 SQL 报表模板
+
+### 测试
+- 新增 5 个报表测试（创建/列表/执行/CSV 导出/无效模板）
+
 ## [0.6.1] — 2026-07-10
 
 ### 实时协作与消息推送
