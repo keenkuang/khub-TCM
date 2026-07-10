@@ -3,6 +3,9 @@ import tempfile
 
 from khub.db import Store
 from khub.models import CanonicalDoc
+import pytest
+pytestmark = pytest.mark.smoke
+
 
 
 def _add(store, cid, title, content, source="test"):

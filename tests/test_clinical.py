@@ -3,6 +3,9 @@ from khub.clinical.patients import add_patient, get_patient, list_patients
 from khub.clinical.records import add_record, list_records
 from khub.clinical.consultations import add_consultation, list_consultations
 from khub.clinical.twin import build_summary, persist_summary
+import pytest
+pytestmark = pytest.mark.smoke
+
 
 def test_patient_and_records_and_consultations():
     s = Store(":memory:")

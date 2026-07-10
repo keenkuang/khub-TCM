@@ -1,6 +1,9 @@
 from khub.llm import LLMProvider, register_provider, get_provider
 from khub.exam.generator import generate
 from khub.exam.models import Question
+import pytest
+pytestmark = pytest.mark.smoke
+
 
 
 class FakeProvider(LLMProvider):

@@ -162,11 +162,11 @@ class ReplicaTarget:
         """Push a full snapshot (manifest + optional db file) to the target."""
         raise NotImplementedError
 
-    def push_changes(self, changes: list[Change]):
+    def push_changes(self, changes: list):
         """Push a batch of WAL changes to the target."""
         raise NotImplementedError
 
-    def fetch_snapshot(self) -> dict:
+    def fetch_snapshot(self) -> dict | None:
         """拉取远端快照 manifest（无则返回 None）。"""
         raise NotImplementedError
 
@@ -176,6 +176,10 @@ class ReplicaTarget:
 
     def health(self) -> tuple[bool, str]:
         """Return (is_alive: bool, status_message: str)."""
+        raise NotImplementedError
+
+    def best_snapshot_for(self, target_lsn: int | None = None) -> dict | None:
+        """返回 lsn<=target_lsn 中最新的一份快照（target_lsn=None 返回最新）。"""
         raise NotImplementedError
 
 
@@ -235,7 +239,7 @@ class LocalFileReplica(ReplicaTarget):
             try:
                 with open(os.path.join(d, fn)) as f:
                     manifest = json.load(f)
-            except Exception:
+            except Exception:  # nosec B112
                 continue
             versions.append({
                 "ts": ts,
@@ -247,7 +251,7 @@ class LocalFileReplica(ReplicaTarget):
         versions.sort(key=lambda v: v["ts"])
         return versions
 
-    def best_snapshot_for(self, target_lsn: int = None) -> dict:
+    def best_snapshot_for(self, target_lsn: int | None = None) -> dict | None:
         """返回 `lsn<=target_lsn` 中最新的一份（target_lsn=None 返回最新）。
 
         用于 PITR：恢复点 = 选 lsn 不超过目标时间点的、最新的完整快照，
@@ -290,7 +294,7 @@ class LocalFileReplica(ReplicaTarget):
             for ch in changes:
                 f.write(json.dumps(_to_wal_dict(ch), ensure_ascii=False) + "\n")
 
-    def fetch_snapshot(self) -> dict:
+    def fetch_snapshot(self) -> dict | None:
         p = os.path.join(self.dir, "snapshot.json")
         if not os.path.isfile(p):
             return None
@@ -352,7 +356,7 @@ _REPLICATED_TABLES = {
 }
 
 
-def install_triggers(conn, table: str, pk: str = None):
+def install_triggers(conn, table: str, pk: str | None = None):
     """为单张表安装 AFTER INSERT/UPDATE/DELETE 三个触发器，自动落 replication_log。
 
     - pk 缺省时用 PRAGMA table_info 找 pk==1 的列作为 row_id。
@@ -514,7 +518,7 @@ class WalFlusher:
             except Exception as e:
                 try:
                     conn.execute("ROLLBACK")
-                except Exception:
+                except Exception:  # nosec B110
                     pass
                 logging.warning("[wal] 刷盘失败（仅告警，不阻塞业务写）: %s", e)
 
@@ -560,7 +564,7 @@ def register_replayer(table: str, fn):
         _REPLAYERS[table] = fn
 
 
-def replay_from(store, changes: list, target_lsn: int = None) -> int:
+def replay_from(store, changes: list, target_lsn: int | None = None) -> int:
     """把 WAL 变更回放到 store（统一回放入口，替代旧 apply_changes）。
 
     - 回放前 `PRAGMA recursive_triggers=OFF`，备机回放不二次触发本机 WAL。
@@ -659,7 +663,7 @@ def verify_store(store) -> dict:
     返回人类可读报告 dict（ok / errors / row_counts / max_lsn / fts_sample）。
     """
     conn = store.conn
-    report = {
+    report: dict[str, Any] = {
         "integrity": None, "row_counts": {}, "max_lsn": 0,
         "fts_sample": None, "ok": True, "errors": [],
     }
@@ -781,7 +785,7 @@ class SshReplica(ReplicaTarget):
     PITR/快照兜底，不在此处加锁。
     """
 
-    def __init__(self, target: str, transport: Transport = None, keep: int = 5):
+    def __init__(self, target: str, transport: Transport | None = None, keep: int = 5):
         self.userhost, self.remote_dir = _parse_ssh_target(target)
         self.transport = transport or SshTransport(self.userhost)
         self.keep = keep
@@ -879,14 +883,14 @@ class SshReplica(ReplicaTarget):
         lp = os.path.join(self.stage, "wal.ndjson")
         try:
             self.transport.recv(f"{self.remote_dir}/wal.ndjson", lp)
-        except Exception:
+        except Exception:  # nosec B110
             pass
         with open(lp, "a") as f:
             for ch in changes:
                 f.write(json.dumps(_to_wal_dict(ch), ensure_ascii=False) + "\n")
         self._atomic_send(lp, f"{self.remote_dir}/wal.ndjson", mode="600")
 
-    def fetch_snapshot(self) -> dict:
+    def fetch_snapshot(self) -> dict | None:
         versions = self.list_remote_versions()
         return versions[-1]["manifest"] if versions else None
 
@@ -913,7 +917,7 @@ class SshReplica(ReplicaTarget):
 class S3Replica(ReplicaTarget):
     """S3 兼容对象存储副本（惰性 import boto3，未安装则运行时报错）。"""
 
-    def __init__(self, target: str, endpoint_url: str = None, region: str = None):
+    def __init__(self, target: str, endpoint_url: str | None = None, region: str | None = None):
         # s3://bucket/prefix
         s = target[len("s3://"):]
         idx = s.find("/")
@@ -921,17 +925,17 @@ class S3Replica(ReplicaTarget):
         self.prefix = s[idx + 1:].strip("/")
         self.endpoint_url = endpoint_url
         self.region = region
-        self._client = None
+        self._client_cache = None
 
     def _client(self):
-        if self._client is None:
+        if self._client_cache is None:
             try:
                 import boto3  # 惰性导入
             except ImportError:
                 raise RuntimeError("未安装 boto3，无法使用 S3 副本（pip install boto3）")
-            self._client = boto3.client(
+            self._client_cache = boto3.client(
                 "s3", endpoint_url=self.endpoint_url, region_name=self.region)
-        return self._client
+        return self._client_cache
 
     @property
     def name(self) -> str:
@@ -951,7 +955,7 @@ class S3Replica(ReplicaTarget):
     def push_changes(self, changes: list):
         c = self._client()
         # 读改写：append 到现有 wal.ndjson
-        existing = b""
+        existing = ""
         try:
             obj = c.get_object(Bucket=self.bucket, Key=self._key("wal.ndjson"))
             existing = obj["Body"].read().decode("utf-8")
@@ -963,7 +967,7 @@ class S3Replica(ReplicaTarget):
         c.put_object(Bucket=self.bucket, Key=self._key("wal.ndjson"),
                      Body=("\n".join(lines) + "\n").encode("utf-8"))
 
-    def fetch_snapshot(self) -> dict:
+    def fetch_snapshot(self) -> dict | None:
         import io
         c = self._client()
         try:
@@ -1013,7 +1017,7 @@ class ReplicationManager:
         if db_path and os.path.isfile(db_path) and db_path != ":memory:":
             # 一致性快照：ATTACH 逐表拷贝、排除 ha_state / 虚表（见 db.make_snapshot_db）
             from .db import make_snapshot_db
-            tmp = tempfile.mktemp(suffix=".db")
+            tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".db").name
             make_snapshot_db(self.store.conn, tmp)
             replica.push_snapshot(meta, db_path=tmp)
             try:

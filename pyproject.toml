@@ -2,9 +2,9 @@
 name = "khub"
 version = "0.2.5"
 requires-python = ">=3.11"
-dependencies = ["PyYAML>=6.0"]
+dependencies = ["PyYAML>=6.0", "defusedxml>=0.7"]
 [project.optional-dependencies]
-dev = ["pytest>=8.0"]
+dev = ["pytest>=8.0", "bandit>=1.7", "mypy>=1.0"]
 pdf = ["pypdf>=4.0"]
 ann = ["sqlite-vec>=0.1.9"]
 crypto = ["cryptography>=41.0"]
@@ -21,3 +21,32 @@ packages = ["khub", "khub.adapters", "khub.extractors", "khub.llm", "khub.exam",
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+markers = [
+    "smoke: 核心快速冒烟测试，秒级，无重 IO/索引",
+    "full: 长耗时套件，含全文/向量索引构建等",
+    "slow: 重负载用例（如离线 embedding、整库索引）",
+    "net: 需要访问外部网络（LLM/Embedding 端点、Quip/Obsidian 等）",
+]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+warn_return_any = false
+warn_unreachable = false
+
+[tool.bandit]
+# 注意：bandit 默认 `bandit -r khub` 只自动发现扫描树内的 khub/.bandit 文件，
+#       不会读取本段。本段仅在显式 `-c pyproject.toml` 时生效；skips 须与 khub/.bandit 保持一致。
+exclude_dirs = ["tests", ".git", "build", "dist", "node_modules"]
+# 以下为有意为之、经验证安全的跳过项：
+#   B101  assert 用于内部不变量检查
+#   B404/B603/B607  subprocess 一律 list 传参、禁用 shell（架构约定）
+#   B608  SQL 标识符（表名/列名/向量表名）均来自白名单常量或正则校验
+#         （retrieval 的 model 经 re.fullmatch(r"\w+")；table 来自 _REPLICATED_TABLES
+#         等硬编码表清单；pk 来自 PRAGMA table_info），用户数据一律走 ? 参数化。
+#         新增 SQL 拼接时必须保持「标识符白名单 + 值参数化」，否则不得依赖此跳过。
+#   B310  urlopen 目标仅为 localhost（SSE/健康检查）或配置化的远端适配器端点
+#         （feishu/quip/ima），属预期用法。
+skips = ["B101", "B404", "B603", "B607", "B608", "B310"]

@@ -18,7 +18,7 @@ import logging
 import os
 import re
 import time
-from typing import Optional
+from typing import Any, Optional
 
 from .clinical.patients import add_patient
 from .clinical.records import add_record
@@ -66,7 +66,7 @@ class LegacyImporter:
 
     def __init__(self, store: Store):
         self.store = store
-        self._stats = {"patients": 0, "records": 0, "consultations": 0, "errors": []}
+        self._stats: dict[str, Any] = {"patients": 0, "records": 0, "consultations": 0, "errors": []}
 
     def import_excel(self, path: str, sheet: str | int = 0,
                      dry_run: bool = False) -> dict:

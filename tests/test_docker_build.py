@@ -11,6 +11,8 @@ import os
 import re
 import subprocess
 import pytest
+pytestmark = pytest.mark.slow
+
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DOCKERFILE = os.path.join(PROJECT_ROOT, "Dockerfile")

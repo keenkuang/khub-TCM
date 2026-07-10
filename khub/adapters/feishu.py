@@ -19,7 +19,7 @@ import urllib.parse
 import urllib.request
 import warnings
 
-from ..models import RawDoc
+from ..models import RawDoc, CanonicalDoc, SyncResult
 from .base import SourceAdapter
 from ._feishu_auth import FeishuTokenManager
 
@@ -48,7 +48,7 @@ class FeishuAdapter:
             "Content-Type": "application/json; charset=utf-8",
         }
 
-    def _get(self, path: str, params: dict = None, _retry: int = 1) -> dict:
+    def _get(self, path: str, params: dict | None = None, _retry: int = 1) -> dict:
         """GET 请求 + 自动重试（token 过期时刷新，最多 _retry 次）。"""
         url = f"{API_BASE}{path}"
         if params:
@@ -76,7 +76,7 @@ class FeishuAdapter:
     def _list_spaces(self) -> list[dict]:
         """列出当前应用可访问的知识空间。"""
         items = []
-        page_token = ""
+        page_token = ""  # nosec B105
         while True:
             params = {"page_size": "50"}
             if page_token:
@@ -94,7 +94,7 @@ class FeishuAdapter:
     def _list_space_nodes(self, space_id: str) -> list[dict]:
         """递归遍历知识空间中的 wiki 节点（文档）。"""
         nodes = []
-        page_token = ""
+        page_token = ""  # nosec B105
         while True:
             params = {"page_size": "50"}
             if page_token:
@@ -117,7 +117,7 @@ class FeishuAdapter:
     def _list_node_children(self, space_id: str, node_token: str) -> list[dict]:
         """递归获取子节点。"""
         children = []
-        page_token = ""
+        page_token = ""  # nosec B105
         while True:
             params = {"page_size": "50"}
             if page_token:
@@ -219,14 +219,13 @@ class FeishuAdapter:
 
         return docs
 
-    def push(self, doc_id: str, content: str, title: str) -> "SyncResult":
+    def push(self, doc_id: str, content: str, title: str) -> SyncResult:
         raise NotImplementedError("飞书适配器 MVP 阶段不支持推送")
 
-    def delete(self, source_id: str) -> "SyncResult":
+    def delete(self, source_id: str) -> SyncResult:
         raise NotImplementedError("飞书适配器 MVP 阶段不支持删除")
 
-    def normalize(self, raw: RawDoc) -> "CanonicalDoc":
-        from ..models import CanonicalDoc
+    def normalize(self, raw: RawDoc) -> CanonicalDoc:
         return CanonicalDoc(
             canonical_id=f"feishu:{raw.id}",
             title=raw.title,

@@ -1,5 +1,8 @@
 from khub.db import Store, compute_hash
 from khub.models import CanonicalDoc
+import pytest
+pytestmark = pytest.mark.smoke
+
 
 def test_init_schema_creates_tables():
     s = Store(":memory:")

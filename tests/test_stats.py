@@ -3,6 +3,9 @@ from khub.api import App
 from khub.db import Store
 from khub.storage import ManagedLibrary
 from khub.models import CanonicalDoc
+import pytest
+pytestmark = pytest.mark.smoke
+
 
 
 def test_stats_endpoint():

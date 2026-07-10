@@ -40,7 +40,7 @@ SCENARIOS = {
 }
 
 
-def run_scenario(name: str, fc: FailoverController = None) -> ScenarioResult:
+def run_scenario(name: str, fc: FailoverController | None = None) -> ScenarioResult:
     """运行指定场景（需提供 FailoverController 或默认构造临时实例）。
 
     self-test 用纯 tick() 推断（不下真实探针），避免副作用。
@@ -105,7 +105,7 @@ def run_scenario(name: str, fc: FailoverController = None) -> ScenarioResult:
     return ScenarioResult(name=name, passed=ok, steps=steps, error=error)
 
 
-def run_all(fc: FailoverController = None) -> list:
+def run_all(fc: FailoverController | None = None) -> list:
     """运行所有内置场景。"""
     results = []
     for name in SCENARIOS:

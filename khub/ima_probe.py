@@ -24,6 +24,8 @@ ENDPOINTS = [
     ("get_knowledge_list", BASE, {"cursor": "", "limit": 1, "knowledge_base_id": "__PLACEHOLDER__", "folder_id": ""}, "中量"),
 ]
 
+PROBE_IDX = -1  # 跨调用轮询的端点索引
+
 
 def _probe() -> dict:
     """轮询下一个端点执行一次探测，返回结果。"""
@@ -34,8 +36,9 @@ def _probe() -> dict:
                 "endpoint": "", "weight": "", "elapsed": 0}
 
     # 轮询选择下一个端点（按索引循环）
-    _probe.idx = getattr(_probe, "idx", -1) + 1
-    ep_name, ep_base, ep_body, ep_weight = ENDPOINTS[_probe.idx % len(ENDPOINTS)]
+    global PROBE_IDX
+    PROBE_IDX = PROBE_IDX + 1
+    ep_name, ep_base, ep_body, ep_weight = ENDPOINTS[PROBE_IDX % len(ENDPOINTS)]
     url = f"{ep_base}/{ep_name}"
     body = json.dumps(ep_body).encode()
 

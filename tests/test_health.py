@@ -2,6 +2,9 @@ import tempfile
 from khub.api import App, __version__
 from khub.db import Store
 from khub.storage import ManagedLibrary
+import pytest
+pytestmark = pytest.mark.smoke
+
 
 
 def test_health_returns_all_fields():

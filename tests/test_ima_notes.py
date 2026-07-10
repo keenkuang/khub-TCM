@@ -2,6 +2,8 @@ import json
 import urllib.request
 import pytest
 from khub.db import Store
+pytestmark = pytest.mark.net
+
 
 
 class FakeResp:

@@ -12,6 +12,9 @@ from khub.clinical.patients import add_patient, get_patient, list_patients
 from khub.clinical.records import add_record, list_records
 from khub.clinical.consultations import add_consultation, list_consultations
 from khub.audit import recent, init_audit
+import pytest
+pytestmark = pytest.mark.smoke
+
 
 
 # ---------------------------------------------------------------------------

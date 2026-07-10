@@ -12,14 +12,14 @@ import os
 import time
 import urllib.request
 
-_TOKEN_URL = "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal"
+_TOKEN_URL = "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal"  # nosec B105
 
 
 class FeishuTokenManager:
     """管理飞书 tenant_access_token 的获取与缓存。"""
 
     def __init__(self):
-        self._token = ""
+        self._token = ""  # nosec B105
         self._expires_at = 0.0
 
     @property

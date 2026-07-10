@@ -160,7 +160,7 @@ def tick(now: float, hb_up: bool, lan_up: bool, state: HAState,
         return Decision(ROLE_SAFE, ["alarm", "reconcile"], down_s, True,
                         "safe_mode，需 reconcile 定主")
 
-    return Decision(state.role, [], down_s, state.safe_mode, "未变化")
+    return Decision(state.role, [], down_s, state.role == ROLE_SAFE, "未变化")
 
 
 def _tcp_probe(host: str, port: int, timeout: float = 2.0) -> bool:

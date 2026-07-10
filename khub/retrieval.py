@@ -188,7 +188,7 @@ class Retriever:
         if self.ann and HAVE_VEC:
             try:
                 return self._search_ann(text, k)
-            except Exception:  # 退回暴力
+            except Exception:  # 退回暴力  # nosec B110
                 pass
         return self._search_brute(text, k)
 

@@ -5,6 +5,9 @@ import urllib.request
 
 from khub.db import Store
 from khub.quip import pull_all
+import pytest
+pytestmark = pytest.mark.net
+
 
 
 # ── Mock HTTP helpers ─────────────────────────────────────────────────────────

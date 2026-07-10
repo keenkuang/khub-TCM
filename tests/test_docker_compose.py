@@ -11,6 +11,8 @@ Verifies:
 import os
 import yaml
 import pytest
+pytestmark = pytest.mark.slow
+
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 COMPOSE_FILE = os.path.join(PROJECT_ROOT, "docker-compose.yml")

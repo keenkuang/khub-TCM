@@ -12,6 +12,8 @@ import pytest
 from khub.api import App, make_handler
 from khub.db import Store
 from khub.storage import ManagedLibrary
+pytestmark = pytest.mark.smoke
+
 
 
 @pytest.fixture

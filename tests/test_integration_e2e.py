@@ -8,6 +8,9 @@ import zipfile
 from khub.api import App
 from khub.db import Store
 from khub.storage import ManagedLibrary
+import pytest
+pytestmark = [pytest.mark.slow, pytest.mark.full]
+
 
 
 def _make_epub(path, title="温病条辨", body="太阴风温、温热、温疫、冬温，初起恶风寒者，桂枝汤主之。"):

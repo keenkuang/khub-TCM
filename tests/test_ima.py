@@ -3,6 +3,8 @@ import urllib.request
 import pytest
 from khub.db import Store
 from khub.ima import list_knowledge_bases, get_knowledge_base, sync_all
+pytestmark = pytest.mark.net
+
 
 
 class _FakeResponse:

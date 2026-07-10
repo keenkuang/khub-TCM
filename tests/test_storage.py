@@ -3,6 +3,9 @@ import os
 import tempfile
 
 from khub.storage import ManagedLibrary
+import pytest
+pytestmark = pytest.mark.smoke
+
 
 
 def _write(path, data=b"data"):

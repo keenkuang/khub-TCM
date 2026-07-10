@@ -80,7 +80,9 @@ async function loadDoc(id, title) {
     let html = backLink;
     html += '<div id="doc-header" data-format="' + esc(r.format || 'plain') + '"><h2>' + esc(r.title || id) + '</h2>' +
       '<p class="meta">' + esc(r.canonical_id) + ' · ' + r.version_count + ' 版本 · ' + (r.updated_at || '') + ' · 格式: ' + esc(r.format || '') + '</p>' +
-      '<div class="edit-actions"><button onclick="editDoc(\'' + esc(r.canonical_id) + '\')">编辑</button></div></div>';
+      '<div class="edit-actions"><button onclick="editDoc(\'' + esc(r.canonical_id) + '\')">编辑</button>' +
+      (r.version_count >= 2 ? '<button class="ghost" onclick="loadDiff(\'' + esc(r.canonical_id) + '\',' + r.version_count + ')">比较</button>' : '') +
+      '</div></div>';
     if (r.format === 'html') {
       const safe = (r.content || '').replace(/<script[\s\S]*?<\/script>/gi, '');
       html += '<div class="doc-content">' + safe + '</div>';
@@ -255,6 +257,28 @@ async function loadStats() {
       s.innerHTML += recentHtml;
     }
   } catch (e) { /* stats optional */ }
+}
+
+// ── 版本 Diff 对比 ──
+async function loadDiff(id, versionCount) {
+  renderSkeletons(1, 'detail');
+  try {
+    const vers = await fetch('/documents/' + encodeURIComponent(id) + '/versions').then(x => x.json());
+    if (vers.length < 2) { box.innerHTML = '<p>版本不足，无法比较</p>'; return; }
+    const last = vers[vers.length - 1], prev = vers[vers.length - 2];
+    const r = await fetch('/documents/' + encodeURIComponent(id) + '/diff?v1=' + prev.version_id + '&v2=' + last.version_id).then(x => x.json());
+    if (r.error) { box.innerHTML = '<p class="meta">' + esc(r.error) + '</p>'; return; }
+    const back = '<p><a href="#" onclick="loadDoc(\'' + esc(id) + '\');return false">← 返回文档</a></p>';
+    box.innerHTML = back +
+      '<h2>版本对比：' + esc(r.canonical_id) + '</h2>' +
+      '<p class="meta" style="margin-bottom:8px">版本 ' + r.v1 + ' (' + esc(r.v1_updated) + ') ↔ 版本 ' + r.v2 + ' (' + esc(r.v2_updated) + ') · 共 ' + r.changes + ' 处变动</p>' +
+      '<div style="border:1px solid var(--border);border-radius:8px;overflow:hidden;max-height:600px;overflow-y:auto">' +
+      '<div style="display:flex;background:var(--card-bg);border-bottom:1px solid var(--border);font-size:12px;color:var(--muted)">' +
+      '<span style="width:40px;text-align:center;padding:4px 0">旧</span>' +
+      '<span style="width:40px;text-align:center;padding:4px 0">新</span>' +
+      '<span style="padding:4px 8px">内容</span></div>' +
+      r.diff_html + '</div>';
+  } catch (e) { box.innerHTML = '<p class="meta">加载失败: ' + esc(e.message) + '</p>'; }
 }
 
 // ── 文档编辑 ──

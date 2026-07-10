@@ -82,7 +82,7 @@ class App:
         if method == "GET" and path == "/stats":
             cur = self.store.conn
             total = cur.execute("SELECT count(*) FROM documents").fetchone()[0]
-            sources = {}
+            source_counts: dict[str, int] = {}
             for row in cur.execute("SELECT source_ids FROM documents").fetchall():
                 ids = row["source_ids"] or "[]"
                 try:
@@ -91,7 +91,7 @@ class App:
                 except (json.JSONDecodeError, IndexError, TypeError):
                     first = None
                 if first in ("obsidian", "ima", "imanote", "quip", "kzocr", "library", "feishu", "webui"):
-                    sources[first] = sources.get(first, 0) + 1
+                    source_counts[first] = source_counts.get(first, 0) + 1
             today = time.strftime("%Y-%m-%d")
             today_count = cur.execute(
                 "SELECT count(*) FROM documents WHERE updated_at >= ?",
@@ -117,7 +117,7 @@ class App:
                     "SELECT count(*) FROM embeddings").fetchone()[0]
                 conflict_count = cur.execute(
                     "SELECT count(*) FROM documents WHERE conflict=1").fetchone()[0]
-            except Exception:
+            except Exception:  # nosec B110
                 pass
 
             recent = cur.execute(
@@ -125,7 +125,7 @@ class App:
                 "ORDER BY updated_at DESC LIMIT 5").fetchall()
             return 200, {
                 "total": total,
-                "sources": sources,
+                "sources": source_counts,
                 "today": today_count,
                 "weekly": weekly,
                 "versions": version_count,
@@ -195,6 +195,35 @@ class App:
                     "updated_at": v["updated_at"],
                     "format": v.get("format", "plain"),
                 } for v in vers]
+
+            # GET /documents/{id}/diff?v1=X&v2=Y — 版本差异对比
+            if len(parts) >= 2 and parts[1] == "diff":
+                from .diff import diff_lines, diff_to_html
+                v1 = _safe_int(qs.get("v1", [0])[0], 0)
+                v2 = _safe_int(qs.get("v2", [0])[0], 0)
+                if not v1 or not v2 or v1 < 0 or v2 < 0:
+                    return 400, {"error": "请指定有效的 v1 和 v2（版本 ID）"}
+                ver1 = self.store.get_version(cid, v1)
+                ver2 = self.store.get_version(cid, v2)
+                if not ver1 or not ver2:
+                    return 404, {"error": "版本不存在"}
+                # 限 5000 行，防大文档 OOM
+                c1_lines = (ver1["content"] or "").splitlines()
+                c2_lines = (ver2["content"] or "").splitlines()
+                if len(c1_lines) > 5000 or len(c2_lines) > 5000:
+                    return 413, {"error": "文档过大，无法比较（超过 5000 行上限）"}
+                c1 = "\n".join(c1_lines)
+                c2 = "\n".join(c2_lines)
+                diff = diff_lines(c1, c2)
+                return 200, {
+                    "canonical_id": cid,
+                    "v1": v1, "v2": v2,
+                    "v1_updated": ver1["updated_at"],
+                    "v2_updated": ver2["updated_at"],
+                    "diff": diff,
+                    "diff_html": diff_to_html(diff),
+                    "changes": sum(1 for d in diff if d["type"] != "equal"),
+                }
 
             # GET /documents/{id}
             doc = self.store.get_document(cid)
@@ -345,7 +374,7 @@ class App:
             try:
                 from .retrieval import Retriever
                 Retriever(self.store).index_ebook(doc.canonical_id)
-            except Exception:  # 向量化失败不影响入库
+            except Exception:  # 向量化失败不影响入库  # nosec B110
                 pass
             return 201, {"status": "ok", "doc_id": doc.canonical_id,
                          "version_id": version_id, "message": "document ingested"}
@@ -354,11 +383,11 @@ class App:
         if method == "POST" and path == "/exam/questions":
             from .exam.models import Question
             from .exam.store import add_question
-            q = Question(kind=body.get("kind", "mcq"), stem=body.get("stem", ""),
+            exam_q = Question(kind=body.get("kind", "mcq"), stem=body.get("stem", ""),
                          options=body.get("options", []), answer=body.get("answer", ""),
                          explanation=body.get("explanation", ""),
                          source_doc=body.get("source_doc", ""))
-            qid = add_question(self.store, q)
+            qid = add_question(self.store, exam_q)
             return 201, {"id": qid}
 
         if method == "GET" and path == "/exam/questions":
@@ -370,8 +399,8 @@ class App:
             from .exam.generator import generate
             topic = body.get("topic", "")
             source_doc = body.get("source_doc", "")
-            q = generate(topic, source_doc=source_doc)
-            return 200, vars(q)
+            exam_q = generate(topic, source_doc=source_doc)
+            return 200, vars(exam_q)
 
         # ---- Clinical subsystem ----
         if method == "POST" and path == "/clinical/patients":

@@ -1,6 +1,9 @@
 """桌面 GUI 模块测试：验证套壳文件完整性。"""
 import os
 import subprocess
+import pytest
+pytestmark = pytest.mark.smoke
+
 
 
 def test_main_js_syntax():

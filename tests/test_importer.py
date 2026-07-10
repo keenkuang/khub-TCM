@@ -5,6 +5,9 @@ import tempfile
 
 from khub.db import Store
 from khub.importer import LegacyImporter
+import pytest
+pytestmark = pytest.mark.smoke
+
 
 
 def _make_excel(headers: list[str], rows: list[list]):

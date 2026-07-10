@@ -31,6 +31,7 @@
 - Transfer-Encoding: chunked 拒绝
 - 静态文件 MIME 类型正确映射
 - 非 root 容器运行
+- `cli.py` 回放状态打印的向量表名拼接前补 `re.fullmatch(r"\w+", model)` 校验，与 `retrieval._vec_table` 约定对齐，消除理论 SQL 标识符注入风险
 
 ### 修复
 - `docs/test_security.py` — 9 项安全测试（CSP/限流/MIME/chunked）
@@ -38,6 +39,7 @@
 - pyproject.toml 补全 crypto/s3 可选依赖组
 - RAG 空上下文不再调用 LLM
 - Dockerfile `&& \` 残留语法错误修复
+- bandit 默认扫描修复：新增 `khub/.bandit`（此前 `bandit -r khub` 不读 pyproject 的 skips，形同虚设）；23 条 Low（B105/B110/B112）以源码行 `# nosec` 精准标注，30 条 Medium（B310/B608）经审查符合「标识符白名单 + 值参数化」安全不变量后由 skips 清零
 
 ### 测试
 - 267 passed / 4 skipped（+43 个新增测试，测试覆盖率显著提升）

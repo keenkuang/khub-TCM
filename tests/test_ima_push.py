@@ -1,6 +1,8 @@
 import os, json, pytest
 from khub.db import Store
 from khub.ima import _push_doc, sync_adapter
+pytestmark = pytest.mark.net
+
 
 
 @pytest.fixture(autouse=True)

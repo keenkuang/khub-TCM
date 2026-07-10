@@ -1,4 +1,7 @@
 from khub.normalizer import detect_format, auto_decode
+import pytest
+pytestmark = pytest.mark.smoke
+
 
 
 def test_detect_format_html():

@@ -9,6 +9,8 @@ import pytest
 
 from khub.db import Store
 from khub.ratelimit import PersistentTokenBucket
+pytestmark = pytest.mark.smoke
+
 
 
 def _make_bucket(db_path: str = ":memory:") -> PersistentTokenBucket:

@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -237,7 +238,7 @@ def _dr_parse_restore_target(spec, changes):
             at = c.get("at") or ""
             try:
                 ct = time.strptime(at, "%Y-%m-%dT%H:%M:%S")
-            except Exception:
+            except Exception:  # nosec B112
                 continue
             if ct <= t:
                 lsn = c.get("lsn") or c.get("id") or 0
@@ -315,7 +316,7 @@ def main(argv=None):
         try:
             from .retrieval import Retriever
             Retriever(store).index_ebook(doc.canonical_id)
-        except Exception:
+        except Exception:  # nosec B110
             pass
         print(f"{doc.canonical_id} -> version {vid}")
     elif args.cmd == "watch":
@@ -482,8 +483,8 @@ def main(argv=None):
                 print("结果：通过")
                 return 0
             print("结果：失败")
-            for e in report["errors"]:
-                print(f"  - {e}")
+            for err in report["errors"]:
+                print(f"  - {err}")
             return 1
         elif args.dr_cmd == "status":
             tgt = store.ha_get("dr_target")
@@ -498,7 +499,7 @@ def main(argv=None):
                     rep = LocalFileReplica(
                         os.path.expanduser(info["target"][len("file://"):]))
                     meta = rep.fetch_snapshot()
-                except Exception:
+                except Exception:  # nosec B110
                     pass
             print(f"目标类型：{info['type']}")
             print(f"目标地址：{info['target']}")
@@ -575,7 +576,10 @@ def main(argv=None):
                 snapshot_lsn = snap["lsn"]
                 snapshot_at = snap["at"]
             # 拷到 --target（默认临时库），以 Store 打开并重建 FTS（不动原库）
-            out_db = args.target or tempfile.mktemp(suffix=".db")
+            if args.target:
+                out_db = args.target
+            else:
+                out_db = tempfile.NamedTemporaryFile(delete=False, suffix=".db").name
             if args.target and os.path.exists(out_db):
                 # 安全覆盖：目标已存在则先改名备份，绝不静默覆盖（设计 §5/§8）。
                 # 指向线上库时避免误毁当前数据；如需覆盖删备份或换路径即可。
@@ -618,6 +622,11 @@ def main(argv=None):
                     "SELECT DISTINCT model FROM embeddings").fetchall()]
                 vec_lines = []
                 for m in vec_models:
+                    # 表名标识符拼接前校验：model 来自 embeddings.model，
+                    # 须限定为 \w+ 才能进入 vec_{model}（与 retrieval._vec_table 约定一致）
+                    if not re.fullmatch(r"\w+", m or ""):
+                        vec_lines.append(f"{m}=非法模型名")
+                        continue
                     t = f"vec_{m}"
                     try:
                         n = restored.conn.execute(
@@ -630,8 +639,8 @@ def main(argv=None):
                 print(f"  vec0       : 查询失败（{e}）")
             print(f"  integrity  : {vrep['integrity']}")
             print(f"  结果       : {'通过' if vrep['ok'] else '失败（见下方）'}")
-            for e in vrep["errors"]:
-                print(f"    - {e}")
+            for err in vrep["errors"]:
+                print(f"    - {err}")
             if not args.target:
                 try:
                     os.remove(out_db)

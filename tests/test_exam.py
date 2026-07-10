@@ -3,6 +3,9 @@ from khub.exam.models import Question
 from khub.exam.store import add_question, get_question, list_questions
 from khub.exam.generator import generate
 from khub.exam.grader import grade
+import pytest
+pytestmark = pytest.mark.smoke
+
 
 def test_crud_question():
     s = Store(":memory:")

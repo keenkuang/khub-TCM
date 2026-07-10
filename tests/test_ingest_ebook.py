@@ -5,6 +5,9 @@ import zipfile
 from khub.db import Store
 from khub.ingest import ingest_ebook, register_ebook
 from khub.storage import ManagedLibrary
+import pytest
+pytestmark = [pytest.mark.slow, pytest.mark.full]
+
 
 
 def _make_epub_with_text(path, title="黄帝内经", body="中医讲究阴阳平衡"):

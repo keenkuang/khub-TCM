@@ -3,6 +3,9 @@ import urllib.request
 
 from khub.db import Store
 from khub.retrieval import Retriever, RemoteEmbedder, get_embedder
+import pytest
+pytestmark = [pytest.mark.net, pytest.mark.slow]
+
 
 
 def _ingest_two(store):

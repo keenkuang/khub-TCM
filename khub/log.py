@@ -22,7 +22,7 @@ def get_logger(name: str = "khub") -> logging.Logger:
                             datefmt="%Y-%m-%dT%H:%M:%S")
 
     if target:
-        h = logging.FileHandler(os.path.expanduser(target), encoding="utf-8")
+        h: logging.Handler = logging.FileHandler(os.path.expanduser(target), encoding="utf-8")
     else:
         h = logging.StreamHandler(sys.stderr)
     h.setFormatter(fmt)

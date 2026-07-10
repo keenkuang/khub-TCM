@@ -114,7 +114,7 @@ class Store:
             if "direction" not in sc:
                 self.conn.execute(
                     "ALTER TABLE sync_states ADD COLUMN direction TEXT DEFAULT 'pull'")
-        except Exception:
+        except Exception:  # nosec B110
             pass  # 列已存在
 
     def transaction(self):
@@ -170,10 +170,10 @@ class Store:
         """
         if keep is None:
             v = os.environ.get("KHUB_WAL_KEEP")
-            keep = int(v) if v not in (None, "") else None
+            keep = int(v) if v else None
         if keep_days is None:
             v = os.environ.get("KHUB_WAL_KEEP_DAYS")
-            keep_days = float(v) if v not in (None, "") else None
+            keep_days = float(v) if v else None
         if keep is None and keep_days is None:
             return 0
 
@@ -212,17 +212,17 @@ class Store:
             try:
                 flusher.stop()
                 flusher.flush()
-            except Exception:
+            except Exception:  # nosec B110
                 pass
         try:
             self.conn.close()
-        except Exception:
+        except Exception:  # nosec B110
             pass
 
     def __del__(self):
         try:
             self.close()
-        except Exception:
+        except Exception:  # nosec B110
             pass
 
     def store_document(self, doc: CanonicalDoc, parent_version: Optional[int] = None) -> int:
@@ -693,11 +693,11 @@ def make_snapshot_db(src_conn, dst_path: str):
     except Exception:
         try:
             src_conn.rollback()
-        except Exception:
+        except Exception:  # nosec B110
             pass
         raise
     finally:
         try:
             src_conn.execute("DETACH DATABASE snap")
-        except Exception:
+        except Exception:  # nosec B110
             pass

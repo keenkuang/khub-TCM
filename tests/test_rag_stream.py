@@ -9,6 +9,8 @@ import time
 import urllib.request
 import tempfile
 import os
+pytestmark = pytest.mark.smoke
+
 
 
 @pytest.fixture

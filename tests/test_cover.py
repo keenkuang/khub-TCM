@@ -3,6 +3,9 @@ from khub.db import Store
 from khub.ingest import ingest_ebook, register_ebook
 from khub.storage import ManagedLibrary
 from khub.extractors.epub import extract_cover
+import pytest
+pytestmark = pytest.mark.smoke
+
 
 PNG = (b"\x89PNG\r\n\x1a\n" + b"\x00" * 20)  # minimal fake PNG header for ext detection
 

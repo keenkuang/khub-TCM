@@ -5,6 +5,9 @@ import zipfile
 from khub.api import App
 from khub.db import Store
 from khub.storage import ManagedLibrary
+import pytest
+pytestmark = pytest.mark.smoke
+
 
 
 def _make_epub(path):

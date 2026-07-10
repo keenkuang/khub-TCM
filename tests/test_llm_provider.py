@@ -8,6 +8,9 @@ from khub.llm import (
     get_provider,
     register_provider,
 )
+import pytest
+pytestmark = pytest.mark.net
+
 
 
 class _FakeResponse:

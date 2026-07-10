@@ -101,7 +101,7 @@ def _traverse_folder(
 def pull_all(
     store: Store,
     access_token: str,
-    root_folder: str = None,
+    root_folder: str | None = None,
 ) -> tuple:
     """Pull all Quip documents from *root_folder* (default: personal root).
 

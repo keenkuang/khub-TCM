@@ -1,0 +1,19 @@
+[bandit]
+# bandit 默认 `bandit -r khub` 会自动发现本文件（cli/main.py 仅对扫描目标树内的
+# ".bandit" 文件做自动发现，不会自动读取 pyproject.toml 的 [tool.bandit]）。本文件是
+# 默认扫描命令生效的权威配置；pyproject.toml 中的 [tool.bandit] 仅在使用
+# `-c pyproject.toml` 时生效，两者 skips 保持一致。
+# 注：其余 Low 告警（B105 误报、B110/B112 容错静默）已在对应源码行以 `# nosec` 标注，
+#     未放入此处 skip，以保留 bandit 对真实硬编码密码 / 吞异常的全局检测能力。
+skips = B101,B404,B603,B607,B608,B310
+exclude_dirs = tests,.git,build,dist,node_modules
+
+# 以下为有意为之、经验证安全的跳过项：
+#   B101  assert 用于内部不变量检查
+#   B404/B603/B607  subprocess 一律 list 传参、禁用 shell（架构约定）
+#   B608  SQL 标识符（表名/列名/向量表名）均来自白名单常量或正则校验
+#         （retrieval 的 model 经 re.fullmatch(r"\w+")；table 来自 _REPLICATED_TABLES
+#         等硬编码表清单；pk 来自 PRAGMA table_info），用户数据一律走 ? 参数化。
+#         新增 SQL 拼接时必须保持「标识符白名单 + 值参数化」，否则不得依赖此跳过。
+#   B310  urlopen 目标仅为 localhost（SSE/健康检查）或配置化的远端适配器端点
+#         （feishu/quip/ima），属预期用法。
