@@ -1,5 +1,33 @@
 # 变更日志
 
+## [0.2.9] — 2026-07-10
+
+### RAG 检索增强生成
+
+- **上下文截断完善**：`_assemble_context` 从单层等分改为两层算法（先等分，超长时逐步移除低分来源，每源至少 100 字符底线）
+- **来源过滤**：`RAGEngine.ask/ask_stream/_fetch_sources` 统一支持 `source_filter`（字符串/列表），`GET /ask` 返回 sources 增强为含 `title`、`doc_id`、`score`、`source` 字段
+- **问诊助手接入 RAG**：`khub/clinical/consult_chat.py` 的 `chat()` 自动通过 `RAGEngine` 获取知识片段拼入 prompt，RAG 失败不打断问诊
+
+### 知识库增强
+
+#### 标签系统（`khub/tags.py`）
+- 新增 `doc_tags` 表（接 WAL），支持 `add_tag`/`remove_tag`/`list_tags`/`get_doc_tags`
+- REST 端点：`POST/DELETE /documents/{id}/tags`、`GET /tags`、`GET /documents/{id}/tags`
+- Web UI：文档详情标签圆角徽章（可点击 × 删除）、输入框回车添加、搜索标签下拉筛选（`&tag=` 参数）
+
+#### 收藏/书签（`khub/favorites.py`）
+- 新增 `favorites` 表（接 WAL），`toggle_favorite`/`list_favorites`/`is_favorite`
+- REST 端点：`POST /documents/{id}/favorite`、`GET /favorites`
+- Web UI：文档详情/搜索结果星标按钮（☆/★）、收藏列表页
+
+#### Markdown 后端渲染
+- `GET /documents/{id}` 中 format==`markdown` 时自动调用 `markdown.markdown` 渲染为 HTML
+- `markdown` 可选依赖（`[md]` 组，`markdown>=3.4`），缺失时原样返回
+
+### 测试
+- 新增 8 个测试（RAG 截断/source_filter 4 个 + 标签 4 个 + 收藏 4 个）
+- 全量测试通过
+
 ## [0.2.8] — 2026-07-10
 
 ### 线 A：Web UI + 运营子系统增强
