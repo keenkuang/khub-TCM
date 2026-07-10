@@ -1,5 +1,47 @@
 # 变更日志
 
+## [0.2.6] — 2026-07-10
+
+### 新增
+
+#### 文档版本 Diff 对比
+- `khub/diff.py`：零依赖 LCS 行级 diff（`diff_lines` / `diff_to_html`），统一 `\r\n` 换行避免误判
+- `GET /documents/{id}/diff?v1=X&v2=Y`：返回 JSON + 并排 HTML；行数上限 5000 行防大文档 OOM（超限 413），负值版本拒绝
+- 前端「比较」按钮（`version_count>=2` 时显示），加载相邻版本并排对比视图
+
+#### 老问诊系统数据导入器
+- `khub/importer.py`：`LegacyImporter` 支持 Excel(.xlsx) / HTML 表格，自动识别中文字段名映射至 患者/病历/问诊 内部字段
+- `khub import-legacy --file <path> --sheet <名|索引> --dry-run`：CLI 子命令；`--dry-run` 仅解析预览不写入
+
+### 安全加固
+- EPUB 元数据/封面解析改用 `defusedxml`（`khub/extractors/epub.py`），消除恶意 OPF 触发的 XML 解析漏洞（XXE / 实体扩展）
+- `defusedxml>=0.7` 提升为强制依赖（pyproject `dependencies`）
+
+### 修复
+- `khub/crypto.py`：修复 PII 密钥生成变量遮蔽 bug——`generate_key()` 结果正确写盘并返回（原实现写盘与返回非同一变量，密钥不一致）
+- `khub/db.py`：`prune_wal` 环境变量解析由 `v not in (None, "")` 改为 `if v`，修正空串被误判为有效的边界
+- 文档 Diff R1/R2 review 修复：行数上限 5000、负值版本拒绝、统一 `\r\n` 换行
+- `replication.py`：类型注解补全（`fetch_snapshot -> dict | None`、`best_snapshot_for` 新增抽象方法、`replay_from` / `install_triggers` 参数 `int | None` 化）
+- `api.py`：`/stats` 的 `sources` 字典类型注解；`/documents/{id}/diff` 端点新增
+- `importer` 同步：复诊默认创建病历 + 过滤页脚行；SSL 证书生成测试修复
+- 全仓 `except Exception` 静默分支补 `# nosec B110/B112` 精准标注，配合 bandit 审查
+
+### 工具链 / 质量
+- 新增 `khub/.bandit` 权威配置（默认 `bandit -r khub` 自动发现）；skips 仅保留 `B101/B404/B603/B607/B608/B310`（经验证的安全不变量），其余 Low（B105/B110/B112）以源码 `# nosec` 标注，保留 bandit 全局检测能力
+- pyproject 注册 pytest marker（`smoke` / `full` / `slow` / `net`）；新增 `[tool.mypy]` 配置并修复 63 个 mypy 错误；`dev` 组加 `bandit/mypy`，新增 `importer` 可选组（`openpyxl`）
+
+### 测试
+- 新增 `tests/test_importer.py`（146 行，`LegacyImporter` Excel/HTML 导入）
+- 测试套件扩展至 **283 passed**（CODEBUDDY.md 标注），较 0.2.5（+16）
+
+### 文档
+- 新增 `CODEBUDDY.md`、`docs/adr/`、`docs/risks/register.md`、`docs/reviews/*`（架构/网络安全/运维/产品/软件工程 多角色两轮评审）、`docs/review_diff_r1/r2.md`、`docs/superpowers/plans`
+
+### CI / 发布工程
+- `.github/workflows/ci.yml`：push/PR 触发 `bandit -r khub` 安全扫描 + `pytest -m "not slow and not net"` 核心用例
+- CI 安装改为 `[dev,pdf,ann,crypto,importer]`，修复 openpyxl 缺失导致 `TestExcelImport` 失败
+- 升级 `actions/checkout` v4→v7、`actions/setup-python` v5→v6，消除 Node.js 20 弃用警告
+
 ## [0.2.5] — 2026-07-10
 
 ### 新增
