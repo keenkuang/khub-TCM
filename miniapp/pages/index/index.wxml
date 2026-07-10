@@ -1,0 +1,16 @@
+<view class="card flex-row" bindtap="goAppointments">
+  <text>我的预约</text><text class="meta">›</text>
+</view>
+<view class="card flex-row" bindtap="goTwin">
+  <text>健康摘要</text><text class="meta">›</text>
+</view>
+<view class="card flex-row" bindtap="goTrends">
+  <text>健康趋势</text><text class="meta">›</text>
+</view>
+<view class="card flex-row" bindtap="goConsultations">
+  <text>问诊记录</text><text class="meta">›</text>
+</view>
+<view wx:if="{{isDoctor}}" class="card flex-row" bindtap="goPatients" style="margin-top:16px;border-left:3px solid #4488cc">
+  <text>患者列表（医生）</text><text class="meta">›</text>
+</view>
+<button class="primary" style="margin-top:32px;width:calc(100% - 24px);margin-left:12px" bindtap="onLogout">退出登录</button>

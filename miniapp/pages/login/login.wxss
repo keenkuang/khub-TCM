@@ -1,0 +1,4 @@
+.login-box { padding: 60px 32px; }
+.title { font-size: 24px; text-align: center; display: block; margin-bottom: 32px; color: #333; }
+.input { background: #fff; border: 1px solid #ddd; border-radius: 6px; padding: 10px 12px; margin-bottom: 16px; width: 100%; box-sizing: border-box; }
+.error { color: #cc4444; text-align: center; display: block; margin-top: 12px; }

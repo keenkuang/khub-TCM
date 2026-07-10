@@ -82,7 +82,7 @@ def apply_visit(store, op, row_id, payload):
         (payload.get("id", row_id), payload.get("appointment_id", ""), payload.get("patient_id", ""),
          payload.get("checkin_at", ""), payload.get("note", "")))
 
-def list_appointments(store, date=None, doctor=None, status=None, user=None):
+def list_appointments(store, date=None, doctor=None, status=None, user=None, patient_id=None):
     from ..auth import scope_filter
     clause, params = scope_filter(user, "appointments")
     sql = "SELECT * FROM appointments"
@@ -96,6 +96,9 @@ def list_appointments(store, date=None, doctor=None, status=None, user=None):
     if status:
         conditions.append("status=?")
         params.append(status)
+    if patient_id is not None:
+        conditions.append("patient_id=?")
+        params.append(patient_id)
     if clause:
         conditions.append(clause)
     if conditions:

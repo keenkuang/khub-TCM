@@ -594,6 +594,22 @@ class App:
                                    plan=body.get("plan", ""))
             return 201, {"id": cid}
 
+        # 0.4.1 miniapp — consultations list
+        if method == "GET" and path == "/clinical/consultations":
+            pid = qs.get("patient_id", [None])[0]
+            if pid and pid.isdigit():
+                rows = self.store.conn.execute(
+                    "SELECT id, patient_id, date, chief_complaint, differentiation, plan "
+                    "FROM consultations WHERE patient_id=? ORDER BY date DESC",
+                    (int(pid),)
+                ).fetchall()
+            else:
+                rows = self.store.conn.execute(
+                    "SELECT id, patient_id, date, chief_complaint, differentiation "
+                    "FROM consultations ORDER BY date DESC LIMIT 50"
+                ).fetchall()
+            return 200, {"consultations": rows}
+
         if method == "POST" and path.startswith("/clinical/twin/") and path.endswith("/summarize"):
             pid = path[len("/clinical/twin/"):-len("/summarize")]
             from .clinical.records import init as init_records
@@ -624,8 +640,10 @@ class App:
         if method == "GET" and path == "/ops/appointments":
             from .ops.store import list_appointments
             date = qs.get("date", [None])[0]
+            pid_param = qs.get("patient_id", [None])[0]
+            patient_id = int(pid_param) if (pid_param and pid_param.isdigit()) else None
             cu = getattr(self, "_current_user", None)
-            return 200, list_appointments(self.store, date, user=cu)
+            return 200, list_appointments(self.store, date, user=cu, patient_id=patient_id)
 
         if method == "GET" and path == "/ops/schedules":
             from .ops.store import list_schedules

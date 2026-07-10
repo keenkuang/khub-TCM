@@ -1,0 +1,9 @@
+<view wx:if="{{loading}}" class="card"><text class="meta">加载中...</text></view>
+<block wx:else>
+  <view wx:for="{{list}}" wx:key="id" class="card">
+    <view class="flex-row"><text>{{item.date}}</text><text class="meta">{{item.status}}</text></view>
+    <text wx:if="{{item.doctor}}" class="meta">医生：{{item.doctor}}</text>
+    <text wx:if="{{item.patient_id}}" class="meta">患者：{{item.patient_id}}</text>
+  </view>
+  <view wx:if="{{list.length===0}}" class="card"><text class="meta">暂无数据</text></view>
+</block>

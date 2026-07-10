@@ -1,0 +1,8 @@
+<view wx:if="{{loading}}" class="card"><text class="meta">加载中...</text></view>
+<block wx:else>
+  <view class="card"><text style="font-weight:bold">健康摘要</text><text>\n{{summary}}</text></view>
+  <view class="card" wx:for="{{timeline}}" wx:key="id">
+    <text>{{item.date}} [{{item.type}}]</text>
+    <text class="meta" style="display:block">{{item.summary}}</text>
+  </view>
+</block>

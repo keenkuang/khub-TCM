@@ -1,0 +1,7 @@
+<view class="login-box">
+  <text class="title">kHUB 登录</text>
+  <input class="input" placeholder="用户名" bindinput="onUsername" />
+  <input class="input" password placeholder="密码" bindinput="onPassword" />
+  <button class="primary" bindtap="onLogin">登录</button>
+  <text class="error" wx:if="{{error}}">{{error}}</text>
+</view>

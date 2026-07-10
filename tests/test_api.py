@@ -253,3 +253,18 @@ def test_api_not_found():
     app, _, _ = _app()
     code, _ = app.dispatch("GET", "/nope")
     assert code == 404
+
+
+def test_consultations_endpoint():
+    app, _, _ = _app()
+    from khub.clinical.patients import init as init_patients
+    from khub.clinical.consultations import init as init_consultations
+    init_patients(app.store)
+    init_consultations(app.store)
+    app.store.conn.execute("INSERT INTO patients (id, name) VALUES (1, '测试')")
+    app.store.conn.execute(
+        "INSERT INTO consultations (id, patient_id, date, chief_complaint) "
+        "VALUES (1, 1, '2026-07-01', '头痛')")
+    code, obj = app.dispatch("GET", "/clinical/consultations?patient_id=1")
+    assert code == 200
+    assert len(obj.get("consultations", [])) >= 1

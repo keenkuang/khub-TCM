@@ -1,0 +1,20 @@
+<view wx:if="{{loading}}" class="card"><text class="meta">加载中...</text></view>
+<block wx:else>
+  <view class="card">
+    <text style="font-weight:bold">体质画像</text>
+    <text style="display:block;margin-top:8px">偏颇体质：{{constitution.偏颇体质||0}} 项指标</text>
+    <text wx:if="{{constitution.平和体质}}">体质类型：平和体质</text>
+  </view>
+  <view class="card">
+    <text style="font-weight:bold">证型演变</text>
+    <view wx:for="{{evolution}}" wx:key="consultation_id">
+      <text class="meta" style="display:block">{{item.date}}：{{item.differentiation}} {{item.tongue_pulse}}</text>
+    </view>
+  </view>
+  <view class="card">
+    <text style="font-weight:bold">治疗序列</text>
+    <view wx:for="{{treatments}}" wx:key="index">
+      <text class="meta" style="display:block">{{item.date}}：{{item.diagnosis}} → {{item.prescription}}</text>
+    </view>
+  </view>
+</block>
