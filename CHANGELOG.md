@@ -1,5 +1,42 @@
 # 变更日志
 
+## [0.3.0] — 2026-07-10
+
+### 多用户鉴权基础（0.3.x 迭代一）
+
+**正式跃升至 0.3.x 系列——从单用户工具升级为多用户平台。**
+
+### 新增
+
+#### 用户系统
+- `users` 表（`khub/db.py`）：用户名/密码哈希(PBKDF2-SHA256)/角色/状态
+- `auth_tokens` 表：token 持久化存储（有效期 7 天，可撤销）
+- 首次启动自动创建 admin 用户（`KHUB_ADMIN_PASSWORD` 环境变量设定密码，缺省生成随机密码）
+
+#### 登录与鉴权
+- `khub/auth.py` 鉴权模块：`hash_password`/`verify_password`/`authenticate`/`issue_token`/`validate_token`/`revoke_token`
+- API 鉴权重构：`dispatch()` 入口从单 `KHUB_API_TOKEN` 改为调用 `get_current_user()`，支持 Bearer JWT + 向后兼容 `KHUB_API_TOKEN`
+- `POST /auth/login` / `POST /auth/logout` / `GET /auth/me` 端点
+
+#### Web 登录页
+- 独立 `khub/web/login.html`：用户名/密码表单，POST 登录后存 token 至 localStorage
+- `script.js`：`getToken()`/`checkLogin()`/`logout()`；所有 fetch 自动注入 `Authorization: Bearer` header
+- 首页无 token 时自动重定向到登录页
+
+#### CLI 登录
+- `khub login <username>`：交互输入密码，保存 token 至 `~/.khub/credentials`（权限 600）
+- `khub logout`：清除凭证文件
+- `khub whoami`：显示当前用户
+
+### 向后兼容
+- `KHUB_API_TOKEN` 仍可用，作为超级管理员 token 通行所有请求
+- 首次 admin 密码不设环境变量则自动生成并打印到控制台
+- 所有存量 `KHUB_API_TOKEN` 用户无需修改配置即可继续使用
+
+### 测试
+- 新增 `tests/test_auth.py`（8 个测试）：密码哈希、用户创建、登录成功/失败、token 签发/验证/撤销
+- 修复 3 处预存 bug（api.py `/search`、`/clinical/extract`、`/api/wechat/followers`）
+
 ## [0.2.11] — 2026-07-10
 
 ### 桌面体验增强
