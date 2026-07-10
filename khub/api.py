@@ -492,6 +492,22 @@ class App:
             reply = chat(self.store, sid, msg)
             return 200, {"session_id": sid, "reply": reply}
 
+        # 0.2.7 clinical 增强 — 随访管理
+        if method == "POST" and path == "/clinical/followup":
+            from .clinical.followup import add_plan
+            pid = body.get("patient_id", 0)
+            due = body.get("due_date", "")
+            reason = body.get("reason", "")
+            if not pid or not due:
+                return 400, {"error": "patient_id and due_date required"}
+            plan_id = add_plan(store, pid, due, reason)
+            return 201, {"plan_id": plan_id}
+        if method == "GET" and path == "/clinical/followup/scan":
+            from .clinical.followup import scan_due
+            as_of = qs.get("as_of", [None])[0]
+            due = scan_due(store, as_of=as_of)
+            return 200, {"due_plans": due}
+
         return 404, {"error": "not found"}
 
     @staticmethod

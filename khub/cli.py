@@ -206,6 +206,21 @@ def build_parser():
     pc = sub.add_parser("consult-chat", help="问诊助手对话")
     pc.add_argument("patient_id", type=int)
     pc.add_argument("--message", default="", help="单次消息（默认交互模式）")
+
+    # ── 随访管理（T4） ──────────────────────────────────────────────────
+    pf = sub.add_parser("followup-add", help="添加随访计划")
+    pf.add_argument("pid", type=int)
+    pf.add_argument("--due", required=True)
+    pf.add_argument("--reason", default="")
+
+    ps = sub.add_parser("followup-scan", help="扫描到期随访")
+    ps.add_argument("--as-of", default="")
+
+    pa = sub.add_parser("followup-adherence", help="记录随访依从性")
+    pa.add_argument("plan_id", type=int)
+    pa.add_argument("--attended", action="store_true")
+    pa.add_argument("--missed", action="store_true")
+    pa.add_argument("--note", default="")
     return ap
 
 
@@ -791,6 +806,25 @@ def main(argv=None):
                     print(chat(store, sid, msg))
                 except (EOFError, KeyboardInterrupt):
                     break
+    elif args.cmd == "followup-add":
+        from .clinical.followup import add_plan
+        pid = add_plan(store, args.pid, args.due, args.reason)
+        print(f"随访计划 #{pid} 已创建")
+    elif args.cmd == "followup-scan":
+        from .clinical.followup import scan_due
+        due = scan_due(store, as_of=args.as_of or None)
+        print(f"到期随访：{len(due)} 项")
+        for d in due:
+            print(f"  #{d['id']} 患者{d['patient_id']} 到期日{d['due_date']} {d['reason'] or ''}")
+    elif args.cmd == "followup-adherence":
+        from .clinical.followup import record_adherence
+        attended = False
+        if args.attended:
+            attended = True
+        elif args.missed:
+            attended = False
+        record_adherence(store, args.plan_id, attended, args.note)
+        print(f"随访 #{args.plan_id} 依从性记录完成")
     else:
         build_parser().print_help()
 
