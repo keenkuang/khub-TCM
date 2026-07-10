@@ -429,9 +429,17 @@ class App:
                 return 400, {"error": "流式请求请通过 SSE 端点（stream=true）"}
             k = _safe_int(body.get("k", 5), 5)
             k = max(1, min(k, 20))  # 范围 1–20
+            source_filter = body.get("source_filter")
             engine = RAGEngine(self.store)
-            answer, sources = engine.ask(question, k=k)
-            return 200, {"answer": answer, "sources": sources}
+            answer, sources = engine.ask(question, k=k, source_filter=source_filter)
+            return 200, {
+                "answer": answer,
+                "sources": [
+                    {"title": s.get("title", ""), "doc_id": s.get("id", ""),
+                     "score": s.get("score", 0), "source": s.get("source_ids", "")}
+                    for s in sources
+                ],
+            }
 
         if method == "GET" and path == "/":
             return 200, self._html_page(), "text/html; charset=utf-8"
@@ -717,6 +725,7 @@ def make_handler(app: App):
             if not isinstance(k, (int, float)):
                 k = 5
             k = max(1, min(int(k), 20))
+            source_filter = body.get("source_filter")
 
             from .llm.rag import RAGEngine
             engine = RAGEngine(app.store)
@@ -730,7 +739,7 @@ def make_handler(app: App):
             self.end_headers()
 
             try:
-                for event in engine.ask_stream(question, k=k):
+                for event in engine.ask_stream(question, k=k, source_filter=source_filter):
                     ev = event["event"]
                     data = json.dumps(event["data"], ensure_ascii=False)
                     line = f"event: {ev}\ndata: {data}\n\n"

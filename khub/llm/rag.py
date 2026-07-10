@@ -47,12 +47,12 @@ class RAGEngine:
         from ..llm import LLMProvider
         self.llm = llm if llm is not None else get_provider()
 
-    def ask(self, question: str, k: int = 5) -> tuple[str, list[dict]]:
+    def ask(self, question: str, k: int = 5, source_filter=None) -> tuple[str, list[dict]]:
         """非流式 RAG 管道。返回 (answer_text, sources_list)。"""
         if not question or not question.strip():
             return "", []
         hits = self.retriever.search_similar(question, k=k)
-        sources = self._fetch_sources(hits)
+        sources = self._fetch_sources(hits, source_filter=source_filter)
         if not sources:
             return "（未检索到相关文档，无法回答）", []
         context = self._assemble_context(sources)
@@ -65,7 +65,7 @@ class RAGEngine:
         self._clean_sources(sources)  # 移除内部字段，防止全文泄露
         return answer, sources
 
-    def ask_stream(self, question: str, k: int = 5) -> Generator[dict, None, None]:
+    def ask_stream(self, question: str, k: int = 5, source_filter=None) -> Generator[dict, None, None]:
         """流式 RAG 管道，逐事件 yield。
 
         Events:
@@ -79,12 +79,16 @@ class RAGEngine:
             return
         try:
             hits = self.retriever.search_similar(question, k=k)
-            sources = self._fetch_sources(hits)
+            sources = self._fetch_sources(hits, source_filter=source_filter)
             if not sources:
                 yield {"event": "error", "data": {"error": "未检索到相关文档，无法回答"}}
                 return
             context = self._assemble_context(sources)
             self._clean_sources(sources)  # _assemble_context 用完后移除内部字段
+            # 增强 sources 字段供 SSE 响应
+            for s in sources:
+                s["doc_id"] = s.get("id", "")
+                s["source"] = s.get("source_ids", "")
             yield {"event": "sources", "data": {"sources": sources}}
             prompt = self._build_prompt(question, context)
         except Exception as exc:
@@ -102,14 +106,27 @@ class RAGEngine:
 
     # ── 辅助方法 ──────────────────────────────────────────────────────────
 
-    def _fetch_sources(self, hits: list[tuple[str, float]]) -> list[dict]:
+    def _fetch_sources(self, hits: list[tuple[str, float]], k: int = 5,
+                       source_filter=None) -> list[dict]:
         """将 [(doc_id, score)] 转换为包含标题、摘要和全文内容的富来源列表。
+
+        支持 source_filter 按来源（如 "obsidian" / "quip" / ["obsidian","quip"]）过滤。
 
         `_content` 字段供 `_assemble_context` 复用，避免重复查库。
         """
+        import json as _json
         sources = []
         for doc_id, score in hits:
             doc = self.store.get_document(doc_id)
+            # source_filter 过滤
+            if source_filter and doc:
+                try:
+                    src_list = _json.loads(doc["source_ids"]) if doc["source_ids"] else []
+                except Exception:
+                    src_list = []
+                filters = [source_filter] if isinstance(source_filter, str) else source_filter
+                if not any(sf in str(src_list) for sf in filters):
+                    continue
             vers = self.store.get_versions(doc_id)
             content = vers[-1]["content"] if vers else ""
 
@@ -123,23 +140,37 @@ class RAGEngine:
                 "score": round(score, 4),
                 "snippet": snippet,
                 "_content": content,  # 内部复用，不暴露给 API 响应
+                "source_ids": doc["source_ids"] if doc else "",
             })
+            if len(sources) >= max(k, 1):
+                break
         return sources
 
-    def _assemble_context(self, sources: list[dict], max_chars: int = 6000) -> str:
-        """将多篇文档拼成 LLM context 文本。按相似度降序排列，分层截断。"""
+    def _assemble_context(self, sources: list[dict], max_chars: int = 3000) -> str:
+        """将多篇文档拼成 LLM context 文本。两层截断：先均分截断，超长时逐步移除低分来源。"""
         if not sources:
             return ""
-        per_doc = max(400, max_chars // len(sources))
-        parts = []
-        for src in sources:
-            content = src.get("_content", "")  # 复用 _fetch_sources 已取内容
-            truncated = content[:per_doc].strip()
-            parts.append(
-                f"--- 文档：{src['title']} (相似度: {src['score']}) ---\n"
-                f"{truncated}"
-            )
-        return "\n\n".join(parts)
+        sources.sort(key=lambda s: s.get("score", 0) if s.get("score") is not None else 0, reverse=True)
+        per_doc = max_chars // max(len(sources), 1)
+        chunks = []
+        for i, s in enumerate(sources):
+            text = (s.get("_content") or "")[:per_doc]
+            if not text.strip():
+                continue
+            chunks.append(f"[来源{i+1}] {text.strip()}")
+        result = "\n\n".join(chunks)
+        # 第二层：超长时逐步移除低分来源，每轮至少 100 字符
+        while len(result) > max_chars and len(sources) > 1:
+            sources.pop()
+            per_doc = max_chars // max(len(sources), 1)
+            chunks = []
+            for i, s in enumerate(sources):
+                text = (s.get("_content") or "")[:max(per_doc, 100)]
+                if not text.strip():
+                    continue
+                chunks.append(f"[来源{i+1}] {text.strip()}")
+            result = "\n\n".join(chunks)
+        return result
 
     @staticmethod
     def _clean_sources(sources: list[dict]):

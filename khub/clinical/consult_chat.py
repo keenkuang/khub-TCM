@@ -5,6 +5,7 @@ from ..db import Store
 from ..crypto import enc, dec
 from ..audit import record as _record
 from ..llm import get_provider
+from ..llm.rag import RAGEngine
 from .twin_v2 import build_summary_incremental
 
 _MAX_HISTORY_CHARS = 6000
@@ -50,8 +51,17 @@ def chat(store: Store, session_id: int, user_msg: str) -> str:
     # 构建 prompt
     summary = build_summary_incremental(store, pid) or "(暂无摘要)"
     history = get_history(store, session_id)
+    # RAG 知识片段
+    try:
+        engine = RAGEngine(store)
+        rag_sources = engine._fetch_sources(user_msg, k=3)
+        rag_context = engine._assemble_context(rag_sources, max_chars=1500)
+    except Exception:
+        rag_context = ""
+    rag_part = f"\n参考知识：\n{rag_context}\n\n" if rag_context else ""
     prompt = (
         f"你是一名中医问诊助手。以下是该患者的健康摘要：\n{summary}\n\n"
+        f"{rag_part}"
         f"对话历史：\n{history}\n\n"
         f"患者提问：{user_msg}\n\n请以中医思维辨证分析并回复。"
     )
