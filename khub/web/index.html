@@ -3,6 +3,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>kHUB</title>
 <link rel="stylesheet" href="/web/style.css">
+<link rel="manifest" href="/web/manifest.json">
+<meta name="theme-color" content="#4488cc">
 <script>
 fetch('/api/info').then(r=>r.json()).then(d=>{
   if(d.name) document.title = d.name;

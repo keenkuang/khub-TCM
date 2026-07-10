@@ -365,6 +365,13 @@ def build_parser():
     pwi = sub.add_parser("workflow-instances", help="实例列表")
     pwi.add_argument("--status", default="")
 
+    # 0.7.3 sync
+    ps = sub.add_parser("sync-status", help="同步状态")
+    psp = sub.add_parser("sync-push", help="推送变更")
+    psp.add_argument("--client", default="cli"); psp.add_argument("--file", default="")
+    psl = sub.add_parser("sync-pull", help="拉取变更")
+    psl.add_argument("--client", default="cli"); psl.add_argument("--since", type=int, default=0)
+
     return ap
 
 
@@ -1294,6 +1301,28 @@ def main(argv=None):
         from .workflow.store import list_instances
         for inst in list_instances(store, status=args.status):
             print(f"  #{inst['id']} def={inst['definition_id']} {inst['status']} step={inst['current_step']} {inst['created_at']}")
+    # 0.7.3 sync
+    elif args.cmd == "sync-status":
+        from .sync2 import status as sync_st
+        st = sync_st(store)
+        print(f"变更总数：{st['total_changes']}")
+        print("设备列表：")
+        for d in st['devices']:
+            print(f"  {d['client_id']}\t{d.get('name','') or ''}\t{d.get('last_sync_at','') or ''}")
+    elif args.cmd == "sync-push":
+        from .sync2 import push as sync_push
+        import json as _json
+        changes = []
+        if args.file:
+            with open(args.file) as f:
+                changes = _json.load(f)
+        result = sync_push(store, args.client, changes)
+        print(_json.dumps(result, ensure_ascii=False, indent=2))
+    elif args.cmd == "sync-pull":
+        from .sync2 import pull as sync_pull
+        import json as _json
+        result = sync_pull(store, args.client, args.since)
+        print(_json.dumps(result, ensure_ascii=False, indent=2))
     else:
         build_parser().print_help()
 

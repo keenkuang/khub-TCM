@@ -220,6 +220,17 @@ class Store:
             current_step TEXT, context TEXT, history TEXT,
             created_at TEXT DEFAULT (datetime('now')), completed_at TEXT)""")
         _wftrig(self.conn, "workflow_instances")
+        # 0.7.3 离线优先与多端同步
+        from .replication import install_triggers as _syntrig
+        self.conn.execute("""CREATE TABLE IF NOT EXISTS sync_changes (
+            id INTEGER PRIMARY KEY, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL,
+            action TEXT NOT NULL, data TEXT, client_id TEXT,
+            version INTEGER DEFAULT 1, created_at TEXT DEFAULT (datetime('now')))""")
+        _syntrig(self.conn, "sync_changes")
+        self.conn.execute("""CREATE TABLE IF NOT EXISTS devices (
+            client_id TEXT PRIMARY KEY, name TEXT, last_sync_at TEXT,
+            last_version INTEGER DEFAULT 0, created_at TEXT DEFAULT (datetime('now')))""")
+        _syntrig(self.conn, "devices")
 
     def _migrate(self):
         cols = {r["name"] for r in self.conn.execute("PRAGMA table_info(documents)")}

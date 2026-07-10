@@ -1089,6 +1089,22 @@ class App:
             results = unified_search(store, q, type=stype, limit=limit)
             return 200, {"query": q, "type": stype, "count": len(results), "results": results}
 
+        # 0.7.3 sync
+        if method == "POST" and path == "/api/sync/push":
+            from .sync2 import push
+            client_id = body.get("client_id", "unknown")
+            result = push(store, client_id, body.get("changes", []))
+            return 200, result
+        if method == "GET" and path == "/api/sync/pull":
+            from .sync2 import pull
+            client_id = qs.get("client_id", ["unknown"])[0]
+            since = int(qs.get("since", ["0"])[0])
+            result = pull(store, client_id, since)
+            return 200, result
+        if method == "GET" and path == "/api/sync/status":
+            from .sync2 import status
+            return 200, status(store)
+
         return 404, {"error": "not found"}
 
     @staticmethod

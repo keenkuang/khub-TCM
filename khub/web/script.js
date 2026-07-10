@@ -937,3 +937,7 @@ async function downloadCSV(id) {
 }
 
 loadAll();
+
+// PWA Service Worker 注册
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/web/sw.js').catch(function(e){ console.log('SW注册失败', e); }}
