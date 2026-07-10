@@ -1231,6 +1231,23 @@ class App:
             results = run_pipeline(store, pid, input_text=body.get("input",""), current_user=getattr(self,"_current_user",None))
             return 200, {"results": results}
 
+        # 2.1 agents v3 — 多 Agent 集成（并行/投票/级联）
+        if method == "POST" and path == "/api/agents/parallel":
+            from .agents.ensemble import run_parallel
+            results = run_parallel(store, body.get("agent_ids", []), input_text=body.get("input",""),
+                                   current_user=getattr(self,"_current_user",None))
+            return 200, {"results": results}
+        if method == "POST" and path == "/api/agents/vote":
+            from .agents.ensemble import vote
+            result = vote(store, body.get("agent_ids", []), input_text=body.get("input",""),
+                          current_user=getattr(self,"_current_user",None))
+            return 200, result
+        if method == "POST" and path == "/api/agents/cascade":
+            from .agents.ensemble import cascade
+            results = cascade(store, body.get("pipeline", []), input_text=body.get("input",""),
+                              current_user=getattr(self,"_current_user",None))
+            return 200, {"results": results}
+
         # 0.9.1 多租户管理（仅 admin）
         cu = getattr(self, "_current_user", None) or current_user
         if not check_permission(cu, "users", "create"):
