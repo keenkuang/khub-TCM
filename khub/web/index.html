@@ -18,6 +18,7 @@
     <button class="ghost" onclick="loadConflicts()">冲突</button>
     <button class="ghost" onclick="loadSyncStatus()">同步状态</button>
     <button class="ghost" onclick="showView('ops');return false">运营</button>
+    <button class="ghost" onclick="showView('course');return false">课程</button>
     <button class="ghost" onclick="loadFavorites();return false">收藏</button>
     <select id="sourceFilter" style="padding:6px 8px;border:1px solid #ccd;border-radius:6px;font-size:13px">
       <option value="">所有来源</option>
@@ -38,6 +39,14 @@
       <button onclick="loadAppointments()">预约</button>
     </div>
     <div id="ops-content">点击上方按钮加载数据</div>
+  </div>
+  <div id="course-panel" style="display:none">
+    <h2>课程运营</h2>
+    <div class="course-nav">
+      <button onclick="loadCourses()">课程列表</button>
+      <button onclick="showCourseForm()">创建课程</button>
+    </div>
+    <div id="course-content">点击上方按钮加载数据</div>
   </div>
   <div id="results"></div>
 </div>

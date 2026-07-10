@@ -243,6 +243,37 @@ def build_parser():
 
     pc = sub.add_parser("consult-extract", help="抽取问诊结构化字段")
     pc.add_argument("consult_id", type=int)
+
+    # ── 0.2.10 课程运营管理系统 ────────────────────────────────────────
+    pc = sub.add_parser("course-create", help="创建课程")
+    pc.add_argument("name"); pc.add_argument("--teacher", default="")
+    pc.add_argument("--desc", dest="description", default="")
+    pc.add_argument("--start", dest="start_date", default="")
+    pc.add_argument("--end", dest="end_date", default="")
+    pc.add_argument("--capacity", type=int, default=0)
+    pc.add_argument("--price", type=float, default=0)
+
+    pcl = sub.add_parser("course-list", help="课程列表")
+    pcl.add_argument("--status", default="")
+
+    pci = sub.add_parser("course-info", help="课程详情")
+    pci.add_argument("course_id", type=int)
+
+    pla = sub.add_parser("lesson-add", help="添加课时")
+    pla.add_argument("course_id", type=int); pla.add_argument("title"); pla.add_argument("date")
+    pla.add_argument("--start-time", default=""); pla.add_argument("--end-time", default="")
+    pla.add_argument("--location", default="")
+
+    pll = sub.add_parser("lesson-list", help="课时列表")
+    pll.add_argument("course_id", type=int)
+
+    pe = sub.add_parser("enroll", help="学员报名")
+    pe.add_argument("course_id", type=int); pe.add_argument("student_name")
+    pe.add_argument("--phone", default="")
+
+    pg = sub.add_parser("grade", help="录入成绩")
+    pg.add_argument("enrollment_id", type=int); pg.add_argument("score", type=float)
+    pg.add_argument("--lesson", type=int, default=0); pg.add_argument("--comment", default="")
     return ap
 
 
@@ -894,6 +925,43 @@ def main(argv=None):
         struct = extract_structured(store, text)
         apply_struct(store, "consult", row["id"], struct)
         print(_json.dumps(struct, ensure_ascii=False, indent=2))
+    elif args.cmd == "course-create":
+        from .course.store import add_course
+        cid = add_course(store, args.name, teacher=args.teacher, description=args.description,
+                         start_date=args.start_date, end_date=args.end_date,
+                         capacity=args.capacity, price=args.price)
+        print(f"课程 #{cid} 已创建")
+    elif args.cmd == "course-list":
+        from .course.store import list_courses
+        for c in list_courses(store, status=args.status or None):
+            print(f"  #{c['id']} {c['name']} — {c['teacher'] or '无教师'} [{c['status']}]")
+    elif args.cmd == "course-info":
+        from .course.store import get_course
+        c = get_course(store, args.course_id)
+        if not c: print("课程不存在"); return
+        print(f"名称：{c['name']}\n教师：{c['teacher'] or '(无)'}\n时间：{c['start_date'] or ''}—{c['end_date'] or ''}\n已报名：{c.get('enrolled_count',0)}/{c['capacity'] if c['capacity'] else '不限'}")
+    elif args.cmd == "lesson-add":
+        from .course.store import add_lesson
+        lid = add_lesson(store, args.course_id, args.title, args.date,
+                         start_time=args.start_time, end_time=args.end_time,
+                         location=args.location)
+        print(f"课时 #{lid} 已添加")
+    elif args.cmd == "lesson-list":
+        from .course.store import list_lessons
+        for l in list_lessons(store, args.course_id):
+            print(f"  #{l['id']} {l['lesson_date']} {l['title']} {l['location'] or ''}")
+    elif args.cmd == "enroll":
+        from .course.store import enroll_student
+        try:
+            eid = enroll_student(store, args.course_id, args.student_name, student_phone=args.phone)
+            print(f"报名 #{eid} 成功")
+        except ValueError as e:
+            print(f"报名失败：{e}")
+    elif args.cmd == "grade":
+        from .course.store import record_grade
+        gid = record_grade(store, args.enrollment_id, args.score,
+                           lesson_id=args.lesson, comment=args.comment)
+        print(f"成绩 #{gid} 已录入")
     else:
         build_parser().print_help()
 

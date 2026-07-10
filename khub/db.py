@@ -112,6 +112,8 @@ class Store:
             id INTEGER PRIMARY KEY, doc_id TEXT NOT NULL UNIQUE,
             created_at TEXT DEFAULT (datetime('now')))""")
         _it(self.conn, "favorites")
+        # 0.2.10 课程运营管理系统
+        self._init_course_tables(self.conn)
 
     def _migrate(self):
         cols = {r["name"] for r in self.conn.execute("PRAGMA table_info(documents)")}
@@ -683,6 +685,34 @@ class Store:
                 aliases TEXT NOT NULL
             )""")
         install_triggers(conn, "syndrome_vocab")
+
+    @staticmethod
+    def _init_course_tables(conn):
+        """0.2.10 课程运营管理系统——课程/课时/学员/成绩。"""
+        from .replication import install_triggers as _it
+        conn.execute("""CREATE TABLE IF NOT EXISTS courses (
+            id INTEGER PRIMARY KEY, name TEXT NOT NULL, description TEXT,
+            teacher TEXT, start_date TEXT, end_date TEXT,
+            capacity INTEGER DEFAULT 0, status TEXT DEFAULT 'active',
+            price REAL DEFAULT 0, created_at TEXT DEFAULT (datetime('now')))""")
+        _it(conn, "courses")
+        conn.execute("""CREATE TABLE IF NOT EXISTS lessons (
+            id INTEGER PRIMARY KEY, course_id INTEGER NOT NULL,
+            title TEXT NOT NULL, lesson_date TEXT NOT NULL,
+            start_time TEXT, end_time TEXT, location TEXT, content TEXT,
+            created_at TEXT DEFAULT (datetime('now')))""")
+        _it(conn, "lessons")
+        conn.execute("""CREATE TABLE IF NOT EXISTS enrollments (
+            id INTEGER PRIMARY KEY, course_id INTEGER NOT NULL,
+            student_name TEXT NOT NULL, student_phone TEXT,
+            status TEXT DEFAULT 'enrolled',
+            enrolled_at TEXT DEFAULT (datetime('now')))""")
+        _it(conn, "enrollments")
+        conn.execute("""CREATE TABLE IF NOT EXISTS grades (
+            id INTEGER PRIMARY KEY, enrollment_id INTEGER NOT NULL,
+            lesson_id INTEGER, score REAL, comment TEXT,
+            created_at TEXT DEFAULT (datetime('now')))""")
+        _it(conn, "grades")
 
 
 # ── WAL / 快照底层工具 ──────────────────────────────────────────────────────

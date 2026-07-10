@@ -328,3 +328,7 @@ mark { background: var(--mark-bg); padding: 0 2px; border-radius: 2px; }
 .ops-table tr:hover { background: rgba(0,0,0,0.02); }
 [data-theme="dark"] .ops-table tr:hover { background: rgba(255,255,255,0.03); }
 .ops-table button { padding: 3px 8px; font-size: 11px; margin: 1px; }
+
+/* 课程面板 */
+.course-nav button { margin:4px; }
+.edit-form input, .edit-form textarea { width:100%; max-width:400px; margin:4px 0; padding:8px; border:1px solid var(--border); border-radius:6px; background:var(--card-bg); color:var(--text); }

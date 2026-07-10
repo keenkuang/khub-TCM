@@ -456,9 +456,12 @@ function toggleTheme() {
 
 // ── 运营 UI ──
 function showView(name) {
-  document.getElementById('ops-panel').style.display = name === 'ops' ? 'block' : 'none';
-  document.getElementById('results').style.display = name === 'ops' ? 'none' : 'block';
-  if (name === 'ops') document.getElementById('stats').style.display = 'none';
+  ['ops','course'].forEach(function(v){
+    var el = document.getElementById(v+'-panel');
+    if(el) el.style.display = name === v ? 'block' : 'none';
+  });
+  document.getElementById('results').style.display = name === 'ops' || name === 'course' ? 'none' : 'block';
+  if (name === 'ops' || name === 'course') document.getElementById('stats').style.display = 'none';
   else document.getElementById('stats').style.display = 'flex';
 }
 
@@ -573,4 +576,101 @@ loadTagFilter();
 document.getElementById('q').addEventListener('keydown', e => { if (e.key === 'Enter') search(); });
 document.getElementById('ai-send').addEventListener('click', aiAsk);
 aiInput.addEventListener('keydown', e => { if (e.key === 'Enter') aiAsk(); });
+// ── 课程 UI ──
+async function loadCourses() {
+  var box = document.getElementById('course-content');
+  box.innerHTML = '<p class="meta">加载中…</p>';
+  try {
+    var r = await fetch('/api/courses').then(function(x){return x.json();});
+    if (!r.courses || !r.courses.length) { box.innerHTML = '<p class="meta">暂无课程</p>'; return; }
+    var html = '<table class="ops-table"><tr><th>ID</th><th>名称</th><th>教师</th><th>状态</th></tr>';
+    r.courses.forEach(function(c){
+      html += '<tr onclick="loadCourseDetail(' + c.id + ')" style="cursor:pointer"><td>' + c.id + '</td><td>' + esc(c.name) + '</td><td>' + esc(c.teacher||'') + '</td><td>' + esc(c.status) + '</td></tr>';
+    });
+    html += '</table>';
+    box.innerHTML = html;
+  } catch(e) { box.innerHTML = '<p class="meta">加载失败</p>'; }
+}
+
+async function loadCourseDetail(id) {
+  var box = document.getElementById('course-content');
+  box.innerHTML = '<p class="meta">加载中…</p>';
+  try {
+    var r = await fetch('/api/courses/' + id).then(function(x){return x.json();});
+    var c = r.course;
+    var html = '<h3>' + esc(c.name) + '</h3><p>' + esc(c.description||'') + '</p>';
+    html += '<p class="meta">教师: ' + esc(c.teacher||'') + ' | 时间: ' + esc(c.start_date||'') + ' — ' + esc(c.end_date||'') + '</p>';
+    html += '<p class="meta">已报名: ' + (c.enrolled_count||0) + '/' + (c.capacity||'不限') + ' | 价格: ' + (c.price||0) + '</p>';
+    // 课时列表
+    var lr = await fetch('/api/courses/' + id + '/lessons').then(function(x){return x.json();});
+    html += '<h4>课时 <button onclick="showLessonForm(' + id + ')">添加课时</button></h4>';
+    if (lr.lessons && lr.lessons.length) {
+      html += '<table class="ops-table"><tr><th>日期</th><th>课时</th><th>时间</th><th>地点</th></tr>';
+      lr.lessons.forEach(function(l){
+        html += '<tr><td>' + esc(l.lesson_date) + '</td><td>' + esc(l.title) + '</td><td>' + esc(l.start_time||'') + '-' + esc(l.end_time||'') + '</td><td>' + esc(l.location||'') + '</td></tr>';
+      });
+      html += '</table>';
+    } else { html += '<p class="meta">暂无课时</p>'; }
+    // 报名列表
+    var er = await fetch('/api/courses/' + id + '/enrollments').then(function(x){return x.json();});
+    html += '<h4>学员 <button onclick="showEnrollForm(' + id + ')">报名</button></h4>';
+    if (er.enrollments && er.enrollments.length) {
+      html += '<table class="ops-table"><tr><th>姓名</th><th>电话</th><th>状态</th></tr>';
+      er.enrollments.forEach(function(e){
+        html += '<tr><td>' + esc(e.student_name) + '</td><td>' + esc(e.student_phone||'') + '</td><td>' + esc(e.status) + '</td></tr>';
+      });
+      html += '</table>';
+    } else { html += '<p class="meta">暂无学员报名</p>'; }
+    box.innerHTML = html;
+  } catch(e) { box.innerHTML = '<p class="meta">加载失败: ' + esc(e.message) + '</p>'; }
+}
+
+function showCourseForm() {
+  var box = document.getElementById('course-content');
+  box.innerHTML = '<h3>创建课程</h3><div class="edit-form">' +
+    '<p><input id="cf_name" placeholder="课程名称"></p>' +
+    '<p><input id="cf_teacher" placeholder="授课教师"></p>' +
+    '<p><input id="cf_start" placeholder="开课日期 (YYYY-MM-DD)"></p>' +
+    '<p><input id="cf_end" placeholder="结课日期 (YYYY-MM-DD)"></p>' +
+    '<p><input id="cf_capacity" placeholder="人数上限 (0=不限)" type="number"></p>' +
+    '<p><textarea id="cf_desc" placeholder="课程简介" rows="3"></textarea></p>' +
+    '<p><button onclick="doCreateCourse()">创建</button></p></div>';
+}
+
+async function doCreateCourse() {
+  var body = {
+    name: document.getElementById('cf_name').value,
+    teacher: document.getElementById('cf_teacher').value,
+    start_date: document.getElementById('cf_start').value,
+    end_date: document.getElementById('cf_end').value,
+    capacity: parseInt(document.getElementById('cf_capacity').value) || 0,
+    description: document.getElementById('cf_desc').value,
+  };
+  try {
+    var r = await fetch('/api/courses', {method:'POST', body:JSON.stringify(body), headers:{'Content-Type':'application/json'}}).then(function(x){return x.json();});
+    showToast('课程 #' + r.course_id + ' 已创建');
+    loadCourses();
+  } catch(e) { showToast('创建失败'); }
+}
+
+function showLessonForm(courseId) {
+  var title = prompt('课时标题：'); if (!title) return;
+  var date = prompt('上课日期 (YYYY-MM-DD)：'); if (!date) return;
+  var st = prompt('开始时间：') || '';
+  var et = prompt('结束时间：') || '';
+  var loc = prompt('地点：') || '';
+  fetch('/api/courses/' + courseId + '/lessons', {method:'POST', body:JSON.stringify({title, lesson_date:date, start_time:st, end_time:et, location:loc}), headers:{'Content-Type':'application/json'}})
+    .then(function(){ loadCourseDetail(courseId); showToast('课时已添加'); })
+    .catch(function(){ showToast('添加失败'); });
+}
+
+function showEnrollForm(courseId) {
+  var name = prompt('学员姓名：'); if (!name) return;
+  var phone = prompt('联系电话：') || '';
+  fetch('/api/courses/' + courseId + '/enroll', {method:'POST', body:JSON.stringify({student_name:name, student_phone:phone}), headers:{'Content-Type':'application/json'}})
+    .then(function(r){ return r.json(); })
+    .then(function(j){ if(j.enrollment_id) showToast('报名成功'); else showToast(j.error||'报名失败'); loadCourseDetail(courseId); })
+    .catch(function(){ showToast('报名失败'); });
+}
+
 loadAll();

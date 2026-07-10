@@ -725,6 +725,61 @@ class App:
             )
             return 200, metrics_data
 
+        # 0.2.10 course management
+        if method == "POST" and path == "/api/courses":
+            from .course.store import add_course
+            cid = add_course(store, name=body.get("name",""), teacher=body.get("teacher",""),
+                             description=body.get("description",""),
+                             start_date=body.get("start_date",""), end_date=body.get("end_date",""),
+                             capacity=int(body.get("capacity", 0)),
+                             price=float(body.get("price", 0)))
+            return 201, {"course_id": cid}
+        if method == "GET" and path == "/api/courses":
+            from .course.store import list_courses
+            return 200, {"courses": list_courses(store, status=qs.get("status", [None])[0])}
+        if method == "GET" and path.startswith("/api/courses/") and len(parts) == 3:
+            from .course.store import get_course
+            cid = _safe_int([parts[2]], 0)
+            if not cid: return 400, {"error": "invalid id"}
+            course = get_course(store, cid)
+            if not course: return 404, {"error": "not found"}
+            return 200, {"course": dict(course)}
+        if method == "POST" and path.startswith("/api/courses/") and len(parts) == 4 and parts[3] == "lessons":
+            from .course.store import add_lesson
+            cid = _safe_int([parts[2]], 0)
+            lid = add_lesson(store, cid, title=body.get("title",""), lesson_date=body.get("lesson_date",""),
+                             start_time=body.get("start_time",""), end_time=body.get("end_time",""),
+                             location=body.get("location",""), content=body.get("content",""))
+            return 201, {"lesson_id": lid}
+        if method == "GET" and path.startswith("/api/courses/") and len(parts) == 4 and parts[3] == "lessons":
+            from .course.store import list_lessons
+            cid = _safe_int([parts[2]], 0)
+            return 200, {"lessons": list_lessons(store, cid)}
+        if method == "POST" and path.startswith("/api/courses/") and len(parts) == 4 and parts[3] == "enroll":
+            from .course.store import enroll_student
+            cid = _safe_int([parts[2]], 0)
+            try:
+                eid = enroll_student(store, cid, student_name=body.get("student_name",""),
+                                     student_phone=body.get("student_phone",""))
+                return 201, {"enrollment_id": eid}
+            except ValueError as e:
+                return 400, {"error": str(e)}
+        if method == "GET" and path.startswith("/api/courses/") and len(parts) == 4 and parts[3] == "enrollments":
+            from .course.store import list_enrollments
+            cid = _safe_int([parts[2]], 0)
+            return 200, {"enrollments": list_enrollments(store, cid)}
+        if method == "POST" and path == "/api/grades":
+            from .course.store import record_grade
+            gid = record_grade(store, int(body.get("enrollment_id", 0)),
+                               float(body.get("score", 0)),
+                               lesson_id=int(body.get("lesson_id", 0)),
+                               comment=body.get("comment", ""))
+            return 201, {"grade_id": gid}
+        if method == "GET" and path.startswith("/api/enrollments/") and len(parts) == 4 and parts[3] == "grades":
+            from .course.store import list_grades
+            eid = _safe_int([parts[2]], 0)
+            return 200, {"grades": list_grades(store, eid)}
+
         return 404, {"error": "not found"}
 
     @staticmethod
