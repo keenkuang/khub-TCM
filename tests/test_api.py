@@ -184,11 +184,12 @@ def test_api_health():
     assert obj["status"] == "ok"
     assert obj["version"] == "0.2.7"
     assert "uptime_sec" in obj
-    assert obj["documents"] == 0
+    assert "checks" in obj
+    assert obj["checks"]["db"]["documents"] == 0
     app.dispatch("POST", "/documents",
                  {"title": "x", "content": "y", "source_id": "hz"})
     code, obj = app.dispatch("GET", "/health")
-    assert obj["documents"] == 1
+    assert obj["checks"]["db"]["documents"] == 1
 
 
 def test_api_semantic_search():

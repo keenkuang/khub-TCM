@@ -5,10 +5,12 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Optional
 from urllib.parse import parse_qs, urlparse, unquote
 
+# 请求计数器（用于 /metrics）
+_REQUESTS: dict[str, int] = {"GET": 0, "POST": 0, "PUT": 0, "DELETE": 0}
+
 from . import __version__
 from .db import Store
 from .ingest import ingest_ebook, register_ebook
-from .log import get_logger
 from .models import CanonicalDoc
 from .ratelimit import make_ratelimit, PersistentTokenBucket
 from .storage import ManagedLibrary
@@ -41,7 +43,7 @@ def _safe_int(value, default: int) -> int:
 class App:
     """薄 REST 层：直接复用核心库 API，不重写业务逻辑。"""
 
-    def __init__(self, store: Store, library: ManagedLibrary):
+    def __init__(self, store: Store, library: Optional[ManagedLibrary] = None):
         self.store = store
         self.library = library
         self._started = time.time()
@@ -54,6 +56,8 @@ class App:
         token = os.environ.get("KHUB_API_TOKEN")
         if token and auth_header != f"Bearer {token}":
             return 401, {"error": "unauthorized"}
+        # 请求计数器
+        _REQUESTS[method] = _REQUESTS.get(method, 0) + 1
         parsed = urlparse(raw_path)
         path = parsed.path
         qs = parse_qs(parsed.query)
@@ -73,11 +77,43 @@ class App:
                 return 200, f.read(), ctype
 
         if method == "GET" and path == "/health":
-            uptime = round(time.time() - self._started, 1) if self._started else 0
-            return 200, {"status": "ok", "version": __version__,
-                         "documents": self.store.conn.execute(
-                             "SELECT count(*) FROM documents").fetchone()[0],
-                         "uptime_sec": uptime}
+            checks: dict[str, dict] = {}
+            overall = "ok"
+            # DB
+            try:
+                c = self.store.conn.execute("SELECT count(*) FROM documents").fetchone()[0]
+                checks["db"] = {"ok": True, "documents": c}
+            except Exception as e:
+                checks["db"] = {"ok": False, "error": str(e)}
+                overall = "degraded"
+            # FTS
+            try:
+                self.store.conn.execute("SELECT count(*) FROM docs_fts").fetchone()
+                checks["fts"] = {"ok": True}
+            except Exception:
+                checks["fts"] = {"ok": False}
+                overall = "degraded"
+            # 磁盘
+            try:
+                lib = os.environ.get("KHUB_LIBRARY", os.path.expanduser("~/.khub"))
+                st = os.statvfs(lib)
+                free_mb = st.f_bavail * st.f_frsize / 1024 / 1024
+                checks["disk"] = {"ok": free_mb > 100, "free_mb": round(free_mb, 1)}
+                if free_mb <= 100:
+                    overall = "degraded"
+            except Exception:
+                checks["disk"] = {"ok": True, "note": "unavailable"}
+            # WAL 堆积
+            try:
+                pend = self.store.conn.execute(
+                    "SELECT count(*) FROM replication_log WHERE applied=0").fetchone()[0]
+                checks["wal"] = {"ok": pend < 1000, "pending": pend}
+                if pend >= 1000:
+                    overall = "degraded"
+            except Exception:
+                checks["wal"] = {"ok": True, "note": "unavailable"}
+            return 200, {"status": overall, "version": __version__,
+                         "uptime_sec": int(time.time() - self._started), "checks": checks}
 
         if method == "GET" and path == "/stats":
             cur = self.store.conn
@@ -150,6 +186,26 @@ class App:
                 }
             except Exception:  # nosec B110 — ops 表可能未创建
                 pass
+            # 扩展统计
+            try:
+                db_path = os.environ.get("KHUB_DB", "")
+                if db_path and os.path.isfile(db_path):
+                    stats["db_file_size_mb"] = round(os.path.getsize(db_path) / 1024 / 1024, 1)
+            except Exception:
+                pass
+            try:
+                pend = self.store.conn.execute(
+                    "SELECT count(*) FROM replication_log WHERE applied=0").fetchone()[0]
+                stats["wal_pending_count"] = pend
+            except Exception:
+                pass
+            # 业务表行数（容错，表可能不存在）
+            for tbl in ("twin_versions", "consult_messages", "followup_plans", "record_struct"):
+                try:
+                    cnt = self.store.conn.execute(f"SELECT count(*) FROM {tbl}").fetchone()[0]
+                    stats[f"table_rows.{tbl}"] = cnt
+                except Exception:
+                    pass
             return 200, stats
 
         if method == "GET" and path == "/ebooks":
@@ -566,6 +622,39 @@ class App:
             apply_struct(store, source, source_id, struct)
             return 200, {"structured": struct}
 
+        # /metrics — Prometheus 格式指标
+        if method == "GET" and path == "/metrics":
+            if not os.environ.get("KHUB_METRICS_ENABLED"):
+                return 404, {"error": "metrics disabled"}
+            doc_count = self.store.conn.execute("SELECT count(*) FROM documents").fetchone()[0]
+            pend = 0
+            try:
+                pend = self.store.conn.execute(
+                    "SELECT count(*) FROM replication_log WHERE applied=0").fetchone()[0]
+            except Exception:
+                pass
+            db_size = 0
+            db_path = os.environ.get("KHUB_DB", "")
+            if db_path and os.path.isfile(db_path):
+                db_size = os.path.getsize(db_path)
+            metrics_data = (
+                "# HELP khub_requests_total Total HTTP requests\n"
+                "# TYPE khub_requests_total counter\n"
+                f'khub_requests_total{{method="GET"}} {_REQUESTS["GET"]}\n'
+                f'khub_requests_total{{method="POST"}} {_REQUESTS["POST"]}\n'
+                f'khub_requests_total{{method="PUT"}} {_REQUESTS["PUT"]}\n'
+                "# HELP khub_db_documents Total documents\n"
+                "# TYPE khub_db_documents gauge\n"
+                f"khub_db_documents {doc_count}\n"
+                "# HELP khub_db_size_bytes Database file size\n"
+                "# TYPE khub_db_size_bytes gauge\n"
+                f"khub_db_size_bytes {db_size}\n"
+                "# HELP khub_wal_pending Pending WAL entries\n"
+                "# TYPE khub_wal_pending gauge\n"
+                f"khub_wal_pending {pend}\n"
+            )
+            return 200, metrics_data
+
         return 404, {"error": "not found"}
 
     @staticmethod
@@ -769,8 +858,10 @@ def make_handler(app: App):
                 return self._send(500, {"error": str(e)})
             self._send(code, obj, ctype)
 
-        def log_message(self, *args):
-            pass
+        def log_message(self, format, *args):
+            import logging
+            logging.getLogger("khub.api").info(
+                "%s %s %s", self.command, self.path, args[0] if args else "-")
 
     return Handler
 

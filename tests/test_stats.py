@@ -60,3 +60,15 @@ def test_stats_recent_is_list():
     assert code == 200
     assert len(obj["recent"]) >= 1
     assert "id" in obj["recent"][0]
+
+
+def test_stats_extended():
+    from khub.api import App
+    store = Store(":memory:")
+    app = App(store)
+    code, obj = app.dispatch("GET", "/stats")
+    assert code == 200
+    # 扩展字段（环境变量未设时可能缺失）
+    for key in ("db_file_size_mb", "wal_pending_count"):
+        if key in obj:
+            assert isinstance(obj[key], (int, float))

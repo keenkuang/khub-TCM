@@ -14,6 +14,9 @@
 | `KHUB_LIBRARY` | 受管库目录（文档存储位置） | `~/.khub/library` | `/data/khub/library` |
 | `KHUB_LOG_LEVEL` | 日志级别 | `INFO` | `DEBUG` |
 | `KHUB_LOG_FILE` | 日志文件路径（空表示输出到 stderr） | 空 | `/var/log/khub/khub.log` |
+| `KHUB_LOG_FORMAT` | `json` | 日志格式。`json`=结构化 JSON，`text`=纯文本（本地开发） |
+| `KHUB_LOG_ROTATION` | `30` | JSON 日志文件保留天数（配合 TimedRotatingFileHandler） |
+| `KHUB_METRICS_ENABLED` | `0` | 设为 `1` 启用 `/metrics` Prometheus 端点 |
 | `KHUB_API_TOKEN` | REST API 鉴权令牌；设置后**所有**端点（含读）需 `Bearer <token>` | 空（不鉴权） | `sk-xxx` |
 | `KHUB_PII_ENCRYPT` | PII 加密开关（设置后启用） | 空 | `1` |
 | `KHUB_PII_KEY` | Fernet 对称加密密钥（base64 编码，44 字符） | 自动生成 | `(base64 44 字符)` |

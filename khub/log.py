@@ -1,32 +1,48 @@
-"""统一日志配置。生产环境写文件，开发环境打 stderr。"""
+"""结构化日志。支持 JSON 和纯文本两种格式。"""
+from __future__ import annotations
+import json
 import logging
 import os
 import sys
+from logging.handlers import TimedRotatingFileHandler
 
-_LOG = None
 
-
-def get_logger(name: str = "khub") -> logging.Logger:
-    global _LOG
-    if _LOG is not None:
-        return _LOG.getChild(name)
-
-    level = getattr(logging, os.environ.get("KHUB_LOG_LEVEL", "INFO").upper(), logging.INFO)
+def setup_logging():
+    """配置全局日志（在应用入口处调用一次）。"""
+    level = os.environ.get("KHUB_LOG_LEVEL", "INFO").upper()
+    fmt = os.environ.get("KHUB_LOG_FORMAT", "json")
     target = os.environ.get("KHUB_LOG_FILE", "")
-
-    root = logging.getLogger("khub")
+    root = logging.getLogger()
     root.setLevel(level)
-    root.handlers.clear()
-
-    fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-                            datefmt="%Y-%m-%dT%H:%M:%S")
-
+    # 清除已有 handler 避免重复
+    for h in root.handlers[:]:
+        root.removeHandler(h)
     if target:
-        h: logging.Handler = logging.FileHandler(os.path.expanduser(target), encoding="utf-8")
+        if fmt == "json":
+            handler: logging.Handler = TimedRotatingFileHandler(
+                target, when="midnight",
+                backupCount=int(os.environ.get("KHUB_LOG_ROTATION", "30")))
+            handler.setFormatter(JsonFormatter())
+        else:
+            handler = logging.FileHandler(target)
+            handler.setFormatter(logging.Formatter(
+                "%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
     else:
-        h = logging.StreamHandler(sys.stderr)
-    h.setFormatter(fmt)
-    root.addHandler(h)
+        handler = logging.StreamHandler(sys.stderr)
+        if fmt == "json":
+            handler.setFormatter(JsonFormatter())
+        else:
+            handler.setFormatter(logging.Formatter(
+                "%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
+    root.addHandler(handler)
 
-    _LOG = root
-    return root.getChild(name)
+
+class JsonFormatter(logging.Formatter):
+    """JSON 格式日志格式化器。"""
+    def format(self, record):
+        return json.dumps({
+            "timestamp": self.formatTime(record),
+            "level": record.levelname,
+            "module": record.name,
+            "message": record.getMessage(),
+        }, ensure_ascii=False)
