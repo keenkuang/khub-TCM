@@ -306,6 +306,20 @@ class Store:
             self.conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_at ON audit_log(at)")
         except Exception:
             pass
+        # 0.9.3 知识社区
+        from .replication import install_triggers as _ctrig
+        self.conn.execute("""CREATE TABLE IF NOT EXISTS community_articles (
+            id INTEGER PRIMARY KEY, title TEXT NOT NULL, content TEXT NOT NULL,
+            author_id INTEGER, tags TEXT, is_public INTEGER DEFAULT 1,
+            view_count INTEGER DEFAULT 0, status TEXT DEFAULT 'published',
+            created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')))""")
+        _ctrig(self.conn, "community_articles")
+        self.conn.execute("""CREATE TABLE IF NOT EXISTS community_comments (
+            id INTEGER PRIMARY KEY, article_id INTEGER NOT NULL,
+            author_id INTEGER, content TEXT NOT NULL,
+            created_at TEXT DEFAULT (datetime('now')))""")
+        _ctrig(self.conn, "community_comments")
+        self.conn.execute("CREATE INDEX IF NOT EXISTS idx_comments_article ON community_comments(article_id)")
 
     def _migrate(self):
         cols = {r["name"] for r in self.conn.execute("PRAGMA table_info(documents)")}

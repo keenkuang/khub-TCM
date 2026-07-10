@@ -1254,6 +1254,34 @@ class App:
                 return 404, {"error": "not found"}
             return 200, presc
 
+        # 0.9.3 community — 文章
+        if method == "POST" and path == "/api/community/articles":
+            from .community.articles import create_article
+            aid = create_article(store, body.get("title", ""), body.get("content", ""),
+                                 author_id=0, tags=body.get("tags", []),
+                                 is_public=body.get("is_public", True))
+            return 201, {"article_id": aid}
+        if method == "GET" and path == "/api/community/articles":
+            from .community.articles import list_articles
+            return 200, {"articles": list_articles(store, tag=qs.get("tag", [""])[0])}
+        if method == "GET" and path.startswith("/api/community/articles/") and len(parts) == 4 and parts[3]:
+            from .community.articles import get_article
+            aid = _safe_int([parts[3]], 0)
+            article = get_article(store, aid)
+            if not article:
+                return 404, {"error": "not found"}
+            from .community.comments import list_comments
+            return 200, {"article": dict(article), "comments": list_comments(store, aid)}
+        if method == "GET" and path == "/api/community/tags":
+            from .community.articles import list_tags
+            return 200, {"tags": list_tags(store)}
+        # 0.9.3 community — 评论
+        if method == "POST" and path == "/api/community/comments":
+            from .community.comments import add_comment
+            cid = add_comment(store, body.get("article_id", 0), body.get("content", ""),
+                              author_id=0)
+            return 201, {"comment_id": cid}
+
         return 404, {"error": "not found"}
 
     @staticmethod
