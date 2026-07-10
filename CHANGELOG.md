@@ -1,5 +1,28 @@
 # 变更日志
 
+## [0.3.1] — 2026-07-10
+
+### RBAC 权限框架（0.3.x 迭代二）
+
+#### 权限模型
+- `PERMISSIONS` 字典定义 8 角色（admin/doctor/nurse/intern/receptionist/patient/guardian/security）对 12 类资源的读写权限
+- `check_permission(user, resource, action)` —— 端点级权限检查函数
+- `admin` 角色及 `KHUB_API_TOKEN`（global token）跳过所有检查
+
+#### API 端点级权限
+- `dispatch()` 入口自动将路径映射为资源名、HTTP method 映射为 action，逐请求检查权限
+- 公开端点（`/auth/login`、`/web/`、`/health`）免检
+- 权限不足返回 403
+
+#### 用户管理
+- REST：`GET /api/users`（用户列表）、`POST /api/users`（创建用户）、`PUT /api/users/{id}/role`（修改角色）
+- CLI：`khub user-list`、`user-create`、`user-role`
+- Web UI：系统管理面板（仅 admin 可见），用户列表/创建/角色修改
+
+### 测试
+- 新增 9 个权限测试：5 角色权限断言 + 空用户 + list_users + update_role
+- 全部 16 通过
+
 ## [0.3.0] — 2026-07-10
 
 ### 多用户鉴权基础（0.3.x 迭代一）
