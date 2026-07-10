@@ -256,6 +256,18 @@ class Store:
             cron TEXT, last_run TEXT, status TEXT DEFAULT 'active',
             created_at TEXT DEFAULT (datetime('now')))""")
         _atrig(self.conn, "agent_schedules")
+        # 0.9.2 远程医疗平台
+        from .replication import install_triggers as _tmtrig
+        self.conn.execute("""CREATE TABLE IF NOT EXISTS telemedicine_sessions (
+            id INTEGER PRIMARY KEY, appointment_id INTEGER, room_id TEXT NOT NULL UNIQUE,
+            status TEXT DEFAULT 'waiting', offer TEXT, answer TEXT,
+            started_at TEXT, ended_at TEXT, created_at TEXT DEFAULT (datetime('now')))""")
+        _tmtrig(self.conn, "telemedicine_sessions")
+        self.conn.execute("""CREATE TABLE IF NOT EXISTS prescriptions (
+            id INTEGER PRIMARY KEY, consultation_id INTEGER, doctor_id INTEGER,
+            patient_id INTEGER, items TEXT, signature TEXT, status TEXT DEFAULT 'draft',
+            created_at TEXT DEFAULT (datetime('now')))""")
+        _tmtrig(self.conn, "prescriptions")
         # 0.8.0 性能索引
         indexes = [
             "CREATE INDEX IF NOT EXISTS idx_documents_source_ids ON documents(source_ids)",

@@ -103,6 +103,7 @@ class App:
             "/stats": "stats", "/sync-status": "stats",
             "/exam": "exam", "/api/users": "users",
             "/documents": "docs", "/search": "docs", "/semantic": "docs",
+            "/api/telemedicine": "telemedicine", "/api/prescriptions": "prescriptions",
         }
         _action_map = {"GET": "read", "POST": "create", "PUT": "update", "DELETE": "delete"}
         _public_paths = ("/auth/login", "/web/", "/health", "/api/info",
@@ -1199,6 +1200,59 @@ class App:
             from .tenants import list_members
             tid = _safe_int([parts[2]], 0)
             return 200, {"members": list_members(store, tid)}
+
+        # 0.9.2 远程医疗 —— 视频问诊信令
+        if method == "POST" and path == "/api/telemedicine/rooms":
+            from .telemedicine import create_room
+            result = create_room(store, body.get("appointment_id", 0))
+            return 201, result
+        if method == "GET" and path.startswith("/api/telemedicine/rooms/"):
+            from .telemedicine import get_room
+            room_id = path[len("/api/telemedicine/rooms/"):]
+            room = get_room(store, room_id)
+            if not room:
+                return 404, {"error": "room not found"}
+            return 200, room
+        if method == "POST" and path.startswith("/api/telemedicine/rooms/") and path.endswith("/offer"):
+            from .telemedicine import set_offer
+            room_id = path[len("/api/telemedicine/rooms/"):-len("/offer")]
+            set_offer(store, room_id, body.get("offer", ""))
+            return 200, {"status": "ok"}
+        if method == "POST" and path.startswith("/api/telemedicine/rooms/") and path.endswith("/answer"):
+            from .telemedicine import set_answer
+            room_id = path[len("/api/telemedicine/rooms/"):-len("/answer")]
+            set_answer(store, room_id, body.get("answer", ""))
+            return 200, {"status": "ok"}
+        if method == "POST" and path.startswith("/api/telemedicine/rooms/") and path.endswith("/end"):
+            from .telemedicine import end_call
+            room_id = path[len("/api/telemedicine/rooms/"):-len("/end")]
+            end_call(store, room_id)
+            return 200, {"status": "ok"}
+
+        # 0.9.2 远程医疗 —— 电子处方
+        if method == "POST" and path == "/api/prescriptions":
+            from .telemedicine import create_prescription
+            pid = create_prescription(
+                store,
+                body.get("consultation_id", 0),
+                body.get("doctor_id", 0),
+                body.get("patient_id", 0),
+                body.get("items", []))
+            return 201, {"prescription_id": pid}
+        if method == "GET" and path == "/api/prescriptions":
+            from .telemedicine import list_prescriptions
+            pid = qs.get("patient_id", [None])[0]
+            patient_id = int(pid) if (pid and pid.isdigit()) else 0
+            return 200, {"prescriptions": list_prescriptions(store, patient_id)}
+        if method == "GET" and path.startswith("/api/prescriptions/") and len(parts) == 3:
+            from .telemedicine import get_prescription
+            pid = _safe_int([parts[2]], 0)
+            if not pid:
+                return 400, {"error": "invalid id"}
+            presc = get_prescription(store, pid)
+            if not presc:
+                return 404, {"error": "not found"}
+            return 200, presc
 
         return 404, {"error": "not found"}
 
