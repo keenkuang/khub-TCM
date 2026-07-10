@@ -1381,6 +1381,34 @@ class App:
             result = assess(body.get("answers", {}))
             return 200, result
 
+        # 2.3 clinic saas
+        if method == "POST" and path == "/api/clinic/billings":
+            from .clinic.billing import create_billing
+            bid = create_billing(store, body.get("appointment_id", 0), body.get("patient_id", 0),
+                                 body.get("items", []), method=body.get("method", ""))
+            return 201, {"billing_id": bid}
+        if method == "GET" and path == "/api/clinic/billings":
+            from .clinic.billing import list_billings
+            return 200, {"billings": list_billings(store, patient_id=int(qs.get("patient_id", [0])[0]))}
+        if method == "POST" and path.startswith("/api/clinic/billings/") and path.endswith("/pay"):
+            from .clinic.billing import pay
+            _parts = path.strip("/").split("/")
+            bid = _safe_int([_parts[3]], 0)
+            pay(store, bid, float(body.get("amount", 0)), method=body.get("method", "cash"))
+            return 200, {"status": "paid"}
+        if method == "POST" and path == "/api/clinic/inventory":
+            from .clinic.pharmacy import add_stock
+            iid = add_stock(store, body.get("herb_name", ""), int(body.get("qty", 0)),
+                            unit=body.get("unit", "g"), price=float(body.get("price", 0)))
+            return 201, {"inventory_id": iid}
+        if method == "GET" and path == "/api/clinic/inventory":
+            from .clinic.pharmacy import list_inventory
+            return 200, {"inventory": list_inventory(store, low_stock=qs.get("low_stock", [""])[0] == "1")}
+        if method == "POST" and path == "/api/clinic/dispense":
+            from .clinic.pharmacy import dispense
+            did = dispense(store, body.get("prescription_id", 0), body.get("items", []))
+            return 201, {"dispense_id": did}
+
         return 404, {"error": "not found"}
 
     @staticmethod

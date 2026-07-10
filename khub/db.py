@@ -338,6 +338,24 @@ class Store:
             agent_ids TEXT NOT NULL, description TEXT,
             created_at TEXT DEFAULT (datetime('now')))""")
         _atrig2(self.conn, "agent_pipelines")
+        # 2.3 中医诊所 SaaS——计费 + 药房
+        from .replication import install_triggers as _ctrig2
+        self.conn.execute("""CREATE TABLE IF NOT EXISTS billings (
+            id INTEGER PRIMARY KEY, appointment_id INTEGER, patient_id INTEGER,
+            items TEXT, total REAL, paid REAL, method TEXT DEFAULT '',
+            status TEXT DEFAULT 'pending', invoice_no TEXT,
+            created_at TEXT DEFAULT (datetime('now')))""")
+        _ctrig2(self.conn, "billings")
+        self.conn.execute("""CREATE TABLE IF NOT EXISTS pharmacy_inventory (
+            id INTEGER PRIMARY KEY, herb_name TEXT NOT NULL UNIQUE,
+            stock INTEGER DEFAULT 0, unit TEXT DEFAULT 'g', alert_level INTEGER DEFAULT 100,
+            price_per_unit REAL DEFAULT 0, created_at TEXT DEFAULT (datetime('now')))""")
+        _ctrig2(self.conn, "pharmacy_inventory")
+        self.conn.execute("""CREATE TABLE IF NOT EXISTS pharmacy_dispenses (
+            id INTEGER PRIMARY KEY, prescription_id INTEGER,
+            items TEXT, status TEXT DEFAULT 'pending',
+            dispensed_at TEXT, created_at TEXT DEFAULT (datetime('now')))""")
+        _ctrig2(self.conn, "pharmacy_dispenses")
 
     def _migrate(self):
         cols = {r["name"] for r in self.conn.execute("PRAGMA table_info(documents)")}
