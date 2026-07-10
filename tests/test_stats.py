@@ -13,6 +13,9 @@ def test_stats_endpoint():
     store = Store(":memory:")
     lib = ManagedLibrary(d + "/lib")
     app = App(store, lib)
+    # 初始化 ops 表以支持运营统计断言
+    from khub.ops.store import init as ops_init
+    ops_init(store)
     # 添加几篇不同来源的文档
     store.store_document(
         CanonicalDoc(
@@ -37,6 +40,9 @@ def test_stats_endpoint():
     assert obj["total"] == 2
     assert "sources" in obj
     assert "obsidian" in obj["sources"]
+    # 运营统计（表存在时应含字段）
+    assert "appointments_by_status" in obj
+    assert "schedules_coverage" in obj
 
 
 def test_stats_recent_is_list():

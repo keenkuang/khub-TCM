@@ -68,6 +68,21 @@ def build_parser():
     pb.add_argument("date")
     pb.add_argument("doctor")
 
+    po = sub.add_parser("ops-list", help="列出预约")
+    po.add_argument("--date", default="")
+    po.add_argument("--doctor", default="")
+    po.add_argument("--status", default="")
+
+    pc = sub.add_parser("ops-cancel", help="取消预约")
+    pc.add_argument("appointment_id", type=int)
+
+    pr = sub.add_parser("ops-reschedule", help="改约")
+    pr.add_argument("appointment_id", type=int)
+    pr.add_argument("new_date")
+
+    ps = sub.add_parser("ops-schedule", help="新建排班")
+    ps.add_argument("date"); ps.add_argument("doctor"); ps.add_argument("slot")
+
     pt = sub.add_parser("twin-summary", help="生成患者数字孪生摘要")
     pt.add_argument("patient_id")
 
@@ -327,6 +342,27 @@ def main(argv=None):
     elif args.cmd == "ops-book":
         aid = book_appointment(store, args.patient_id, args.date, args.doctor)
         print(aid)
+    elif args.cmd == "ops-list":
+        from .ops.store import list_appointments
+        apts = list_appointments(store, date=args.date or None)
+        print(f"预约：{len(apts)} 条")
+        for a in apts:
+            print(f"  #{a['id']} 患者{a['patient_id']} {a['date']} {a['doctor']} [{a['status']}]")
+    elif args.cmd == "ops-cancel":
+        from .ops.store import cancel_appointment
+        cancel_appointment(store, args.appointment_id)
+        print(f"预约 #{args.appointment_id} 已取消")
+    elif args.cmd == "ops-reschedule":
+        from .ops.store import reschedule_appointment
+        new_id = reschedule_appointment(store, args.appointment_id, args.new_date)
+        print(f"已改约：原 #{args.appointment_id} → 新预约 #{new_id}")
+    elif args.cmd == "ops-schedule":
+        from .ops.store import add_schedule
+        try:
+            sid = add_schedule(store, args.date, args.doctor, args.slot)
+            print(f"排班 #{sid} 已创建")
+        except ValueError as e:
+            print(f"排班失败：{e}")
     elif args.cmd == "twin-summary":
         print(build_summary(store, args.patient_id))
     elif args.cmd == "twin" and args.twin_cmd == "refresh":

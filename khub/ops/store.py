@@ -20,6 +20,11 @@ def init(store: Store):
 
 def add_schedule(store, date, doctor, slot) -> int:
     init(store)
+    existing = store.conn.execute(
+        "SELECT id FROM schedules WHERE date=? AND doctor=? AND slot=?",
+        (date, doctor, slot)).fetchone()
+    if existing:
+        raise ValueError(f"排班冲突：{date} {doctor} {slot}")
     cur = store.conn.execute(
         "INSERT INTO schedules(date, doctor, slot) VALUES(?,?,?)", (date, doctor, slot))
     sid = cur.lastrowid
@@ -84,3 +89,41 @@ def list_appointments(store, date=None):
     else:
         rows = store.conn.execute("SELECT * FROM appointments ORDER BY id").fetchall()
     return [dict(r) for r in rows]
+
+
+def list_schedules(store, date=None):
+    if date:
+        rows = store.conn.execute(
+            "SELECT * FROM schedules WHERE date=? ORDER BY id", (date,)).fetchall()
+    else:
+        rows = store.conn.execute("SELECT * FROM schedules ORDER BY id").fetchall()
+    return [dict(r) for r in rows]
+
+
+def cancel_appointment(store, id):
+    store.conn.execute(
+        "UPDATE appointments SET status='cancelled' WHERE id=?", (id,))
+    store.conn.commit()
+
+
+def mark_no_show(store, appointment_id):
+    store.conn.execute(
+        "UPDATE appointments SET status='no_show' WHERE id=?", (appointment_id,))
+    store.conn.commit()
+
+
+def complete_visit(store, appointment_id):
+    store.conn.execute(
+        "UPDATE appointments SET status='completed' WHERE id=?", (appointment_id,))
+    store.conn.commit()
+
+
+def reschedule_appointment(store, id, new_date):
+    row = store.conn.execute(
+        "SELECT patient_id, doctor FROM appointments WHERE id=?", (id,)).fetchone()
+    if not row:
+        raise ValueError("预约不存在")
+    store.conn.execute(
+        "UPDATE appointments SET status='cancelled' WHERE id=?", (id,))
+    new_id = book_appointment(store, row["patient_id"], new_date, row["doctor"])
+    return new_id

@@ -17,6 +17,7 @@
     <button class="ghost" onclick="loadAll()">全部文档</button>
     <button class="ghost" onclick="loadConflicts()">冲突</button>
     <button class="ghost" onclick="loadSyncStatus()">同步状态</button>
+    <button class="ghost" onclick="showView('ops');return false">运营</button>
     <select id="sourceFilter" style="padding:6px 8px;border:1px solid #ccd;border-radius:6px;font-size:13px">
       <option value="">所有来源</option>
       <option value="obsidian">秘方</option>
@@ -25,6 +26,14 @@
       <option value="quip">Quip</option>
       <option value="kzocr">KZOCR</option>
     </select>
+  </div>
+  <div id="ops-panel" style="display:none">
+    <h2>运营管理</h2>
+    <div class="ops-nav">
+      <button onclick="loadSchedules()">排班</button>
+      <button onclick="loadAppointments()">预约</button>
+    </div>
+    <div id="ops-content">点击上方按钮加载数据</div>
   </div>
   <div id="results"></div>
 </div>

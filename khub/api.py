@@ -123,7 +123,7 @@ class App:
             recent = cur.execute(
                 "SELECT canonical_id, title, updated_at FROM documents "
                 "ORDER BY updated_at DESC LIMIT 5").fetchall()
-            return 200, {
+            stats = {
                 "total": total,
                 "sources": source_counts,
                 "today": today_count,
@@ -134,6 +134,23 @@ class App:
                 "recent": [{"id": r["canonical_id"], "title": r["title"], "at": r["updated_at"]}
                            for r in recent],
             }
+            # 运营统计（表不存在时容错）
+            try:
+                from khub.ops.store import book_appointment as _unused_ops
+                apts = cur.execute(
+                    "SELECT status, count(*) as c FROM appointments GROUP BY status").fetchall()
+                slots_total = cur.execute("SELECT count(*) FROM schedules").fetchone()[0] or 0
+                slots_booked = cur.execute(
+                    "SELECT count(*) FROM appointments WHERE status IN ('booked','checked_in')").fetchone()[0] or 0
+                stats["appointments_by_status"] = {r["status"]: r["c"] for r in apts}
+                stats["schedules_coverage"] = {
+                    "total_slots": slots_total,
+                    "booked_slots": slots_booked,
+                    "utilization": round(slots_booked / max(slots_total, 1), 4)
+                }
+            except Exception:  # nosec B110 — ops 表可能未创建
+                pass
+            return 200, stats
 
         if method == "GET" and path == "/ebooks":
             return 200, self.store.list_ebooks()
@@ -262,6 +279,15 @@ class App:
             new_content = (body or {}).get("content", "").strip()
             if not title or not new_content:
                 return 400, {"error": "title 与 content 必填"}
+            fmt = body.get("format")
+            if not fmt:
+                doc_row = self.store.conn.execute(
+                    "SELECT current_version FROM documents WHERE canonical_id=?", (cid,)).fetchone()
+                if doc_row and doc_row["current_version"]:
+                    cur_ver = self.store.get_version(cid, doc_row["current_version"])
+                    fmt = (cur_ver or {}).get("format", "plain")
+                else:
+                    fmt = "plain"
             doc = CanonicalDoc(
                 canonical_id=cid,
                 title=title,
@@ -269,7 +295,7 @@ class App:
                 source="webui",
                 source_id="",
                 origin="webui",
-                format=body.get("format", "plain"),
+                format=fmt,
                 updated_at=time.strftime("%Y-%m-%dT%H:%M:%S"),
             )
             version_id = self.store.store_document(doc)
@@ -461,6 +487,11 @@ class App:
             from .ops.store import list_appointments
             date = qs.get("date", [None])[0]
             return 200, list_appointments(self.store, date)
+
+        if method == "GET" and path == "/ops/schedules":
+            from .ops.store import list_schedules
+            date = qs.get("date", [None])[0]
+            return 200, {"schedules": list_schedules(self.store, date)}
 
         # 0.2.7 clinical 增强 — 孪生摘要
         if method == "GET" and path.startswith("/twin/") and len(path) > len("/twin/"):

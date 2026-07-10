@@ -307,4 +307,19 @@ mark { background: var(--mark-bg); padding: 0 2px; border-radius: 2px; }
   .ai-panel { width: calc(100vw - 32px); max-height: 70vh; right: 16px; bottom: 80px; }
   .fab { width: 44px; height: 44px; font-size: 22px; right: 16px; bottom: 16px; }
   .ai-panel .msg { font-size: 13px; }
+  .ops-table { font-size: 12px; }
+  .ops-table th, .ops-table td { padding: 4px 6px; }
+  .ops-nav { flex-direction: column; gap: 4px; }
 }
+
+/* 运营面板 */
+#ops-panel { margin-top: 14px; }
+#ops-panel h2 { font-size: 18px; color: var(--text); margin: 0 0 10px; }
+.ops-nav { display: flex; gap: 8px; margin-bottom: 12px; }
+.ops-nav button { padding: 8px 16px; }
+.ops-table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+.ops-table th { background: var(--card-bg); padding: 8px 10px; text-align: left; font-size: 13px; font-weight: 600; border-bottom: 2px solid var(--border); color: var(--text); }
+.ops-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); font-size: 13px; }
+.ops-table tr:hover { background: rgba(0,0,0,0.02); }
+[data-theme="dark"] .ops-table tr:hover { background: rgba(255,255,255,0.03); }
+.ops-table button { padding: 3px 8px; font-size: 11px; margin: 1px; }

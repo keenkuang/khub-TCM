@@ -94,6 +94,8 @@ async function loadDoc(id, title) {
 }
 
 async function search(q, source) {
+  if (window._searchAbort) window._searchAbort.abort();
+  window._searchAbort = new AbortController();
   if (q === undefined) q = document.getElementById('q').value.trim();
   if (!q) return;
   currentPage = 0;  // 新查询重置分页
@@ -101,7 +103,7 @@ async function search(q, source) {
   lastSource = source !== undefined ? source : document.getElementById('sourceFilter').value;
   renderSkeletons(3, 'list');
   try {
-    const r = await fetch('/search?q=' + encodeURIComponent(q) + '&page=' + currentPage + '&per=' + PER_PAGE + '&source=' + encodeURIComponent(lastSource)).then(x => x.json());
+    const r = await fetch('/search?q=' + encodeURIComponent(q) + '&page=' + currentPage + '&per=' + PER_PAGE + '&source=' + encodeURIComponent(lastSource), { signal: window._searchAbort.signal }).then(x => x.json());
     box.innerHTML = '';
     if (!r.total) { box.innerHTML = '<p class="meta">无结果</p>'; return; }
     const h = document.createElement('h2'); h.textContent = '命中 ' + r.total + ' 篇';
@@ -109,14 +111,16 @@ async function search(q, source) {
     r.hits.forEach(d => box.appendChild(card(d, true, q)));
     const pag = renderPagination(r.total, currentPage, PER_PAGE, q, lastSource);
     if (pag) box.appendChild(pag);
-  } catch (e) { box.innerHTML = '<p class="meta">搜索失败: ' + esc(e.message) + '</p>'; }
+  } catch (e) { if (e.name !== 'AbortError') box.innerHTML = '<p class="meta">搜索失败: ' + esc(e.message) + '</p>'; }
 }
 
 async function semantic() {
+  if (window._searchAbort) window._searchAbort.abort();
+  window._searchAbort = new AbortController();
   const q = document.getElementById('q').value.trim(); if (!q) return;
   renderSkeletons(3, 'list');
   try {
-    const r = await fetch('/semantic?q=' + encodeURIComponent(q)).then(x => x.json());
+    const r = await fetch('/semantic?q=' + encodeURIComponent(q), { signal: window._searchAbort.signal }).then(x => x.json());
     box.innerHTML = '';
     const h = document.createElement('h2'); h.textContent = '语义检索（向量 / ANN）'; box.appendChild(h);
     if (!r.length) { box.innerHTML += '<p class="meta">无结果</p>'; return; }
@@ -127,7 +131,7 @@ async function semantic() {
       el.innerHTML = '<h3>' + esc(titles[d.doc_id] || d.doc_id) + '</h3><div class="meta">' + esc(d.doc_id) + ' · 相似度 ' + d.score + '</div>';
       el.style.cursor = 'pointer'; el.onclick = () => loadDoc(d.doc_id, titles[d.doc_id] || d.doc_id); box.appendChild(el);
     });
-  } catch (e) { box.innerHTML = '<p class="meta">检索失败: ' + esc(e.message) + '</p>'; }
+  } catch (e) { if (e.name !== 'AbortError') box.innerHTML = '<p class="meta">检索失败: ' + esc(e.message) + '</p>'; }
 }
 
 async function loadAll() {
@@ -445,6 +449,81 @@ function toggleTheme() {
   document.documentElement.dataset.theme = next;
   localStorage.setItem('khub-theme', next);
 }
+
+// ── 运营 UI ──
+function showView(name) {
+  document.getElementById('ops-panel').style.display = name === 'ops' ? 'block' : 'none';
+  document.getElementById('results').style.display = name === 'ops' ? 'none' : 'block';
+  if (name === 'ops') document.getElementById('stats').style.display = 'none';
+  else document.getElementById('stats').style.display = 'flex';
+}
+
+function showToast(msg) { toast(msg); }
+
+async function loadSchedules(date) {
+  const box = document.getElementById('ops-content');
+  box.innerHTML = '<p class="meta">加载中…</p>';
+  const url = '/ops/schedules' + (date ? '?date=' + encodeURIComponent(date) : '');
+  try {
+    const r = await fetch(url).then(x => x.json());
+    let html = '<h3>排班表</h3><table class="ops-table"><tr><th>日期</th><th>医生</th><th>时段</th></tr>';
+    for (const s of (r.schedules || r)) {
+      html += '<tr><td>' + esc(s.date||'') + '</td><td>' + esc(s.doctor||'') + '</td><td>' + esc(s.slot||'') + '</td></tr>';
+    }
+    html += '</table>';
+    box.innerHTML = html;
+  } catch(e) { box.innerHTML = '<p class="meta">加载失败: ' + esc(e.message) + '</p>'; }
+}
+
+async function loadAppointments(date, status) {
+  const box = document.getElementById('ops-content');
+  box.innerHTML = '<p class="meta">加载中…</p>';
+  let params = new URLSearchParams();
+  if (date) params.set('date', date);
+  if (status) params.set('status', status);
+  const url = '/ops/appointments' + (params.toString() ? '?' + params.toString() : '');
+  try {
+    const r = await fetch(url).then(x => x.json());
+    const list = r.appointments || r;
+    let html = '<h3>预约列表</h3><table class="ops-table"><tr><th>ID</th><th>患者</th><th>日期</th><th>医生</th><th>状态</th><th>操作</th></tr>';
+    for (const a of list) {
+      const sid = a.id || a.appointment_id;
+      html += '<tr><td>' + esc(sid) + '</td><td>' + esc(a.patient_id||'') + '</td><td>' + esc(a.date||'') + '</td><td>' + esc(a.doctor||'') + '</td><td>' + esc(a.status||'') + '</td>';
+      html += '<td>';
+      if (a.status === 'booked') html += '<button onclick="doCheckin(' + sid + ')">签到</button> <button onclick="doCancel(' + sid + ')">取消</button>';
+      else if (a.status === 'checked_in') html += '<button onclick="doComplete(' + sid + ')">完成</button> <button onclick="doNoShow(' + sid + ')">缺诊</button>';
+      html += '</td></tr>';
+    }
+    html += '</table>';
+    box.innerHTML = html;
+  } catch(e) { box.innerHTML = '<p class="meta">加载失败: ' + esc(e.message) + '</p>'; }
+}
+
+async function doCheckin(id) {
+  try {
+    const r = await fetch('/ops/visits', {method:'POST', body:JSON.stringify({appointment_id:id}),
+      headers:{'Content-Type':'application/json'}}).then(x=>x.json());
+    showToast('签到成功'); loadAppointments();
+  } catch(e) { showToast('签到失败'); }
+}
+
+async function doCancel(id) {
+  showToast('取消功能需后端支持，请使用 CLI: khub ops-cancel ' + id);
+}
+
+async function doComplete(id) { showToast('完成功能待实现'); }
+async function doNoShow(id) { showToast('标记缺诊待实现'); }
+
+// ── 键盘快捷键 ──
+document.addEventListener('keydown', function(e) {
+  if (e.key === '/' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
+    e.preventDefault(); document.getElementById('q').focus();
+  }
+  if (e.key === 'Escape') {
+    document.getElementById('q').value = '';
+    document.getElementById('q').blur();
+  }
+});
 
 // ── 初始化 ──
 initTheme();
