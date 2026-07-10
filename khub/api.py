@@ -51,17 +51,27 @@ class App:
 
     def dispatch(self, method: str, raw_path: str, body: Optional[dict] = None,
                  auth_header: str = ""):
-        # 鉴权（可选，由 KHUB_API_TOKEN 环境变量控制）：一旦配置，所有方法（含读）均需 Bearer 令牌，
-        # 避免本地任意进程裸读病历/问诊等 PII。未配置则不鉴权（仅本地使用）。
-        token = os.environ.get("KHUB_API_TOKEN")
-        if token and auth_header != f"Bearer {token}":
-            return 401, {"error": "unauthorized"}
-        # 请求计数器
-        _REQUESTS[method] = _REQUESTS.get(method, 0) + 1
         parsed = urlparse(raw_path)
         path = parsed.path
         qs = parse_qs(parsed.query)
         body = body or {}
+        # 0.3.0 auth: /auth/login 允许匿名访问
+        if method == "POST" and path == "/auth/login":
+            from .auth import authenticate, issue_token
+            user = authenticate(self.store, body.get("username", ""), body.get("password", ""))
+            if not user:
+                return 401, {"error": "用户名或密码错误"}
+            token = issue_token(self.store, user["user_id"])
+            return 200, {"token": token, "user": user}
+        # 鉴权
+        from .auth import get_current_user
+        current_user = get_current_user(self.store, auth_header)
+        if not current_user:
+            return 401, {"error": "unauthorized"}
+        # 将当前用户存入请求上下文供后续端点使用
+        setattr(self, "_current_user", current_user)
+        # 请求计数器
+        _REQUESTS[method] = _REQUESTS.get(method, 0) + 1
 
         # ---- Static file serving (web/ directory, path traversal protected) ----
         if method == "GET" and path.startswith("/web/"):
@@ -231,17 +241,17 @@ class App:
             source = qs.get("source", [""])[0]
             tag_filter = qs.get("tag", [None])[0]
             if tag_filter:
-                tagged_ids = [r["doc_id"] for r in store.conn.execute(
+                tagged_ids = [r["doc_id"] for r in self.store.conn.execute(
                     "SELECT doc_id FROM doc_tags WHERE tag=?", (tag_filter,)).fetchall()]
                 if not tagged_ids:
                     return 200, {"hits": [], "total": 0, "page": page, "per_page": per}
-                hits, total = store.search(q, page=page, per_page=per, source=source)
+                hits, total = self.store.search(q, page=page, per_page=per, source=source)
                 id_set = set(tagged_ids)
                 hits = [(d, t, s) for d, t, s in hits if d in id_set]
                 total = len(hits)
                 hits = hits[page * per: (page + 1) * per]
             else:
-                hits, total = store.search(q, page=page, per_page=per, source=source)
+                hits, total = self.store.search(q, page=page, per_page=per, source=source)
             return 200, {"hits": [{"doc_id": d, "title": t, "snippet": s}
                                    for d, t, s in hits],
                          "total": total, "page": page, "per_page": per}
@@ -643,13 +653,13 @@ class App:
                 return 400, {"error": "source and source_id required"}
             if not text:
                 if source == "record":
-                    row = store.conn.execute(
+                    row = self.store.conn.execute(
                         "SELECT diagnosis, prescription FROM records WHERE id=?", (source_id,)
                     ).fetchone()
                     if row:
                         text = f"{row['diagnosis'] or ''} {row['prescription'] or ''}"
                 elif source == "consult":
-                    row = store.conn.execute(
+                    row = self.store.conn.execute(
                         "SELECT chief_complaint, differentiation FROM consultations WHERE id=?", (source_id,)
                     ).fetchone()
                     if row:
@@ -796,8 +806,19 @@ class App:
                                body.get("publish_at",""), int(body.get("tag_id",0)))
             return 201, {"schedule_id": sid}
         if method == "GET" and path == "/api/wechat/followers":
-            rows = store.conn.execute("SELECT openid, nickname, city, province, subscribe FROM wechat_followers ORDER BY last_sync_at DESC LIMIT 100").fetchall()
+            rows = self.store.conn.execute("SELECT openid, nickname, city, province, subscribe FROM wechat_followers ORDER BY last_sync_at DESC LIMIT 100").fetchall()
             return 200, {"followers": rows}
+
+        # 0.3.0 auth
+        if method == "POST" and path == "/auth/logout":
+            from .auth import revoke_token
+            token = (auth_header or "").removeprefix("Bearer ")
+            if token:
+                revoke_token(self.store, token)
+            return 200, {"status": "ok"}
+        if method == "GET" and path == "/auth/me":
+            cu = getattr(self, "_current_user", None)
+            return 200, {"user": cu}
 
         return 404, {"error": "not found"}
 
@@ -848,8 +869,9 @@ def make_handler(app: App):
 
         def _send_sse(self, body):
             """处理 SSE 流式问答请求。body: dict"""
-            token = os.environ.get("KHUB_API_TOKEN")
-            if token and self.headers.get("Authorization", "") != f"Bearer {token}":
+            from .auth import get_current_user
+            cu = get_current_user(app.store, self.headers.get("Authorization", ""))
+            if not cu:
                 return self._send(401, {"error": "unauthorized"})
 
             question = (body or {}).get("question", "").strip()

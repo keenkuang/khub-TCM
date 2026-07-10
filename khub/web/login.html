@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>登录 — kHUB</title>
+<style>
+  body{margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,sans-serif;
+       background:#f5f5f5;display:flex;justify-content:center;align-items:center;min-height:100vh}
+  .login-box{background:#fff;padding:40px;border-radius:12px;box-shadow:0 2px 12px rgba(0,0,0,0.1);width:360px;max-width:90vw}
+  h1{margin:0 0 24px;font-size:24px;text-align:center;color:#333}
+  label{display:block;margin:12px 0 4px;color:#555;font-size:14px}
+  input{width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:6px;font-size:16px;box-sizing:border-box}
+  input:focus{outline:none;border-color:#4488cc}
+  button{margin-top:20px;width:100%;padding:12px;background:#4488cc;color:#fff;border:none;border-radius:6px;font-size:16px;cursor:pointer}
+  button:hover{background:#336699}
+  .error{color:#cc4444;font-size:14px;margin-top:8px;text-align:center}
+  .hint{color:#888;font-size:12px;text-align:center;margin-top:16px}
+</style></head><body>
+<div class="login-box">
+  <h1>kHUB 登录</h1>
+  <form id="loginForm">
+    <label>用户名</label><input id="username" type="text" placeholder="admin" autocomplete="username" required>
+    <label>密码</label><input id="password" type="password" placeholder="••••••••" autocomplete="current-password" required>
+    <button type="submit">登录</button>
+    <div id="loginError" class="error"></div>
+  </form>
+  <div class="hint">kHUB 个人知识中枢</div>
+</div>
+<script>
+document.getElementById('loginForm').onsubmit = async function(e) {
+  e.preventDefault();
+  const username = document.getElementById('username').value;
+  const password = document.getElementById('password').value;
+  const errorEl = document.getElementById('loginError');
+  errorEl.textContent = '';
+  try {
+    const r = await fetch('/auth/login', {
+      method:'POST', body:JSON.stringify({username,password}),
+      headers:{'Content-Type':'application/json'}
+    });
+    const j = await r.json();
+    if (r.ok) {
+      localStorage.setItem('khub_token', j.token);
+      localStorage.setItem('khub_user', JSON.stringify(j.user));
+      window.location.href = '/';
+    } else {
+      errorEl.textContent = j.error || '登录失败';
+    }
+  } catch(e) { errorEl.textContent = '网络错误'; }
+};
+</script></body></html>

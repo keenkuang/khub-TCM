@@ -38,6 +38,14 @@ def build_parser():
     ps.add_argument("--host", default="127.0.0.1")
     ps.add_argument("--port", type=int, default=8000)
 
+    pla = sub.add_parser("login", help="登录 kHUB")
+    pla.add_argument("username", nargs="?", default="")
+    pla.add_argument("--server", default="http://127.0.0.1:8765", help="服务器地址")
+
+    plo = sub.add_parser("logout", help="注销当前用户")
+
+    pw = sub.add_parser("whoami", help="显示当前用户")
+
     pq = sub.add_parser("query", help="全文检索本地知识库")
     pq.add_argument("keywords", nargs="+")
 
@@ -362,6 +370,63 @@ def main(argv=None):
     elif args.cmd == "ingest":
         vid = ingest_ebook(store, args.canonical_id)
         print(f"{args.canonical_id} -> version {vid}")
+    elif args.cmd == "login":
+        import getpass
+        username = args.username or input("用户名: ").strip()
+        password = getpass.getpass("密码: ")
+        server = args.server
+        import urllib.request, json
+        req = urllib.request.Request(f"{server}/auth/login",
+                                     data=json.dumps({"username": username, "password": password}).encode(),
+                                     headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read())
+            cred_dir = os.path.expanduser("~/.khub")
+            os.makedirs(cred_dir, exist_ok=True)
+            with open(os.path.join(cred_dir, "credentials"), "w") as f:
+                f.write(f"KHUB_TOKEN={data['token']}\nKHUB_USER={username}\n")
+            os.chmod(os.path.join(cred_dir, "credentials"), 0o600)
+            print(f"登录成功！欢迎 {data.get('user', {}).get('display_name', username)}")
+        except urllib.error.HTTPError as e:
+            print(f"登录失败：{e.code} {e.read().decode()}")
+        except Exception as e:
+            print(f"连接失败：{e}")
+    elif args.cmd == "logout":
+        token = ""
+        try:
+            with open(os.path.expanduser("~/.khub/credentials")) as f:
+                for line in f:
+                    if line.startswith("KHUB_TOKEN="):
+                        token = line.split("=", 1)[1].strip()
+        except Exception: pass
+        if token:
+            import urllib.request, json
+            try:
+                req = urllib.request.Request(f"http://127.0.0.1:8765/auth/logout",
+                                             data=b"{}", headers={"Content-Type": "application/json",
+                                                                  "Authorization": f"Bearer {token}"})
+                urllib.request.urlopen(req, timeout=5)
+            except Exception: pass
+        cred_file = os.path.expanduser("~/.khub/credentials")
+        if os.path.isfile(cred_file):
+            os.remove(cred_file)
+        print("已注销")
+    elif args.cmd == "whoami":
+        # 简单读取本地凭证
+        username = os.environ.get("KHUB_USER", "")
+        token = os.environ.get("KHUB_TOKEN", "")
+        if not token:
+            try:
+                with open(os.path.expanduser("~/.khub/credentials")) as f:
+                    for line in f:
+                        if line.startswith("KHUB_USER="): username = line.split("=",1)[1].strip()
+                        if line.startswith("KHUB_TOKEN="): token = line.split("=",1)[1].strip()
+            except Exception: pass
+        if token:
+            print(f"当前用户：{username or '(未知)'}")
+        else:
+            print("未登录。使用 `khub login` 登录")
     elif args.cmd == "serve":
         serve(store, lib, args.host, args.port)
     elif args.cmd == "query":

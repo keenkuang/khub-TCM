@@ -1,8 +1,10 @@
+import binascii
 import sqlite3
 import hashlib
 import json
 import logging
 import os
+import secrets
 import threading
 import time
 from datetime import datetime, timedelta
@@ -140,6 +142,36 @@ class Store:
             tagid_list TEXT DEFAULT '[]', subscribe_scene TEXT DEFAULT '',
             last_sync_at TEXT DEFAULT (datetime('now')))""")
         _wxtrig(self.conn, "wechat_followers")
+        # 0.3.0 多用户鉴权
+        from .replication import install_triggers as _authtrig
+        self.conn.execute("""CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY, username TEXT NOT NULL UNIQUE,
+            password_hash TEXT NOT NULL, display_name TEXT DEFAULT '',
+            role TEXT DEFAULT 'admin', active INTEGER DEFAULT 1,
+            created_at TEXT DEFAULT (datetime('now')))""")
+        # 首次启动创建默认 admin 用户（在 install_triggers 之前，避免 WAL 记录）
+        admin_exists = self.conn.execute(
+            "SELECT 1 FROM users WHERE username='admin'").fetchone()
+        if not admin_exists:
+            pwd = os.environ.get("KHUB_ADMIN_PASSWORD", secrets.token_urlsafe(12))
+            salt = os.urandom(16)
+            dk = hashlib.pbkdf2_hmac("sha256", pwd.encode(), salt, 100000)
+            pwd_hash = binascii.hexlify(salt + dk).decode()
+            self.conn.execute(
+                "INSERT INTO users (username, password_hash, display_name, role) "
+                "VALUES (?, ?, ?, ?)",
+                ("admin", pwd_hash, "系统管理员", "admin"))
+            logging.getLogger("khub.auth").info(
+                "默认 admin 用户已创建，密码: %s", pwd)
+            if not os.environ.get("KHUB_ADMIN_PASSWORD"):
+                print(f"\n⚠ 默认管理员密码：{pwd}"
+                      "  （请登录后修改，或设置 KHUB_ADMIN_PASSWORD 环境变量）\n")
+        _authtrig(self.conn, "users")
+        self.conn.execute("""CREATE TABLE IF NOT EXISTS auth_tokens (
+            id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL,
+            token TEXT NOT NULL UNIQUE, expires_at TEXT,
+            created_at TEXT DEFAULT (datetime('now')))""")
+        _authtrig(self.conn, "auth_tokens")
 
     def _migrate(self):
         cols = {r["name"] for r in self.conn.execute("PRAGMA table_info(documents)")}

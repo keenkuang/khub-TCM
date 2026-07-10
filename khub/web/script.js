@@ -1,3 +1,36 @@
+// ── 登录状态管理 ──
+function getToken() { return localStorage.getItem('khub_token'); }
+
+// 所有 fetch 调用自动附带 Authorization header
+const origFetch = window.fetch;
+window.fetch = function(url, opts) {
+  opts = opts || {};
+  if (!opts.headers) opts.headers = {};
+  const token = getToken();
+  if (token) opts.headers['Authorization'] = 'Bearer ' + token;
+  return origFetch.call(window, url, opts);
+};
+
+// 登录检查（首页加载时）
+async function checkLogin() {
+  const token = getToken();
+  if (!token) { window.location.href = '/web/login.html'; return; }
+  try {
+    const r = await fetch('/auth/me');
+    if (!r.ok) { localStorage.removeItem('khub_token'); window.location.href = '/web/login.html'; }
+  } catch(e) { /* 保留 token 继续尝试 */ }
+}
+
+async function logout() {
+  const token = getToken();
+  if (token) {
+    try { await fetch('/auth/logout', {method:'POST'}); } catch(e) {}
+  }
+  localStorage.removeItem('khub_token');
+  localStorage.removeItem('khub_user');
+  window.location.href = '/web/login.html';
+}
+
 // ── 核心状态 ──
 const box = document.getElementById('results');
 let currentPage = 0;
@@ -571,8 +604,11 @@ document.addEventListener('keydown', function(e) {
 
 // ── 初始化 ──
 initTheme();
-loadStats();
-loadTagFilter();
+checkLogin().then(function() {
+  loadStats();
+  loadTagFilter();
+  loadAll();
+});
 document.getElementById('q').addEventListener('keydown', e => { if (e.key === 'Enter') search(); });
 document.getElementById('ai-send').addEventListener('click', aiAsk);
 aiInput.addEventListener('keydown', e => { if (e.key === 'Enter') aiAsk(); });
