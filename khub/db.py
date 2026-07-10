@@ -320,6 +320,24 @@ class Store:
             created_at TEXT DEFAULT (datetime('now')))""")
         _ctrig(self.conn, "community_comments")
         self.conn.execute("CREATE INDEX IF NOT EXISTS idx_comments_article ON community_comments(article_id)")
+        # 1.1.0 AI Agent 深化——模板市场 + 记忆系统 + 多 Agent 协作
+        from .replication import install_triggers as _atrig2
+        self.conn.execute("""CREATE TABLE IF NOT EXISTS agent_templates (
+            id INTEGER PRIMARY KEY, name TEXT NOT NULL, description TEXT,
+            category TEXT, system_prompt TEXT, tools TEXT, config TEXT,
+            created_at TEXT DEFAULT (datetime('now')))""")
+        _atrig2(self.conn, "agent_templates")
+        self.conn.execute("""CREATE TABLE IF NOT EXISTS agent_memory (
+            id INTEGER PRIMARY KEY, agent_id INTEGER NOT NULL,
+            key TEXT NOT NULL, value TEXT, type TEXT DEFAULT 'string',
+            created_at TEXT DEFAULT (datetime('now')),
+            UNIQUE(agent_id, key))""")
+        _atrig2(self.conn, "agent_memory")
+        self.conn.execute("""CREATE TABLE IF NOT EXISTS agent_pipelines (
+            id INTEGER PRIMARY KEY, name TEXT NOT NULL,
+            agent_ids TEXT NOT NULL, description TEXT,
+            created_at TEXT DEFAULT (datetime('now')))""")
+        _atrig2(self.conn, "agent_pipelines")
 
     def _migrate(self):
         cols = {r["name"] for r in self.conn.execute("PRAGMA table_info(documents)")}

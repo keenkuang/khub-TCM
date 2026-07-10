@@ -1183,6 +1183,37 @@ class App:
             result = run_with_llm(store, aid, user_input=body.get("input",""), current_user=getattr(self,"_current_user",None))
             return 200, result
 
+        # 1.1.0 agents v2 — 模板市场 + 记忆系统 + 多 Agent 协作
+        if method == "GET" and path == "/api/agents/templates":
+            from .agents.templates import list_templates, seed
+            seed(store)
+            cat = qs.get("category", [""])[0]
+            return 200, {"templates": list_templates(store, category=cat)}
+        if method == "POST" and path == "/api/agents/create-from-template":
+            from .agents.templates import create_from_template
+            aid = create_from_template(store, body.get("template_id", 0), name=body.get("name", ""))
+            return 201, {"agent_id": aid}
+        if method == "POST" and path == "/api/agents/memory":
+            from .agents.memory import store as mem_store
+            mem_store(store, body.get("agent_id", 0), body.get("key", ""), body.get("value", ""), type=body.get("type", "string"))
+            return 200, {"status": "stored"}
+        if method == "GET" and path.startswith("/api/agents/") and path.endswith("/memory"):
+            from .agents.memory import list_memory
+            aid = _safe_int([parts[2]], 0)
+            return 200, {"memory": list_memory(store, aid)}
+        if method == "POST" and path == "/api/agents/pipelines":
+            from .agents.pipeline import create_pipeline
+            pid = create_pipeline(store, body.get("name",""), body.get("agent_ids",[]), description=body.get("description",""))
+            return 201, {"pipeline_id": pid}
+        if method == "GET" and path == "/api/agents/pipelines":
+            from .agents.pipeline import list_pipelines
+            return 200, {"pipelines": list_pipelines(store)}
+        if method == "POST" and path.startswith("/api/agents/pipelines/") and path.endswith("/run"):
+            from .agents.pipeline import run as run_pipeline
+            pid = _safe_int([parts[3]], 0)
+            results = run_pipeline(store, pid, input_text=body.get("input",""), current_user=getattr(self,"_current_user",None))
+            return 200, {"results": results}
+
         # 0.9.1 多租户管理（仅 admin）
         cu = getattr(self, "_current_user", None) or current_user
         if not check_permission(cu, "users", "create"):
