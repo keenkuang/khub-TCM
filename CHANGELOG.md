@@ -1,5 +1,29 @@
 # 变更日志
 
+## [0.5.1] — 2026-07-10
+
+### 私有化部署与 OEM 产品化
+
+#### 一键安装
+- `install.sh`：自动检测 OS（Ubuntu/Debian/CentOS），安装 Python/SQLite，创建 khub 用户和数据目录，pip 安装，数据库初始化，配置 systemd 服务
+- 单命令部署：`curl -fsSL https://raw.githubusercontent.com/keenkuang/khub-TCM/master/install.sh | bash`
+
+#### Docker 生产完善
+- Dockerfile 多阶段构建（builder → runtime），减小镜像体积
+- docker-compose.yml 追加生产配置：`restart: always`、`logging`（json-file, 10m/3 文件）、健康检查
+
+#### Helm Chart（K8s 部署）
+- 标准 Helm chart 结构：Chart.yaml、values.yaml、templates/（deployment/service/configmap/ingress/pvc/_helpers）
+- 可配置副本数、镜像、域名、存储大小、环境变量
+
+#### 白标定制
+- `KHUB_BRAND_NAME` / `KHUB_BRAND_LOGO` 环境变量
+- `GET /api/info` 返回品牌信息（名称/版本/logo/uptime）
+- Web UI 前端动态读取品牌信息设置页面标题和 logo
+
+### 测试
+- 新增 `/api/info` 端点测试
+
 ## [0.5.0] — 2026-07-10
 
 ### 中医知识图谱与推理引擎
