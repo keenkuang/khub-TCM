@@ -13,12 +13,16 @@ fetch('/api/info').then(r=>r.json()).then(d=>{
 </script>
 </head>
 <body>
-<header style="position:relative"><img id="brandLogo" style="height:22px;vertical-align:middle;margin-right:6px;display:none" alt="logo">kHUB · 个人知识中枢
+<header style="position:relative"><img id="brandLogo" style="height:22px;vertical-align:middle;margin-right:6px;display:none" alt="logo"><span data-i18n="app.name">kHUB · 个人知识中枢</span>
+  <select id="langSelect" onchange="switchLang(this.value)" style="font-size:12px;background:transparent;color:inherit;border:1px solid var(--border);border-radius:4px;padding:2px 6px;margin:0 8px">
+    <option value="zh">中文</option>
+    <option value="en">English</option>
+  </select>
   <button class="theme-toggle" onclick="toggleTheme()" title="切换深色/浅色模式">🌙</button>
   <button class="ghost" onclick="toggleNotifications()" style="position:relative">
     🔔<span id="notifBadge" style="display:none;position:absolute;top:0;right:-4px;background:#cc4444;color:#fff;border-radius:8px;padding:1px 5px;font-size:10px">0</span>
   </button>
-  <button class="ghost" onclick="logout()" style="margin-left:8px">注销</button>
+  <button class="ghost" onclick="logout()" style="margin-left:8px" data-i18n="nav.logout">注销</button>
   <div id="notifPanel" style="display:none;position:absolute;top:40px;right:12px;width:320px;max-height:400px;overflow-y:auto;background:var(--card-bg);border:1px solid var(--border);border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.15);z-index:100">
     <div style="padding:8px 12px;border-bottom:1px solid var(--border);font-weight:bold">通知 <button class="ghost" onclick="markAllRead()" style="float:right;font-size:12px">全部已读</button></div>
     <div id="notifList"></div>
@@ -28,16 +32,16 @@ fetch('/api/info').then(r=>r.json()).then(d=>{
   <div id="stats" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px"></div>
   <div class="bar">
     <input id="q" type="text" placeholder="全文检索（中文子串，如 桂枝汤 / 麻黄）">
-    <button onclick="search()">检索</button>
+    <button onclick="search()" data-i18n="nav.search">检索</button>
     <button class="ghost" onclick="unifiedSearch()">统一搜索</button>
     <button class="ghost" onclick="semantic()">语义</button>
     <button class="ghost" onclick="loadAll()">全部文档</button>
     <button class="ghost" onclick="loadConflicts()">冲突</button>
     <button class="ghost" onclick="loadSyncStatus()">同步状态</button>
-    <button class="ghost" onclick="showView('ops');return false">运营</button>
-    <button class="ghost" onclick="showView('course');return false">课程</button>
+    <button class="ghost" onclick="showView('ops');return false" data-i18n="nav.ops">运营</button>
+    <button class="ghost" onclick="showView('course');return false" data-i18n="nav.course">课程</button>
     <button class="ghost" onclick="showView('reports');return false">报表</button>
-    <button class="ghost" onclick="showView('admin');return false" id="adminBtn" style="display:none">管理</button>
+    <button class="ghost" onclick="showView('admin');return false" id="adminBtn" style="display:none" data-i18n="nav.admin">管理</button>
     <button class="ghost" onclick="loadFavorites();return false">收藏</button>
     <select id="sourceFilter" style="padding:6px 8px;border:1px solid #ccd;border-radius:6px;font-size:13px">
       <option value="">所有来源</option>

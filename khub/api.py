@@ -75,6 +75,13 @@ class App:
                 return 401, {"error": "用户名或密码错误"}
             token = issue_token(self.store, user["user_id"])
             return 200, {"token": token, "user": user}
+        # i18n — 允许匿名访问（登录页也需要翻译）
+        if method == "GET" and path == "/api/i18n":
+            from .i18n import detect_lang, get_translations
+            al = auth_header or qs.get("lang", [""])[0]
+            lang = detect_lang(al)
+            return 200, {"lang": lang, "translations": get_translations(lang)}
+
         # 鉴权
         from .auth import get_current_user
         current_user = get_current_user(self.store, auth_header)

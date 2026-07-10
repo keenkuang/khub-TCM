@@ -1,3 +1,30 @@
+// ── 国际化 ──
+var _translations = {};
+
+async function loadTranslations() {
+  try {
+    var r = await fetch('/api/i18n').then(function(x){return x.json();});
+    _translations = r.translations || {};
+    document.title = _t('app.name');
+    document.querySelectorAll('[data-i18n]').forEach(function(el){
+      el.textContent = _t(el.getAttribute('data-i18n'));
+    });
+  } catch(e) {}
+}
+
+function _t(key) { return _translations[key] || key; }
+
+async function switchLang(lang) {
+  try {
+    var r = await fetch('/api/i18n?lang=' + lang).then(function(x){return x.json();});
+    _translations = r.translations || {};
+    document.title = _t('app.name');
+    document.querySelectorAll('[data-i18n]').forEach(function(el){
+      el.textContent = _t(el.getAttribute('data-i18n'));
+    });
+  } catch(e) {}
+}
+
 // ── 登录状态管理 ──
 function getToken() { return localStorage.getItem('khub_token'); }
 
@@ -701,6 +728,7 @@ document.addEventListener('keydown', function(e) {
 // ── 初始化 ──
 initTheme();
 checkLogin().then(function() {
+  loadTranslations();
   connectEvents();
   loadStats();
   loadTagFilter();
