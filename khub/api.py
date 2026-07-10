@@ -1019,6 +1019,36 @@ class App:
             mark_all_read(store, uid)
             return 200, {"status": "ok"}
 
+        # 0.6.2 reports
+        if method == "POST" and path == "/api/reports":
+            from .reports import create_template
+            tid = create_template(store, body.get("name", ""), body.get("query", ""),
+                                  description=body.get("description", ""),
+                                  chart_type=body.get("chart_type", "table"))
+            return 201, {"template_id": tid}
+        if method == "GET" and path == "/api/reports":
+            from .reports import list_templates
+            return 200, {"templates": list_templates(store)}
+        if method == "POST" and path.startswith("/api/reports/") and path.endswith("/run"):
+            from .reports import execute
+            tid = _safe_int([parts[2]], 0)
+            if not tid:
+                return 400, {"error": "invalid id"}
+            try:
+                result = execute(store, tid)
+                return 200, result
+            except ValueError as e:
+                return 404, {"error": str(e)}
+            except Exception as e:
+                return 500, {"error": str(e)}
+        if method == "GET" and path.startswith("/api/reports/") and path.endswith("/csv"):
+            from .reports import export_csv
+            tid = _safe_int([parts[2]], 0)
+            if not tid:
+                return 400, {"error": "invalid id"}
+            csv_data = export_csv(store, tid)
+            return 200, csv_data, "text/csv; charset=utf-8"
+
         return 404, {"error": "not found"}
 
     @staticmethod

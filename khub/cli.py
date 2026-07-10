@@ -341,6 +341,19 @@ def build_parser():
     pn = sub.add_parser("notify-list", help="列出通知")
     pn.add_argument("user_id", type=int)
 
+    # 0.6.2 reports
+    pr = sub.add_parser("report-create", help="创建报表模板")
+    pr.add_argument("name"); pr.add_argument("--query", required=True)
+    pr.add_argument("--desc", default=""); pr.add_argument("--type", default="table")
+
+    prl = sub.add_parser("report-list", help="报表模板列表")
+
+    prr = sub.add_parser("report-run", help="运行报表")
+    prr.add_argument("template_id", type=int)
+
+    pre = sub.add_parser("report-export", help="导出报表 CSV")
+    pre.add_argument("template_id", type=int); pre.add_argument("--output", default="")
+
     return ap
 
 
@@ -1225,6 +1238,32 @@ def main(argv=None):
         for n in list_recent(store, args.user_id):
             print(f"  [{n['created_at']}] {'✓' if n['read'] else '○'} {n['title']} — {n['body'] or ''}")
         print(f"未读：{unread_count(store, args.user_id)}")
+    elif args.cmd == "report-create":
+        from .reports import create_template
+        tid = create_template(store, args.name, args.query, description=args.desc, chart_type=args.type)
+        print(f"报表 #{tid} 已创建")
+    elif args.cmd == "report-list":
+        from .reports import list_templates
+        for t in list_templates(store):
+            print(f"  #{t['id']} {t['name']} [{t['chart_type']}]")
+    elif args.cmd == "report-run":
+        from .reports import execute
+        try:
+            r = execute(store, args.template_id)
+            print(f"{r['name']}: {r['row_count']} 行")
+            for row in r['rows'][:5]:
+                print(f"  {row}")
+        except Exception as e:
+            print(f"失败：{e}")
+    elif args.cmd == "report-export":
+        from .reports import export_csv
+        csv_data = export_csv(store, args.template_id)
+        if args.output:
+            with open(args.output, 'w') as f:
+                f.write(csv_data)
+            print(f"已导出到 {args.output}")
+        else:
+            print(csv_data)
     else:
         build_parser().print_help()
 

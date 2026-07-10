@@ -194,6 +194,19 @@ class Store:
             body TEXT, event_type TEXT, resource_type TEXT, resource_id TEXT,
             read INTEGER DEFAULT 0, created_at TEXT DEFAULT (datetime('now')))""")
         _ntrig(self.conn, "notifications")
+        # 0.6.2 高级BI与报表
+        from .replication import install_triggers as _rtrig
+        self.conn.execute("""CREATE TABLE IF NOT EXISTS report_templates (
+            id INTEGER PRIMARY KEY, name TEXT NOT NULL, description TEXT,
+            query TEXT NOT NULL, chart_type TEXT DEFAULT 'table',
+            format TEXT DEFAULT 'table', config TEXT,
+            created_at TEXT DEFAULT (datetime('now')))""")
+        _rtrig(self.conn, "report_templates")
+        self.conn.execute("""CREATE TABLE IF NOT EXISTS report_jobs (
+            id INTEGER PRIMARY KEY, template_id INTEGER, status TEXT DEFAULT 'pending',
+            output TEXT, error TEXT, created_at TEXT DEFAULT (datetime('now')),
+            completed_at TEXT)""")
+        _rtrig(self.conn, "report_jobs")
 
     def _migrate(self):
         cols = {r["name"] for r in self.conn.execute("PRAGMA table_info(documents)")}

@@ -535,12 +535,12 @@ function toggleTheme() {
 
 // ── 运营 UI ──
 function showView(name) {
-  ['ops','course','admin'].forEach(function(v){
+  ['ops','course','admin','reports'].forEach(function(v){
     var el = document.getElementById(v+'-panel');
     if(el) el.style.display = name === v ? 'block' : 'none';
   });
-  document.getElementById('results').style.display = name === 'ops' || name === 'course' || name === 'admin' ? 'none' : 'block';
-  if (name === 'ops' || name === 'course' || name === 'admin') document.getElementById('stats').style.display = 'none';
+  document.getElementById('results').style.display = name === 'ops' || name === 'course' || name === 'admin' || name === 'reports' ? 'none' : 'block';
+  if (name === 'ops' || name === 'course' || name === 'admin' || name === 'reports') document.getElementById('stats').style.display = 'none';
   else document.getElementById('stats').style.display = 'flex';
 }
 
@@ -801,6 +801,89 @@ async function changeRole(uid, role) {
     await fetch('/api/users/'+uid+'/role', {method:'PUT', body:JSON.stringify({role}), headers:{'Content-Type':'application/json'}});
     showToast('角色已更新'); loadUsers();
   } catch(e) { showToast('更新失败'); }
+}
+
+// ── 报表 UI ──
+async function loadDashboard() {
+  var box = document.getElementById('reports-content');
+  box.innerHTML = '<p class="meta">加载中…</p>';
+  try {
+    var r = await fetch('/stats').then(function(x){return x.json();});
+    var html = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">';
+    html += '<div class="card" style="padding:20px"><h3>文档总数</h3><p style="font-size:28px;font-weight:bold;margin:8px 0">' + (r.total||0) + '</p></div>';
+    html += '<div class="card" style="padding:20px"><h3>今日入库</h3><p style="font-size:28px;font-weight:bold;margin:8px 0">' + (r.today||0) + '</p></div>';
+    if (r.appointments_by_status) {
+      var totalApt = Object.values(r.appointments_by_status).reduce(function(a,b){return a+b;}, 0);
+      html += '<div class="card" style="padding:20px"><h3>预约总数</h3><p style="font-size:28px;font-weight:bold;margin:8px 0">' + totalApt + '</p></div>';
+    }
+    if (r.schedules_coverage) {
+      html += '<div class="card" style="padding:20px"><h3>排班利用率</h3><p style="font-size:28px;font-weight:bold;margin:8px 0">' + Math.round((r.schedules_coverage.utilization||0)*100) + '%</p></div>';
+    }
+    html += '</div>';
+    box.innerHTML = html;
+  } catch(e) { box.innerHTML = '<p class="meta">加载失败</p>'; }
+}
+
+async function loadReportTemplates() {
+  var box = document.getElementById('reports-content');
+  box.innerHTML = '<p class="meta">加载中…</p>';
+  try {
+    var r = await fetch('/api/reports').then(function(x){return x.json();});
+    if (!r.templates || !r.templates.length) { box.innerHTML = '<p class="meta">暂无报表模板</p>'; return; }
+    var html = '<table class="ops-table"><tr><th>ID</th><th>名称</th><th>类型</th><th>操作</th></tr>';
+    r.templates.forEach(function(t){
+      html += '<tr><td>' + t.id + '</td><td>' + esc(t.name) + '</td><td>' + esc(t.chart_type) + '</td><td><button onclick="runReport(' + t.id + ')">运行</button> <button onclick="downloadCSV(' + t.id + ')">CSV</button></td></tr>';
+    });
+    html += '</table>'; box.innerHTML = html;
+  } catch(e) { box.innerHTML = '<p class="meta">加载失败</p>'; }
+}
+
+function showReportForm() {
+  var box = document.getElementById('reports-content');
+  box.innerHTML = '<h3>新建报表</h3><div class="edit-form">' +
+    '<p><input id="rp_name" placeholder="报表名称"></p>' +
+    '<p><textarea id="rp_query" placeholder="SQL 查询" rows="4"></textarea></p>' +
+    '<p><select id="rp_type"><option value="table">表格</option><option value="bar">柱状图</option><option value="pie">饼图</option></select></p>' +
+    '<p><input id="rp_desc" placeholder="描述"></p>' +
+    '<p><button onclick="doCreateReport()">创建</button></p></div>';
+}
+
+async function doCreateReport() {
+  try {
+    var r = await fetch('/api/reports', {method:'POST', body:JSON.stringify({
+      name: document.getElementById('rp_name').value,
+      query: document.getElementById('rp_query').value,
+      chart_type: document.getElementById('rp_type').value,
+      description: document.getElementById('rp_desc').value,
+    }), headers:{'Content-Type':'application/json'}}).then(function(x){return x.json();});
+    showToast('报表 #' + r.template_id + ' 已创建'); loadReportTemplates();
+  } catch(e) { showToast('创建失败'); }
+}
+
+async function runReport(id) {
+  var box = document.getElementById('reports-content');
+  box.innerHTML = '<p class="meta">运行中…</p>';
+  try {
+    var r = await fetch('/api/reports/' + id + '/run', {method:'POST'}).then(function(x){return x.json();});
+    if (!r.rows || !r.rows.length) { box.innerHTML = '<p class="meta">无数据</p>'; return; }
+    var html = '<h3>' + esc(r.name) + ' (' + r.row_count + ' 条)</h3><table class="ops-table"><tr>';
+    r.columns.forEach(function(c){html += '<th>' + esc(c) + '</th>';});
+    html += '</tr>';
+    r.rows.forEach(function(row){
+      html += '<tr>';
+      r.columns.forEach(function(c){html += '<td>' + esc(String(row[c]||'')) + '</td>';});
+      html += '</tr>';
+    });
+    html += '</table>'; box.innerHTML = html;
+  } catch(e) { box.innerHTML = '<p class="meta">失败: ' + esc(e.message) + '</p>'; }
+}
+
+async function downloadCSV(id) {
+  try {
+    var r = await fetch('/api/reports/' + id + '/csv').then(function(x){return x.text();});
+    var blob = new Blob([r], {type:'text/csv'});
+    var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'report_' + id + '.csv'; a.click();
+  } catch(e) { showToast('导出失败'); }
 }
 
 loadAll();
