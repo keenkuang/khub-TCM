@@ -44,6 +44,11 @@
 ### 测试
 - 267 passed / 4 skipped（+43 个新增测试，测试覆盖率显著提升）
 
+### CI / 发布工程
+- 新增 `.github/workflows/ci.yml`：push/PR 触发 `bandit -r khub` 安全扫描与 `pytest -m "not slow and not net"` 核心用例（smoke）；默认 `bandit` 命令与核心测试在 CI 中可验证
+- 修复 CI 安装漏装 `importer` 可选组（openpyxl），导致 `TestExcelImport` 6 用例 `ModuleNotFoundError`；安装改为 `[dev,pdf,ann,crypto,importer]`
+- 升级 `actions/checkout` v4→v7、`actions/setup-python` v5→v6，消除 Node.js 20 弃用注解（GitHub Actions runner 已 Node 24）
+
 ## [0.2.4] — 2026-07-09
 
 ### HA/DR：端到端双节点 failover 演练
