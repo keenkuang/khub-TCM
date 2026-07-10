@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  security-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -e ".[dev,pdf,ann,crypto]"
+
+      - name: Security scan (bandit)
+        # 默认 `bandit -r khub` 自动发现 khub/.bandit，预期零告警（退出码 0）
+        run: python -m bandit -r khub/
+
+      - name: Run tests
+        # 跳过重 IO / docker / 网络适配器的 slow、net 标记用例，
+        # 等价于 pytest -m smoke，保证 CI 稳定快速
+        run: python -m pytest -m "not slow and not net" -q
