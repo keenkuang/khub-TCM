@@ -36,7 +36,7 @@ python3 -m pytest --cov=khub -q
 python3 -c "from khub.db import Store; s=Store(':memory:'); print(s)"
 ```
 
-> ⚠️ 测试数量：当前实际 **283** 个用例（README 与 testing.md 中的 182/95 已过时）。
+> ⚠️ 测试数量：当前实际 **502** 个用例（smoke 253 / full+slow+net 249）。
 
 ### pytest marker 分类（已注册并标注于各测试文件）
 

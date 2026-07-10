@@ -4,7 +4,7 @@
 
 ```bash
 cd khub-m1
-python3 -m pytest -q               # 全部（当前 95 个，零依赖零网络）
+python3 -m pytest -q               # 全部（当前 502 个，零依赖零网络）
 python3 -m pytest -k "e2e" -q      # 按关键字
 python3 -m pytest --cov=khub -q     # 带覆盖率
 python3 -m pytest --markers         # 列出标记
@@ -41,7 +41,7 @@ python3 -m bandit -r khub/          # 安全扫描
 | `test_pii.py` | `crypto`/`audit`/临床加密 | 12 | 加密/解密/审计、静音透传 |
 | `test_desktop.py` | `desktop` 文件 | 3 | JS 语法/Shell 语法/package 存在 |
 | `test_integration_e2e.py` | 全链路 | 3 | 患者→孪生→入库→检索→PII→审计 |
-| **合计** | | **95** | |
+| **合计** | | **502** | |
 
 ## 3. 测试层级
 

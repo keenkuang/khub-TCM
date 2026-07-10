@@ -1,34 +1,40 @@
 # khub
 
-个人知识中枢（knowledge hub），当前聚焦 **PDF/EPUB 电子书管理**，并预留了临床业务系统的地基：
+个人知识中枢（knowledge hub），v1.4.0 — 从单用户文档管理发展到多行业 AI 平台。
 
-- **电子书管理**：受管库目录 + 元数据解析 + 全文检索（中文 trigram）+ 向量检索（离线可跑）。文件可"入库"也可仅做"目录登记"。
-- **患者数字孪生体管理系统**（骨架已搭）：以患者为中心聚合病历子系统、问诊子系统及未来子系统。
-- **门诊运营管理系统**（骨架已搭）：排班 / 预约 / 就诊流。
-- **中医考试培训系统**（骨架已搭）：题库 + RAG 出题 / 判分。
+## 能力全景
 
-所有上层系统共用同一套地基：`document_versions` + `embeddings` + `docs_fts` + `LLMProvider` + 受管库目录，互不修改核心表。
+| 层面 | 能力 |
+|------|------|
+| 数据底座 | SQLite+FTS5+ANN+WAL+20索引+慢查询日志+TTL缓存 |
+| 业务模块 | 临床孪生/课程运营/门诊排班/公众号发布/考试/知识社区/远程医疗 |
+| AI | RAG问答/AI Copilot(8工具)/Agent平台(模板/记忆/管线)/工作流引擎/知识图谱推理(14证型×20方剂×60中药)/CDSS/数据分析 |
+| 多用户 | JWT鉴权+RBAC(8角色×12资源)+数据隔离+多租户SaaS |
+| 客户端 | Web(PWA)/Electron桌面(托盘+Ollama)/微信小程序/Flutter原生App |
+| 部署 | 一键安装/Docker多阶段/Helm(K8s)/白标OEM/systemd |
+| 开放平台 | 插件系统/Webhook(6事件)/OpenAPI+Swagger/企业微信+钉钉机器人 |
+| 实时 | SSE通知/事件总线/离线同步引擎(push/pull/冲突检测) |
+| BI | 报表引擎(SQL执行+CSV导出)/数据看板/患者分群/疗效分析/就诊预测 |
+| 安全 | PII加密/审计日志/数据保留策略/合规检查清单 |
+| 国际化 | 翻译引擎(zh/en)/Accept-Language检测/Web UI语言切换 |
+
+**502 个测试用例 | 150+ REST 端点 | 100+ CLI 子命令**
 
 ## 快速开始
 
 ```bash
-cd khub-m1
-python3 -m pip install -e .        # 安装（含 PyYAML；pypdf 可选，用于 PDF 正文抽取）
-python3 -m pytest -q               # 跑全部测试（182 个，无需联网）
-```
+# 一键安装
+curl -fsSL https://raw.githubusercontent.com/keenkuang/khub-TCM/master/install.sh | bash
 
-### CLI 用法
-
-```bash
+# 或 pip 安装
+pip install -e ".[all]"
 export KHUB_DB=~/.khub/khub.db
-export KHUB_LIBRARY=~/.khub/library
+khub serve
+# 浏览器打开 http://127.0.0.1:8765
 
-khub add path/to/book.epub            # 注册到受管库（不入库，仅目录+元数据）
-khub list                             # 列出已注册电子书
-khub ingest ebook:<sha256>            # 入库：抽正文 + 建 FTS 索引
-khub doc-add --title 伤寒论 --file 产出.md --source-id kzocr-xxx   # 直接入库一份文档（KZOCR/OCR 产出）
-khub watch /path/to/kzocr-out --interval 3   # 监听目录，KZOCR 产出 .md 落盘即自动入库
-khub query 桂枝汤                    # 全文检索（支持分页/来源过滤）
+# 跑测试
+python3 -m pytest -m smoke -q   # 253 个快速测试
+```khub query 桂枝汤                    # 全文检索（支持分页/来源过滤）
 khub quip-sync --token xxx [--root ROOT]    # 从 Quip 拉取文档归档到本地库
 khub obsidian-import /path/to/vault          # 导入 Obsidian vault（.md 目录）
 khub feishu-sync                      # 同步飞书文档

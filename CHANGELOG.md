@@ -1,5 +1,35 @@
 # 变更日志
 
+## [1.4.0] — 2026-07-10
+
+### 养生保健模板（新行业方向）
+- `khub/vertical/wellness/constitution.py` — 9 种中医体质评估算法（平和/气虚/阳虚/阴虚/痰湿/湿热/血瘀/气滞/特禀）
+- 9 题简版问卷 → 体质判定 → 养生/饮食/运动建议
+- `POST /api/wellness/assess` + `GET /api/wellness/questions`
+
+## [1.3.0] — 2026-07-10
+
+### Flutter 原生 App
+- 完整 Flutter 项目（`flutter/` 目录，11 文件，6 页面）
+- 登录/首页/预约/孪生/趋势/患者 页面
+- REST API 客户端（`khub_api.dart`）+ token 持久化管理
+- Material Design 3 主题
+
+## [1.2.0] — 2026-07-10
+
+### 临床智能深化
+- **用药安全引擎**（`khub/clinical/safety.py`）：十八反十九畏检查、妊娠禁忌、剂量上限校验
+- **智能问诊路径**（`khub/clinical/interview.py`）：7 类主诉→追问推荐映射
+- **CDSS 规则引擎**（`khub/clinical/cdss.py`）：5 条 if-then 临床告警规则
+
+## [1.1.0] — 2026-07-10
+
+### AI Agent 深化
+- **Agent 模板市场**（`khub/agents/templates.py`）：5 个预置模板（健康/辨证/预约/搜索/报表助手）
+- **Agent 记忆系统**（`khub/agents/memory.py`）：键值存储 `store/recall`，按 `agent_id+key` 唯一
+- **多 Agent 协作管线**（`khub/agents/pipeline.py`）：链式执行，前序输出作为后续输入
+- REST 端点：模板列表/创建/记忆读写/管线创建执行
+
 ## [1.0.0] — 2026-07-10
 
 ### 正式版重大里程碑
