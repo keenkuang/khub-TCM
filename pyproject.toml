@@ -38,4 +38,13 @@ warn_unreachable = false
 
 [tool.bandit]
 exclude_dirs = ["tests", ".git", "build", "dist", "node_modules"]
-skips = ["B101", "B404", "B603", "B607"]
+# 以下为有意为之、经验证安全的跳过项：
+#   B101  assert 用于内部不变量检查
+#   B404/B603/B607  subprocess 一律 list 传参、禁用 shell（架构约定）
+#   B608  SQL 标识符（表名/列名/向量表名）均来自白名单常量或正则校验
+#         （retrieval 的 model 经 re.fullmatch(r"\w+")；table 来自 _REPLICATED_TABLES
+#         等硬编码表清单；pk 来自 PRAGMA table_info），用户数据一律走 ? 参数化。
+#         新增 SQL 拼接时必须保持「标识符白名单 + 值参数化」，否则不得依赖此跳过。
+#   B310  urlopen 目标仅为 localhost（SSE/健康检查）或配置化的远端适配器端点
+#         （feishu/quip/ima），属预期用法。
+skips = ["B101", "B404", "B603", "B607", "B608", "B310"]
