@@ -38,6 +38,8 @@ def build_parser():
     ps = sub.add_parser("serve", help="启动 REST API（薄层，复用核心库）")
     ps.add_argument("--host", default="127.0.0.1")
     ps.add_argument("--port", type=int, default=8000)
+    ps.add_argument("--api2", action="store_true", help="启动 2.0 FastAPI 服务（并行）")
+    ps.add_argument("--api2-port", type=int, default=8766, help="2.0 API 端口（默认 8766）")
 
     pla = sub.add_parser("login", help="登录 kHUB")
     pla.add_argument("username", nargs="?", default="")
@@ -547,6 +549,12 @@ def main(argv=None):
         else:
             print("未登录。使用 `khub login` 登录")
     elif args.cmd == "serve":
+        if args.api2:
+            from .api2.server import serve as serve2
+            import threading
+            t = threading.Thread(target=serve2, args=(args.host or "127.0.0.1", args.api2_port), daemon=True)
+            t.start()
+            print(f"2.0 API 已在 http://{args.host or '127.0.0.1'}:{args.api2_port}/docs 启动")
         serve(store, lib, args.host, args.port)
     elif args.cmd == "query":
         q = " ".join(args.keywords)
