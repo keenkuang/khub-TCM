@@ -1,5 +1,31 @@
 # 变更日志
 
+## [0.6.0] — 2026-07-10
+
+### 开放平台与插件系统
+
+**跃升至 0.6.x 系列——从封闭应用升级为开放平台。**
+
+#### 插件系统
+- `khub/plugins/base.py`：`PluginBase` 抽象类，定义 `on_startup`/`on_request`/`on_shutdown` 生命周期接口
+- `khub/plugins/registry.py`：插件注册表（自动发现/加载/生命周期管理/请求拦截）
+- `khub/plugins/examples/hello.py`：示例插件，在每次请求时记录日志
+- `GET /api/plugins` 端点 + `khub plugin-list` CLI 子命令
+- 服务启动时自动发现并加载插件
+
+#### Webhook 事件推送
+- `webhook_subscriptions` + `webhook_deliveries` 表（接 WAL 复制）
+- 支持 6 种事件类型：`document.created`、`appointment.created`、`consultation.created`、`followup.due`、`course.enrolled`、`record.created`
+- HMAC-SHA256 签名验证 + 异步投递 + 投递记录持久化
+- REST 端点（订阅/取消/列表）+ CLI 子命令
+
+#### OpenAPI 文档
+- `GET /api/openapi.json` — OpenAPI 3.0.3 规范
+- `GET /api/docs` — Swagger UI 交互式文档页（CDN 加载）
+
+### 测试
+- 新增 11 个测试（插件 5 + Webhook 6），全部通过
+
 ## [0.5.1] — 2026-07-10
 
 ### 私有化部署与 OEM 产品化
