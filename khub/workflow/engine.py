@@ -89,7 +89,7 @@ def _call_action(action: str, params: dict, store):
         tid = int(params.get("template_id", 0))
         result = execute(store, tid)
         return f"report executed: {result.get('row_count', 0)} rows"
-    return f"action '{action}' executed (mock)"
+    raise ValueError(f"工作流 action 未注册: '{action}'。支持的 action: create_notification, run_report")
 
 
 def _update(store, instance_id, status=None, context=None, history=None, current_step=None):

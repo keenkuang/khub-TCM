@@ -55,12 +55,17 @@ def _search_docs(store, current_user, q="", k=5):
 
 
 def _get_patient(store, current_user, patient=""):
-    if patient.isdigit():
-        row = store.conn.execute("SELECT id, name, gender, born FROM patients WHERE id=?", (int(patient),)).fetchone()
-    else:
-        row = store.conn.execute("SELECT id, name, gender, born FROM patients WHERE name LIKE ?", (f"%{patient}%",)).fetchone()
-    if not row: return "未找到患者"
-    return f"患者 #{row['id']}：{row['name']} {'男' if row['gender']=='male' else '女'} ({row['born'] or ''})"
+    from ..clinical.patients import get_patient as _gp
+    pid = int(patient) if patient.isdigit() else 0
+    if not pid:
+        row = store.conn.execute("SELECT id FROM patients WHERE name LIKE ?", (f"%{patient}%",)).fetchone()
+        pid = row["id"] if row else 0
+    if not pid:
+        return "未找到患者"
+    p = _gp(store, pid)
+    if not p:
+        return "未找到患者"
+    return f"患者 #{p['id']}：{p['name']} {'男' if p['gender']=='male' else '女'} ({p.get('born','')})"
 
 
 def _book_appointment(store, current_user, patient="", date="", doctor=""):
