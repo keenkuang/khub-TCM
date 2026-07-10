@@ -8,3 +8,9 @@ from . import twin_v2
 from . import consult_chat
 from . import followup
 from . import extract
+
+# 0.4.0 临床智能增强
+from . import analysis
+from . import visualize
+from . import diagnosis
+from . import tracking

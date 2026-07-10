@@ -306,6 +306,19 @@ def build_parser():
     pur = sub.add_parser("user-role", help="修改用户角色")
     pur.add_argument("user_id", type=int); pur.add_argument("role")
 
+    # 0.4.0 clinical intelligence
+    pcm = sub.add_parser("clinical-matrix", help="证型→方剂关联矩阵")
+    pcm.add_argument("patient_id", type=int)
+
+    pct = sub.add_parser("clinical-trends", help="健康趋势")
+    pct.add_argument("patient_id", type=int)
+
+    pcs = sub.add_parser("clinical-suggest", help="方剂推荐")
+    pcs.add_argument("syndrome")
+
+    pck = sub.add_parser("clinical-tracking", help="疗效评估")
+    pck.add_argument("patient_id", type=int)
+
     return ap
 
 
@@ -1128,6 +1141,25 @@ def main(argv=None):
             print(f"用户 #{args.user_id} 角色已修改为 {args.role}")
         except ValueError as e:
             print(f"失败：{e}")
+    elif args.cmd == "clinical-matrix":
+        from .clinical.analysis import build_syndrome_formula_matrix_for_patient
+        import json as _json
+        print(_json.dumps(build_syndrome_formula_matrix_for_patient(store, args.patient_id), ensure_ascii=False, indent=2))
+    elif args.cmd == "clinical-trends":
+        from .clinical.visualize import get_health_trends
+        import json as _json
+        print(_json.dumps(get_health_trends(store, args.patient_id), ensure_ascii=False, indent=2))
+    elif args.cmd == "clinical-suggest":
+        from .clinical.diagnosis import suggest_formula, check_incompatibility
+        from .llm import get_provider
+        for s in suggest_formula(args.syndrome, provider=get_provider()):
+            print(f"  {s['formula']} [{s['source']}]")
+    elif args.cmd == "clinical-tracking":
+        from .clinical.tracking import evaluate_efficacy
+        e = evaluate_efficacy(store, args.patient_id)
+        print(f"就诊次数：{e['visit_count']}")
+        print(f"随访依从性：{e['followup_compliance']} ({e['adherence_rate']})")
+        print(f"治疗连续性：{e['treatment_continuity']}")
     else:
         build_parser().print_help()
 

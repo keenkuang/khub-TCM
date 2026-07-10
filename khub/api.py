@@ -705,6 +705,36 @@ class App:
             apply_struct(store, source, source_id, struct)
             return 200, {"structured": struct}
 
+        # 0.4.0 clinical intelligence
+        if method == "GET" and path.startswith("/clinical/analysis/") and path.endswith("/matrix"):
+            from .clinical.analysis import build_syndrome_formula_matrix_for_patient
+            _segments = path.strip("/").split("/")
+            pid = _safe_int(_segments[2:3] if len(_segments) >= 3 else [0], 0)
+            return 200, {"matrix": build_syndrome_formula_matrix_for_patient(self.store, pid)}
+        if method == "GET" and path.startswith("/clinical/analysis/") and path.endswith("/evolution"):
+            from .clinical.analysis import analyze_constitution_evolution
+            _segments = path.strip("/").split("/")
+            pid = _safe_int(_segments[2:3] if len(_segments) >= 3 else [0], 0)
+            return 200, {"evolution": analyze_constitution_evolution(self.store, pid)}
+        if method == "GET" and path.startswith("/clinical/tracking/") and len(path.strip("/").split("/")) == 3:
+            from .clinical.tracking import evaluate_efficacy
+            _segments = path.strip("/").split("/")
+            pid = _safe_int(_segments[2:3] if len(_segments) >= 3 else [0], 0)
+            return 200, {"efficacy": evaluate_efficacy(self.store, pid)}
+        if method == "GET" and path.startswith("/clinical/trends/") and len(path.strip("/").split("/")) == 3:
+            from .clinical.visualize import get_health_trends
+            _segments = path.strip("/").split("/")
+            pid = _safe_int(_segments[2:3] if len(_segments) >= 3 else [0], 0)
+            return 200, {"trends": get_health_trends(self.store, pid)}
+        if method == "POST" and path == "/clinical/diagnosis/suggest":
+            from .clinical.diagnosis import suggest_formula, check_incompatibility
+            from .llm import get_provider
+            syndrome = body.get("syndrome", "")
+            formulas = body.get("formulas", [])
+            suggestions = suggest_formula(syndrome, provider=get_provider())
+            warnings = check_incompatibility(formulas) if formulas else []
+            return 200, {"suggestions": suggestions, "incompatibility_warnings": warnings}
+
         # 0.2.9 knowledge base — tags
         parts = path.strip("/").split("/")
         if method == "POST" and path.startswith("/documents/") and path.endswith("/tags") and len(parts) >= 3:
