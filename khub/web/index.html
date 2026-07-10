@@ -27,6 +27,7 @@ fetch('/api/info').then(r=>r.json()).then(d=>{
   <div class="bar">
     <input id="q" type="text" placeholder="全文检索（中文子串，如 桂枝汤 / 麻黄）">
     <button onclick="search()">检索</button>
+    <button class="ghost" onclick="unifiedSearch()">统一搜索</button>
     <button class="ghost" onclick="semantic()">语义</button>
     <button class="ghost" onclick="loadAll()">全部文档</button>
     <button class="ghost" onclick="loadConflicts()">冲突</button>
@@ -43,6 +44,15 @@ fetch('/api/info').then(r=>r.json()).then(d=>{
       <option value="imanote">IMA笔记</option>
       <option value="quip">Quip</option>
       <option value="kzocr">KZOCR</option>
+    </select>
+    <select id="searchType" style="padding:6px 8px;border:1px solid #ccd;border-radius:6px;font-size:13px">
+      <option value="all">全部</option>
+      <option value="docs">文档</option>
+      <option value="patients">患者</option>
+      <option value="courses">课程</option>
+      <option value="herbs">中药</option>
+      <option value="formulas">方剂</option>
+      <option value="syndromes">证型</option>
     </select>
     <select id="tagFilter" style="padding:6px 8px;border:1px solid #ccd;border-radius:6px;font-size:13px">
       <option value="">全部标签</option>

@@ -155,6 +155,33 @@ async function search(q, source) {
   } catch (e) { if (e.name !== 'AbortError') box.innerHTML = '<p class="meta">搜索失败: ' + esc(e.message) + '</p>'; }
 }
 
+async function unifiedSearch() {
+  var q = document.getElementById('q').value;
+  var type = (document.getElementById('searchType') || {}).value || 'all';
+  if (!q.trim()) return;
+  box.innerHTML = '<p class="meta">搜索中…</p>';
+  try {
+    var r = await fetch('/api/search?q=' + encodeURIComponent(q) + '&type=' + type).then(function(x){return x.json();});
+    if (!r.results || !r.results.length) { box.innerHTML = '<p class="meta">无结果</p>'; return; }
+    // 按类型分组
+    var groups = {};
+    r.results.forEach(function(item) {
+      (groups[item.entity_type] = groups[item.entity_type] || []).push(item);
+    });
+    var typeNames = {'document':'📄 文档','patient':'👤 患者','course':'📚 课程','herb':'🌿 中药','formula':'💊 方剂','syndrome':'🏥 证型'};
+    var html = '<h2>搜索结果：' + esc(r.query) + '</h2><p class="meta">共 ' + r.count + ' 条</p>';
+    Object.keys(groups).forEach(function(t) {
+      html += '<h3>' + (typeNames[t] || t) + ' (' + groups[t].length + ')</h3>';
+      groups[t].forEach(function(item) {
+        html += '<div class="card" style="margin-bottom:4px"><b>' + esc(item.title) + '</b>';
+        if (item.subtitle) html += '<span class="meta"> ' + esc(item.subtitle) + '</span>';
+        html += '</div>';
+      });
+    });
+    box.innerHTML = html;
+  } catch(e) { box.innerHTML = '<p class="meta">搜索失败</p>'; }
+}
+
 async function semantic() {
   if (window._searchAbort) window._searchAbort.abort();
   window._searchAbort = new AbortController();

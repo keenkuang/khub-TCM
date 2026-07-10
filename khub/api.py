@@ -1079,6 +1079,16 @@ class App:
             from .workflow.store import list_instances
             return 200, {"instances": list_instances(store, status=qs.get("status",[""])[0])}
 
+        # 0.7.2 unified search
+        if method == "GET" and path == "/api/search":
+            from .search2 import unified_search
+            q = qs.get("q", [""])[0]
+            if not q: return 200, {"results": []}
+            stype = qs.get("type", ["all"])[0]
+            limit = int(qs.get("limit", [20])[0])
+            results = unified_search(store, q, type=stype, limit=limit)
+            return 200, {"query": q, "type": stype, "count": len(results), "results": results}
+
         return 404, {"error": "not found"}
 
     @staticmethod
