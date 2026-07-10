@@ -479,6 +479,29 @@ async function aiAsk() {
   finally { aiState.streaming = false; }
 }
 
+// Copilot 对话
+async function copilotChat() {
+  var input = document.getElementById('copilotInput');
+  var msg = input ? input.value.trim() : prompt('请输入您的需求：');
+  if (!msg) return;
+  var box = document.getElementById('copilotResponse') || document.getElementById('results');
+  box.innerHTML += '<div class="chat-msg user"><b>您：</b>' + esc(msg) + '</div>';
+  box.innerHTML += '<div class="chat-msg pending"><i>思考中…</i></div>';
+  try {
+    var r = await fetch('/api/copilot/chat', {
+      method:'POST', body:JSON.stringify({text:msg}),
+      headers:{'Content-Type':'application/json'}
+    }).then(function(x){return x.json();});
+    box.innerHTML = box.innerHTML.replace('<div class="chat-msg pending"><i>思考中…</i></div>', '');
+    box.innerHTML += '<div class="chat-msg assistant"><b>助手：</b>' + esc(r.reply || (r.error||'')) + '</div>';
+  } catch(e) {
+    box.innerHTML = box.innerHTML.replace('<div class="chat-msg pending"><i>思考中…</i></div>', '');
+    box.innerHTML += '<div class="chat-msg error">网络错误</div>';
+  }
+  if (input) input.value = '';
+  box.scrollTop = box.scrollHeight;
+}
+
 // ── 通知系统 ──
 var notifSource = null;
 

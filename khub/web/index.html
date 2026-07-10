@@ -94,5 +94,9 @@ fetch('/api/info').then(r=>r.json()).then(d=>{
     <button id="ai-send">发送</button>
   </div>
   <div class="hint">基于知识库语义检索 + LLM 回答</div>
+  <div class="copilot-bar" style="display:flex;padding:8px;border-top:1px solid var(--border)">
+    <input id="copilotInput" placeholder="输入需求，如'预约李医生明天上午'" style="flex:1;padding:8px;border:1px solid var(--border);border-radius:4px;margin-right:4px">
+    <button onclick="copilotChat()" style="padding:8px 12px;background:var(--accent);color:#fff;border:none;border-radius:4px">发送</button>
+  </div>
 </div>
 </body></html>

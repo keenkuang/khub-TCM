@@ -1049,6 +1049,17 @@ class App:
             csv_data = export_csv(store, tid)
             return 200, csv_data, "text/csv; charset=utf-8"
 
+        # 0.7.0 copilot
+        if method == "POST" and path == "/api/copilot/chat":
+            from .copilot.engine import process
+            text = body.get("text", "")
+            if not text: return 400, {"error": "text required"}
+            result = process(store, text, current_user=getattr(self, "_current_user", None))
+            return 200, result
+        if method == "GET" and path == "/api/copilot/tools":
+            from .copilot.tools import list_tools
+            return 200, {"tools": list_tools()}
+
         return 404, {"error": "not found"}
 
     @staticmethod
