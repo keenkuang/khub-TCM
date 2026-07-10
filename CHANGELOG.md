@@ -1,5 +1,25 @@
 # 变更日志
 
+## [0.4.1] — 2026-07-10
+
+### 小程序客户端
+
+#### 后端补充
+- `GET /ops/appointments` 支持 `?patient_id=` 参数过滤
+- 新增 `GET /clinical/consultations?patient_id=` 端点
+
+#### 小程序前端（`miniapp/`）
+- **登录页**：用户名密码 → `/auth/login` → token 缓存
+- **首页**：患者端四入口（预约/摘要/趋势/问诊）+ 医生端患者列表
+- **预约列表**：按患者/医生身份显示预约记录
+- **孪生摘要**：健康摘要 + 时间线（患者视角）
+- **健康趋势**：体质画像 + 证型演变 + 治疗序列
+- `utils/api.js`：统一 REST 封装 + Bearer token 自动注入
+
+### 测试
+- 新增 2 个测试（appointments patient_id 过滤 + consultations 端点）
+- 小程序端 20 个文件（WXML+WXSS+JS）
+
 ## [0.4.0] — 2026-07-10
 
 ### 临床智能增强（四线合一）
