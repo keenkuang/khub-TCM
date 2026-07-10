@@ -1017,7 +1017,7 @@ class ReplicationManager:
         if db_path and os.path.isfile(db_path) and db_path != ":memory:":
             # 一致性快照：ATTACH 逐表拷贝、排除 ha_state / 虚表（见 db.make_snapshot_db）
             from .db import make_snapshot_db
-            tmp = tempfile.mktemp(suffix=".db")
+            tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".db").name
             make_snapshot_db(self.store.conn, tmp)
             replica.push_snapshot(meta, db_path=tmp)
             try:

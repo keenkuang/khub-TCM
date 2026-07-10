@@ -575,7 +575,10 @@ def main(argv=None):
                 snapshot_lsn = snap["lsn"]
                 snapshot_at = snap["at"]
             # 拷到 --target（默认临时库），以 Store 打开并重建 FTS（不动原库）
-            out_db = args.target or tempfile.mktemp(suffix=".db")
+            if args.target:
+                out_db = args.target
+            else:
+                out_db = tempfile.NamedTemporaryFile(delete=False, suffix=".db").name
             if args.target and os.path.exists(out_db):
                 # 安全覆盖：目标已存在则先改名备份，绝不静默覆盖（设计 §5/§8）。
                 # 指向线上库时避免误毁当前数据；如需覆盖删备份或换路径即可。

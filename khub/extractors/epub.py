@@ -1,7 +1,8 @@
 import os
 import re
 import zipfile
-from xml.etree import ElementTree as ET
+from defusedxml.ElementTree import fromstring as _et_fromstring
+from defusedxml.ElementTree import ParseError as ETParseError
 
 NS = {"dc": "http://purl.org/dc/elements/1.1/"}
 OPF_NS = {"opf": "http://www.idpf.org/2007/opf"}
@@ -24,8 +25,8 @@ def parse_meta(path):
             opf_name = _find_opf(z)
             if not opf_name:
                 return meta
-            root = ET.fromstring(z.read(opf_name))
-    except (zipfile.BadZipFile, ET.ParseError, OSError):
+            root = _et_fromstring(z.read(opf_name))
+    except (zipfile.BadZipFile, ETParseError, OSError):
         return meta
 
     def text(tag):
@@ -58,7 +59,7 @@ def extract_cover(path):
             opf_name = _find_opf(z)
             if not opf_name:
                 return None
-            root = ET.fromstring(z.read(opf_name))
+            root = _et_fromstring(z.read(opf_name))
             manifest = root.find("opf:manifest", OPF_NS)
             if manifest is None:
                 return None
@@ -86,7 +87,7 @@ def extract_cover(path):
             if entry not in z.namelist():
                 return None
             return z.read(entry)
-    except (zipfile.BadZipFile, ET.ParseError, OSError, KeyError):
+    except (zipfile.BadZipFile, ETParseError, OSError, KeyError):
         return None
 
 
