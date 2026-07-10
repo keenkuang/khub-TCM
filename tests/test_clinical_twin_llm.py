@@ -3,6 +3,8 @@ from khub.db import Store
 from khub.llm import LLMProvider, register_provider, get_provider
 from khub.clinical import patients, records, consultations
 from khub.clinical.twin import build_summary
+pytestmark = pytest.mark.smoke
+
 
 
 class FakeProvider:

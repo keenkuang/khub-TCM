@@ -3,6 +3,9 @@ import tempfile
 import zipfile
 
 from khub.extractors import parse_meta
+import pytest
+pytestmark = pytest.mark.smoke
+
 
 
 def _make_epub(path, title="Test Book", creator="Author X", lang="zh",

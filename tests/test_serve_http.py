@@ -10,6 +10,9 @@ from http.server import HTTPServer
 from khub.api import App, make_handler
 from khub.db import Store
 from khub.storage import ManagedLibrary
+import pytest
+pytestmark = pytest.mark.smoke
+
 
 
 def test_serve_health_endpoint():

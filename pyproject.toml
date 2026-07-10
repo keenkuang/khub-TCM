@@ -4,7 +4,7 @@ version = "0.2.5"
 requires-python = ">=3.11"
 dependencies = ["PyYAML>=6.0"]
 [project.optional-dependencies]
-dev = ["pytest>=8.0"]
+dev = ["pytest>=8.0", "bandit>=1.7", "mypy>=1.0"]
 pdf = ["pypdf>=4.0"]
 ann = ["sqlite-vec>=0.1.9"]
 crypto = ["cryptography>=41.0"]
@@ -21,3 +21,21 @@ packages = ["khub", "khub.adapters", "khub.extractors", "khub.llm", "khub.exam",
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+markers = [
+    "smoke: 核心快速冒烟测试，秒级，无重 IO/索引",
+    "full: 长耗时套件，含全文/向量索引构建等",
+    "slow: 重负载用例（如离线 embedding、整库索引）",
+    "net: 需要访问外部网络（LLM/Embedding 端点、Quip/Obsidian 等）",
+]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+warn_return_any = false
+warn_unreachable = false
+
+[tool.bandit]
+exclude_dirs = ["tests", ".git", "build", "dist", "node_modules"]
+skips = ["B101", "B404", "B603", "B607"]

@@ -24,7 +24,7 @@ def watch_and_ingest(store: Store, directory: str, interval: float = 3.0, stop=N
 
     stop 为可选可调用对象；返回 True 时退出循环（便于测试/优雅停止）。
     """
-    seen = {}  # sid -> mtime，单次运行内去重
+    seen: dict[str, float] = {}  # sid -> mtime，单次运行内去重
     retr = Retriever(store)
     print(f"[watch] 监听目录 {directory}（间隔 {interval}s）")
     while True:

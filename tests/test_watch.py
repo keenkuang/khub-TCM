@@ -3,6 +3,9 @@ import tempfile
 
 from khub.db import Store
 from khub.watch import watch_and_ingest
+import pytest
+pytestmark = pytest.mark.smoke
+
 
 
 def test_watch_ingests_new_md():

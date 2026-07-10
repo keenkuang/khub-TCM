@@ -5,6 +5,9 @@ import tempfile
 
 from khub.db import Store
 from khub.obsidian import import_vault
+import pytest
+pytestmark = pytest.mark.net
+
 
 
 def test_import_vault():

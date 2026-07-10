@@ -26,19 +26,19 @@ def load_key() -> bytes:
         return data
 
     if os.environ.get("KHUB_PII_ENCRYPT") == "1":
-        key = Fernet.generate_key()
+        gen_key = Fernet.generate_key()
         parent = os.path.dirname(key_file)
         if parent:
             os.makedirs(parent, exist_ok=True)
         with open(key_file, "wb") as f:
-            f.write(key)
+            f.write(gen_key)
         os.chmod(key_file, 0o600)
         warnings.warn(
             f"KHUB_PII_KEY not set; generated new key at {key_file}",
             RuntimeWarning,
             stacklevel=2,
         )
-        return key
+        return gen_key
 
     return b""
 

@@ -7,6 +7,9 @@ import tempfile
 from khub.db import Store
 from khub.ha.drill import run_drill, DrillProber, format_drill
 from khub.ha.controller import ROLE_ACTIVE, ROLE_PASSIVE, ROLE_DEGRADED, ROLE_SAFE
+import pytest
+pytestmark = [pytest.mark.slow, pytest.mark.full]
+
 
 
 def _tmp():

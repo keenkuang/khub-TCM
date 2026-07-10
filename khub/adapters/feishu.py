@@ -19,7 +19,7 @@ import urllib.parse
 import urllib.request
 import warnings
 
-from ..models import RawDoc
+from ..models import RawDoc, CanonicalDoc, SyncResult
 from .base import SourceAdapter
 from ._feishu_auth import FeishuTokenManager
 
@@ -48,7 +48,7 @@ class FeishuAdapter:
             "Content-Type": "application/json; charset=utf-8",
         }
 
-    def _get(self, path: str, params: dict = None, _retry: int = 1) -> dict:
+    def _get(self, path: str, params: dict | None = None, _retry: int = 1) -> dict:
         """GET 请求 + 自动重试（token 过期时刷新，最多 _retry 次）。"""
         url = f"{API_BASE}{path}"
         if params:
@@ -219,14 +219,13 @@ class FeishuAdapter:
 
         return docs
 
-    def push(self, doc_id: str, content: str, title: str) -> "SyncResult":
+    def push(self, doc_id: str, content: str, title: str) -> SyncResult:
         raise NotImplementedError("飞书适配器 MVP 阶段不支持推送")
 
-    def delete(self, source_id: str) -> "SyncResult":
+    def delete(self, source_id: str) -> SyncResult:
         raise NotImplementedError("飞书适配器 MVP 阶段不支持删除")
 
-    def normalize(self, raw: RawDoc) -> "CanonicalDoc":
-        from ..models import CanonicalDoc
+    def normalize(self, raw: RawDoc) -> CanonicalDoc:
         return CanonicalDoc(
             canonical_id=f"feishu:{raw.id}",
             title=raw.title,

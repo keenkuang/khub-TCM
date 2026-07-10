@@ -122,7 +122,7 @@ class RemoteLLMProvider:
         return []
 
 
-_PROVIDERS = {"noop": NoOpProvider()}
+_PROVIDERS: dict[str, LLMProvider] = {"noop": NoOpProvider()}
 
 
 def register_provider(name: str, provider: LLMProvider):

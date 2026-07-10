@@ -5,6 +5,9 @@ from khub.db import Store
 from khub.llm import get_provider, LLMProvider
 from khub.llm.rag import RAGEngine, PROMPT_TEMPLATE
 from khub.retrieval import Retriever
+import pytest
+pytestmark = pytest.mark.smoke
+
 
 
 def _make_store_with_docs():

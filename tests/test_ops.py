@@ -1,5 +1,8 @@
 from khub.db import Store
 from khub.ops.store import add_schedule, book_appointment, checkin_visit, list_appointments
+import pytest
+pytestmark = pytest.mark.smoke
+
 
 def test_ops_flow():
     s = Store(":memory:")

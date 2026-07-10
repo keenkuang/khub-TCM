@@ -1,4 +1,7 @@
 from khub.llm import NoOpProvider, get_provider, register_provider
+import pytest
+pytestmark = pytest.mark.smoke
+
 
 
 def test_noop_provider_interface():

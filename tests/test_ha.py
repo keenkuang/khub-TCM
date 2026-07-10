@@ -17,6 +17,8 @@ from khub.ha import (
     render_status,
 )
 from khub.db import Store
+pytestmark = pytest.mark.smoke
+
 
 
 # ── 辅助 ──────────────────────────────────────────────────────────────────────

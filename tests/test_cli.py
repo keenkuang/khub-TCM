@@ -1,5 +1,8 @@
 import subprocess
 import sys
+import pytest
+pytestmark = pytest.mark.smoke
+
 
 
 def _run(*args):

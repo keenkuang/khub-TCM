@@ -7,6 +7,8 @@ import pytest
 
 from khub.db import Store, make_snapshot_db, rebuild_fts
 from khub.retrieval import HAVE_VEC, _pack, rebuild_vec
+pytestmark = pytest.mark.slow
+
 
 
 def _seed_embeddings(conn, n=4, dim=4, model="local"):

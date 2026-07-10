@@ -1,6 +1,8 @@
 """IMA 多端点探测测试。"""
 import pytest
 from khub.ima_probe import _probe, _log
+pytestmark = pytest.mark.net
+
 
 
 def test_probe_returns_all_keys():

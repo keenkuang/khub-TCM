@@ -482,8 +482,8 @@ def main(argv=None):
                 print("结果：通过")
                 return 0
             print("结果：失败")
-            for e in report["errors"]:
-                print(f"  - {e}")
+            for err in report["errors"]:
+                print(f"  - {err}")
             return 1
         elif args.dr_cmd == "status":
             tgt = store.ha_get("dr_target")
@@ -630,8 +630,8 @@ def main(argv=None):
                 print(f"  vec0       : 查询失败（{e}）")
             print(f"  integrity  : {vrep['integrity']}")
             print(f"  结果       : {'通过' if vrep['ok'] else '失败（见下方）'}")
-            for e in vrep["errors"]:
-                print(f"    - {e}")
+            for err in vrep["errors"]:
+                print(f"    - {err}")
             if not args.target:
                 try:
                     os.remove(out_db)

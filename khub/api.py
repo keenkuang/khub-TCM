@@ -82,7 +82,7 @@ class App:
         if method == "GET" and path == "/stats":
             cur = self.store.conn
             total = cur.execute("SELECT count(*) FROM documents").fetchone()[0]
-            sources = {}
+            source_counts: dict[str, int] = {}
             for row in cur.execute("SELECT source_ids FROM documents").fetchall():
                 ids = row["source_ids"] or "[]"
                 try:
@@ -91,7 +91,7 @@ class App:
                 except (json.JSONDecodeError, IndexError, TypeError):
                     first = None
                 if first in ("obsidian", "ima", "imanote", "quip", "kzocr", "library", "feishu", "webui"):
-                    sources[first] = sources.get(first, 0) + 1
+                    source_counts[first] = source_counts.get(first, 0) + 1
             today = time.strftime("%Y-%m-%d")
             today_count = cur.execute(
                 "SELECT count(*) FROM documents WHERE updated_at >= ?",
@@ -125,7 +125,7 @@ class App:
                 "ORDER BY updated_at DESC LIMIT 5").fetchall()
             return 200, {
                 "total": total,
-                "sources": sources,
+                "sources": source_counts,
                 "today": today_count,
                 "weekly": weekly,
                 "versions": version_count,
@@ -383,11 +383,11 @@ class App:
         if method == "POST" and path == "/exam/questions":
             from .exam.models import Question
             from .exam.store import add_question
-            q = Question(kind=body.get("kind", "mcq"), stem=body.get("stem", ""),
+            exam_q = Question(kind=body.get("kind", "mcq"), stem=body.get("stem", ""),
                          options=body.get("options", []), answer=body.get("answer", ""),
                          explanation=body.get("explanation", ""),
                          source_doc=body.get("source_doc", ""))
-            qid = add_question(self.store, q)
+            qid = add_question(self.store, exam_q)
             return 201, {"id": qid}
 
         if method == "GET" and path == "/exam/questions":
@@ -399,8 +399,8 @@ class App:
             from .exam.generator import generate
             topic = body.get("topic", "")
             source_doc = body.get("source_doc", "")
-            q = generate(topic, source_doc=source_doc)
-            return 200, vars(q)
+            exam_q = generate(topic, source_doc=source_doc)
+            return 200, vars(exam_q)
 
         # ---- Clinical subsystem ----
         if method == "POST" and path == "/clinical/patients":

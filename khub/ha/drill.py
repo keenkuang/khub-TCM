@@ -92,18 +92,15 @@ def run_drill(primary_path: str, standby_path: str, replica_dir: str,
 
     # probe 适配：drill 内部用 DrillProber（可切换状态）；外部 callable 直接传
     prober = probe if isinstance(probe, DrillProber) else (probe or DrillProber())
-    if isinstance(probe, DrillProber):
+    if isinstance(prober, DrillProber):
         _hb, _lan = prober.hb, prober.lan
-    elif callable(probe):
+    else:  # prober 在此为 callable（含 probe=None 时回退构造的 DrillProber 已在上分支）
         def _hb():
-            r = probe()
+            r = prober()
             return bool(r[0]) if isinstance(r, tuple) else bool(r)
         def _lan():
-            r = probe()
+            r = prober()
             return bool(r[1]) if isinstance(r, tuple) else bool(r)
-    else:
-        # probe is None — 使用内部 DrillProber（默认链路正常，由 drill 阶段驱动切换）
-        _hb, _lan = prober.hb, prober.lan
 
     A = Store(primary_path)
     B = Store(standby_path)
@@ -187,6 +184,8 @@ def run_drill(primary_path: str, standby_path: str, replica_dir: str,
             replica_b = make_replica("file://" + os.path.abspath(rb_dir))
             ReplicationManager(B).push_snapshot(replica_b, db_path=B.path)
             best = replica_b.best_snapshot_for(None)   # 取最新（唯一）快照
+            if best is None:
+                raise RuntimeError("灾备目录未找到快照，无法重建备库")
             rebuilt = os.path.join(rb_dir, "rebuilt.db")
             shutil.copy(best["db"], rebuilt)
             A2 = Store(rebuilt)

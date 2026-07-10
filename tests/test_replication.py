@@ -19,6 +19,9 @@ from khub.replication import (
     record_change,
     replay_from,
 )
+import pytest
+pytestmark = pytest.mark.slow
+
 
 
 def _max_lsn(store):

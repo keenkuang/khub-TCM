@@ -170,10 +170,10 @@ class Store:
         """
         if keep is None:
             v = os.environ.get("KHUB_WAL_KEEP")
-            keep = int(v) if v not in (None, "") else None
+            keep = int(v) if v else None
         if keep_days is None:
             v = os.environ.get("KHUB_WAL_KEEP_DAYS")
-            keep_days = float(v) if v not in (None, "") else None
+            keep_days = float(v) if v else None
         if keep is None and keep_days is None:
             return 0
 

@@ -5,6 +5,9 @@ import tempfile
 import time
 
 from khub.scheduler import Scheduler, read_tasks
+import pytest
+pytestmark = pytest.mark.smoke
+
 
 
 def test_background_mode_multiple_triggers():

@@ -1,5 +1,8 @@
 from khub.db import Store
 from khub.sync_engine import TwoWaySyncEngine, TwoWaySyncAdapter
+import pytest
+pytestmark = pytest.mark.smoke
+
 
 
 class FakeIMAAdapter(TwoWaySyncAdapter):
