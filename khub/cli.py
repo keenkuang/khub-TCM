@@ -381,6 +381,10 @@ def build_parser():
     pr = sub.add_parser("retention-clean", help="清理过期数据")
     pr.add_argument("--table", default=""); pr.add_argument("--dry-run", action="store_true")
 
+    # 0.9.4 合规认证
+    sub.add_parser("compliance-check", help="运行合规检查")
+    sub.add_parser("compliance-report", help="生成合规报告")
+
     # 0.8.2 analytics
     sub.add_parser("analytics-cohorts", help="患者分群分析")
     sub.add_parser("analytics-efficacy", help="辨证方剂疗效分析")
@@ -1382,6 +1386,15 @@ def main(argv=None):
         for tbl, cnt in result.items():
             flag = "（模拟）" if args.dry_run else ""
             print(f"{tbl}: {cnt} 条{flag}")
+    # 0.9.4 合规认证
+    elif args.cmd == "compliance-check":
+        from .compliance import run_checklist
+        import json as _json
+        result = run_checklist(store)
+        print(_json.dumps(result, ensure_ascii=False, indent=2))
+    elif args.cmd == "compliance-report":
+        from .compliance import generate_report
+        print(generate_report(store))
     # 0.8.2 analytics
     elif args.cmd == "analytics-cohorts":
         from .analytics import patient_cohorts

@@ -107,7 +107,8 @@ class App:
         }
         _action_map = {"GET": "read", "POST": "create", "PUT": "update", "DELETE": "delete"}
         _public_paths = ("/auth/login", "/web/", "/health", "/api/info",
-                         "/api/openapi.json", "/api/docs")
+                         "/api/openapi.json", "/api/docs",
+                         "/api/compliance/")
         skip_check = any(path.startswith(p) for p in _public_paths)
         if not skip_check:
             resource = None
@@ -1281,6 +1282,14 @@ class App:
             cid = add_comment(store, body.get("article_id", 0), body.get("content", ""),
                               author_id=0)
             return 201, {"comment_id": cid}
+
+        # 0.9.4 合规认证
+        if method == "GET" and path == "/api/compliance/checklist":
+            from .compliance import run_checklist
+            return 200, run_checklist(store)
+        if method == "GET" and path == "/api/compliance/report":
+            from .compliance import generate_report
+            return 200, {"report": generate_report(store)}
 
         return 404, {"error": "not found"}
 
