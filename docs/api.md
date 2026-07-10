@@ -256,7 +256,7 @@
 当前共 **150+ 个 REST 端点**，覆盖系统/鉴权/文档/搜索/临床/运营/考试/课程/知识图谱/报表/Webhook/Copilot/Agent/工作流/远程医疗/社区/集成/合规/数据分析/多租户/同步/用户管理/审计/微信/插件 25 个领域。
 | GET | `/` | Web UI 首页 | — | HTML 页面 |
 | GET | `/stats` | 数据看板统计 | — | `{"total":1861, "sources":{"obsidian":1711,...}, "today":0, "recent":[...]}` |
-| GET | `/health` | 健康检查 | — | `{"status":"ok","version":"0.2.1","documents":42,"uptime_sec":3600.0}` |
+| GET | `/health` | 健康检查 | — | `{"status":"ok","version":"1.4.0","documents":42,"uptime_sec":3600.0}` |
 | GET | `/ebooks` | 列出电子书 | — | `[{"canonical_id":"sha256-xxx","title":"伤寒论",...}]` |
 | POST | `/ebooks/register` | 注册电子书 | `{"path":"...", "move":false}` | `{"canonical_id":"sha256-xxx"}` |
 | POST | `/ebooks/{cid}/ingest` | 入库电子书 | — | `{"canonical_id":"sha256-xxx","version_id":3}` |
@@ -303,7 +303,7 @@
 ```json
 {
   "status": "ok",
-  "version": "0.2.1",
+  "version": "1.4.0",
   "documents": 42,
   "uptime_sec": 3600.0
 }
