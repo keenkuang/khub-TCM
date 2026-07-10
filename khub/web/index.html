@@ -3,9 +3,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>kHUB</title>
 <link rel="stylesheet" href="/web/style.css">
+<script>
+fetch('/api/info').then(r=>r.json()).then(d=>{
+  if(d.name) document.title = d.name;
+  if(d.logo_url) { var img=document.getElementById('brandLogo'); if(img) img.src=d.logo_url; }
+}).catch(()=>{});
+</script>
 </head>
 <body>
-<header>kHUB · 个人知识中枢
+<header><img id="brandLogo" style="height:22px;vertical-align:middle;margin-right:6px;display:none" alt="logo">kHUB · 个人知识中枢
   <button class="theme-toggle" onclick="toggleTheme()" title="切换深色/浅色模式">🌙</button>
   <button class="ghost" onclick="logout()" style="margin-left:8px">注销</button>
 </header>

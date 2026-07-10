@@ -1,0 +1,5 @@
+apiVersion: v2
+name: khub
+description: khub 个人知识中枢
+version: 0.5.1
+appVersion: "0.5.1"

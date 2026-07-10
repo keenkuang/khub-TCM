@@ -1,0 +1,36 @@
+replicaCount: 1
+
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  repository: ghcr.io/keenkuang/khub-tcm
+  pullPolicy: IfNotPresent
+  tag: latest
+
+service:
+  type: ClusterIP
+  port: 8765
+
+ingress:
+  enabled: false
+  host: khub.example.com
+  className: ""
+  annotations: {}
+  tls: []
+
+persistence:
+  size: 10Gi
+  storageClass: ""
+
+config:
+  db: /data/khub.db
+  library: /data/library
+
+resources: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+env: []
+envFrom: []

@@ -7,6 +7,8 @@ from urllib.parse import parse_qs, urlparse, unquote
 
 # 请求计数器（用于 /metrics）
 _REQUESTS: dict[str, int] = {"GET": 0, "POST": 0, "PUT": 0, "DELETE": 0}
+# 0.5.1 启动时间戳（用于 /api/info）
+_START = time.time()
 
 from . import __version__
 from .db import Store
@@ -91,7 +93,7 @@ class App:
             "/documents": "docs", "/search": "docs", "/semantic": "docs",
         }
         _action_map = {"GET": "read", "POST": "create", "PUT": "update", "DELETE": "delete"}
-        _public_paths = ("/auth/login", "/web/", "/health")
+        _public_paths = ("/auth/login", "/web/", "/health", "/api/info")
         skip_check = any(path.startswith(p) for p in _public_paths)
         if not skip_check:
             resource = None
@@ -930,6 +932,37 @@ class App:
                 return 200, {"status": "ok"}
             except ValueError as e:
                 return 400, {"error": str(e)}
+
+        # 0.5.0 knowledge graph
+        if method == "GET" and path == "/api/kg/infer":
+            from .knowledge.inference import infer
+            syd = qs.get("syndrome", [""])[0]
+            if not syd: return 400, {"error": "syndrome param required"}
+            return 200, {"result": infer(store, syd)}
+        if method == "GET" and path == "/api/kg/herbs":
+            from .knowledge.herbs import search_herbs
+            return 200, {"herbs": search_herbs(store, channel=qs.get("channel", [""])[0], nature=qs.get("nature", [""])[0])}
+        if method == "GET" and path == "/api/kg/formulas":
+            from .knowledge.formulas import list_formulas
+            return 200, {"formulas": list_formulas(store, category=qs.get("category", [""])[0])}
+        if method == "GET" and path == "/api/kg/syndromes":
+            from .knowledge.syndromes import list_syndromes
+            return 200, {"syndromes": list_syndromes(store, category=qs.get("category", [""])[0])}
+        if method == "GET" and path.startswith("/api/kg/similarity"):
+            from .knowledge.formulas import formula_similarity
+            f1 = qs.get("f1", [""])[0]; f2 = qs.get("f2", [""])[0]
+            if not f1 or not f2: return 400, {"error": "f1 and f2 required"}
+            return 200, {"formula1": f1, "formula2": f2, "similarity": formula_similarity(store, f1, f2)}
+
+        # 0.5.1 deployment info
+        if method == "GET" and path == "/api/info":
+            return 200, {
+                "name": os.environ.get("KHUB_BRAND_NAME", "kHUB"),
+                "version": __version__,
+                "logo_url": os.environ.get("KHUB_BRAND_LOGO", ""),
+                "uptime_sec": int(time.time() - _START),
+                "api_version": "0.5.1",
+            }
 
         return 404, {"error": "not found"}
 

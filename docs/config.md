@@ -10,6 +10,8 @@
 
 | 变量 | 用途 | 默认值 | 示例 |
 |------|------|--------|------|
+| `KHUB_BRAND_NAME` | 品牌名称（覆盖 Web UI 标题与 API 返回的 name） | `kHUB` | `中医知识库` |
+| `KHUB_BRAND_LOGO` | 品牌 Logo URL（显示在 Web UI 导航栏） | 空 | `https://example.com/logo.png` |
 | `KHUB_DB` | SQLite 数据库文件路径 | `~/.khub/khub.db` | `/data/khub/khub.db` |
 | `KHUB_LIBRARY` | 受管库目录（文档存储位置） | `~/.khub/library` | `/data/khub/library` |
 | `KHUB_LOG_LEVEL` | 日志级别 | `INFO` | `DEBUG` |

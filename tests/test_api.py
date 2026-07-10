@@ -192,6 +192,14 @@ def test_api_health():
     assert obj["checks"]["db"]["documents"] == 1
 
 
+def test_api_info():
+    app, _, _ = _app()
+    code, obj = app.dispatch("GET", "/api/info")
+    assert code == 200
+    assert obj["name"] == "kHUB"
+    assert obj["version"] >= "0.5"
+
+
 def test_api_semantic_search():
     app, _, _ = _app()
     app.dispatch("POST", "/documents",
