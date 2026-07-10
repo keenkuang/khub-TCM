@@ -81,6 +81,15 @@ class App:
             al = auth_header or qs.get("lang", [""])[0]
             lang = detect_lang(al)
             return 200, {"lang": lang, "translations": get_translations(lang)}
+        # 2.4 i18n v2
+        if method == "GET" and path == "/api/i18n/langs":
+            from .i18n import supported_langs
+            return 200, {"languages": supported_langs()}
+        if method == "GET" and path == "/api/i18n/translate":
+            from .i18n import t, detect_lang
+            key = qs.get("key", [""])[0]
+            target = qs.get("lang", [""])[0] or detect_lang("")
+            return 200, {"key": key, "translation": t(key, target), "lang": target}
 
         # 鉴权
         from .auth import get_current_user
