@@ -1,5 +1,38 @@
 # 变更日志
 
+## [0.5.0] — 2026-07-10
+
+### 中医知识图谱与推理引擎
+
+**跃升至 0.5.x 系列——从业务管理升级为知识智能。**
+
+#### 知识图谱模型
+- 5 张业务表：`kg_herbs`（60+ 中药，含四气五味归经功效毒性）、`kg_formulas`（20 经典方剂，含组成/出处/功效）、`kg_syndromes`（14 证型，含八纲分类/症状/舌脉/治法）、`kg_methods`（8 治法）、`kg_relations`（通用关系边，支撑推理）
+- 全部接 WAL 复制触发
+
+#### 种子数据
+- 60+ 常用中药（桂枝汤/麻黄汤/六味地黄丸 等全部组成药物）
+- 20 经典方剂（伤寒论/温病条辨/太平惠民和剂局方 等来源）
+- 14 证型（八纲+脏腑辨证，含典型症状舌脉）
+- 8 治法（汗吐下和温清消补）
+- 证型→方剂关系边（syndrome→formula 的 indicates 关联）
+
+#### 推理引擎（`inference.py`）
+- 四层推导链：证型 → 治法 → 方剂 → 中药 → 归经 → 禁忌
+- `infer(store, syndrome_name)` 返回治法列表、推荐方剂、关键中药、归经、禁忌中药
+- 纯规则驱动（基于 `kg_relations` 关系边），零外部依赖
+
+#### 方剂相似度
+- Jaccard 相似度算法（基于组成中药集合的交并比）
+- `formula_similarity(store, name1, name2)` 返回 0-1 相似度分数
+
+#### 接口
+- REST：5 个端点（`GET /api/kg/infer?syndrome=`、`GET /api/kg/herbs`、`GET /api/kg/formulas`、`GET /api/kg/syndromes`、`GET /api/kg/similarity?f1=&f2=`）
+- CLI：`kg-infer`、`kg-herbs [--channel] [--nature]`、`kg-formulas [--category]`、`kg-similarity <f1> <f2>`
+
+### 测试
+- 新增 7 个测试（中药 CRUD/搜索、方剂 CRUD/相似度、推理引擎）全部通过
+
 ## [0.4.1] — 2026-07-10
 
 ### 小程序客户端
