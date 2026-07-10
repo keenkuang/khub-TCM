@@ -299,6 +299,13 @@ def build_parser():
 
     pwf = sub.add_parser("wechat-sync-followers", help="同步粉丝数据")
 
+    pul = sub.add_parser("user-list", help="列出用户")
+    puc = sub.add_parser("user-create", help="创建用户")
+    puc.add_argument("username"); puc.add_argument("password")
+    puc.add_argument("--role", default="user"); puc.add_argument("--display", default="")
+    pur = sub.add_parser("user-role", help="修改用户角色")
+    pur.add_argument("user_id", type=int); pur.add_argument("role")
+
     return ap
 
 
@@ -1105,6 +1112,22 @@ def main(argv=None):
             batch.extend(batchget_user_info(openids[i:i+100]))
         sync_followers(store, batch)
         print(f"已同步 {total} 个粉丝")
+    elif args.cmd == "user-list":
+        from .auth import list_users
+        for u in list_users(store):
+            print(f"  #{u['id']} {u['username']} [{u['role']}] {'✓' if u['active'] else '✗'}")
+    elif args.cmd == "user-create":
+        from .auth import create_user
+        uid = create_user(store, args.username, args.password,
+                          display_name=args.display, role=args.role)
+        print(f"用户 #{uid} 已创建")
+    elif args.cmd == "user-role":
+        from .auth import update_user_role
+        try:
+            update_user_role(store, args.user_id, args.role)
+            print(f"用户 #{args.user_id} 角色已修改为 {args.role}")
+        except ValueError as e:
+            print(f"失败：{e}")
     else:
         build_parser().print_help()
 

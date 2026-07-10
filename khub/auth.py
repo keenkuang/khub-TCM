@@ -118,3 +118,66 @@ def get_current_user(store, auth_header: str) -> Optional[dict]:
                     "role": "admin", "via_global_token": True}
         return None
     return None
+
+
+# ── RBAC 权限定义 ──
+
+PERMISSIONS: dict[str, dict[str, str]] = {
+    "admin":        {"*": "admin"},
+    "doctor":       {"patients": "crud", "records": "crud", "consultations": "crud",
+                     "appointments": "crud", "courses": "r", "exam": "crud", "docs": "r",
+                     "wechat": "r", "stats": "r", "tags": "crud", "favorites": "crud",
+                     "users": ""},
+    "nurse":        {"patients": "r", "records": "rw", "consultations": "r",
+                     "appointments": "crud", "courses": "r", "docs": "r",
+                     "stats": "r", "tags": "r", "favorites": "crud",
+                     "users": ""},
+    "intern":       {"patients": "r", "records": "rw", "consultations": "r",
+                     "appointments": "r", "courses": "r", "docs": "r",
+                     "stats": "r", "tags": "r", "favorites": "crud",
+                     "users": ""},
+    "receptionist": {"patients": "r", "appointments": "crud", "courses": "r",
+                     "docs": "r", "stats": "r",
+                     "users": ""},
+    "patient":      {"patients": "r", "records": "r", "consultations": "r",
+                     "appointments": "crud", "docs": "r", "favorites": "crud",
+                     "users": ""},
+    "guardian":     {"patients": "r", "appointments": "crud", "docs": "r",
+                     "users": ""},
+    "security":     {"patients": "r", "users": ""},
+}
+
+
+def check_permission(user: dict | None, resource: str, action: str) -> bool:
+    if not user:
+        return False
+    role = user.get("role", "")
+    perms = PERMISSIONS.get(role, {})
+    if perms.get("*") == "admin" or user.get("via_global_token"):
+        return True
+    rp = perms.get(resource, "")
+    if action == "read" and "r" in rp:
+        return True
+    if action in ("create",) and "c" in rp:
+        return True
+    if action in ("update",) and "u" in rp:
+        return True
+    if action in ("delete",) and "d" in rp:
+        return True
+    if action in ("write",) and "w" in rp:
+        return True
+    return False
+
+
+def list_users(store) -> list[dict]:
+    rows = store.conn.execute(
+        "SELECT id, username, display_name, role, active, created_at FROM users"
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def update_user_role(store, user_id: int, new_role: str) -> bool:
+    if new_role not in PERMISSIONS:
+        raise ValueError(f"无效角色：{new_role}")
+    store.conn.execute("UPDATE users SET role=? WHERE id=?", (new_role, user_id))
+    return True

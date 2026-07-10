@@ -20,6 +20,7 @@
     <button class="ghost" onclick="loadSyncStatus()">同步状态</button>
     <button class="ghost" onclick="showView('ops');return false">运营</button>
     <button class="ghost" onclick="showView('course');return false">课程</button>
+    <button class="ghost" onclick="showView('admin');return false" id="adminBtn" style="display:none">管理</button>
     <button class="ghost" onclick="loadFavorites();return false">收藏</button>
     <select id="sourceFilter" style="padding:6px 8px;border:1px solid #ccd;border-radius:6px;font-size:13px">
       <option value="">所有来源</option>
@@ -48,6 +49,13 @@
       <button onclick="showCourseForm()">创建课程</button>
     </div>
     <div id="course-content">点击上方按钮加载数据</div>
+  </div>
+  <div id="admin-panel" style="display:none">
+    <h2>系统管理</h2>
+    <div class="ops-nav">
+      <button onclick="loadUsers()">用户管理</button>
+    </div>
+    <div id="admin-content">点击上方按钮加载数据</div>
   </div>
   <div id="results"></div>
 </div>

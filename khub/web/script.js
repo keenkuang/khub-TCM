@@ -17,7 +17,11 @@ async function checkLogin() {
   if (!token) { window.location.href = '/web/login.html'; return; }
   try {
     const r = await fetch('/auth/me');
+    const j = await r.json();
     if (!r.ok) { localStorage.removeItem('khub_token'); window.location.href = '/web/login.html'; }
+    if (j.user && j.user.role === 'admin') {
+      document.getElementById('adminBtn').style.display = 'inline-block';
+    }
   } catch(e) { /* 保留 token 继续尝试 */ }
 }
 
@@ -489,12 +493,12 @@ function toggleTheme() {
 
 // ── 运营 UI ──
 function showView(name) {
-  ['ops','course'].forEach(function(v){
+  ['ops','course','admin'].forEach(function(v){
     var el = document.getElementById(v+'-panel');
     if(el) el.style.display = name === v ? 'block' : 'none';
   });
-  document.getElementById('results').style.display = name === 'ops' || name === 'course' ? 'none' : 'block';
-  if (name === 'ops' || name === 'course') document.getElementById('stats').style.display = 'none';
+  document.getElementById('results').style.display = name === 'ops' || name === 'course' || name === 'admin' ? 'none' : 'block';
+  if (name === 'ops' || name === 'course' || name === 'admin') document.getElementById('stats').style.display = 'none';
   else document.getElementById('stats').style.display = 'flex';
 }
 
@@ -707,6 +711,53 @@ function showEnrollForm(courseId) {
     .then(function(r){ return r.json(); })
     .then(function(j){ if(j.enrollment_id) showToast('报名成功'); else showToast(j.error||'报名失败'); loadCourseDetail(courseId); })
     .catch(function(){ showToast('报名失败'); });
+}
+
+async function loadUsers() {
+  var box = document.getElementById('admin-content');
+  box.innerHTML = '<p class="meta">加载中…</p>';
+  try {
+    const r = await fetch('/api/users').then(x=>x.json());
+    let html = '<h3>用户列表 <button onclick="showAddUserForm()">添加用户</button></h3>';
+    html += '<table class="ops-table"><tr><th>ID</th><th>用户名</th><th>显示名</th><th>角色</th><th>状态</th><th>操作</th></tr>';
+    for (const u of (r.users||[])) {
+      html += '<tr><td>'+u.id+'</td><td>'+esc(u.username)+'</td><td>'+esc(u.display_name)+'</td><td>'+esc(u.role)+'</td><td>'+(u.active?'✓':'✗')+'</td>';
+      html += '<td><select onchange="changeRole('+u.id+',this.value)"><option value="">改角色</option><option value="admin">admin</option><option value="doctor">doctor</option><option value="nurse">nurse</option><option value="receptionist">receptionist</option><option value="patient">patient</option></select></td></tr>';
+    }
+    html += '</table>';
+    box.innerHTML = html;
+  } catch(e) { box.innerHTML = '<p class="meta">加载失败</p>'; }
+}
+
+function showAddUserForm() {
+  var box = document.getElementById('admin-content');
+  box.innerHTML = '<h3>添加用户</h3><div class="edit-form">'+
+    '<p><input id="nu_name" placeholder="用户名"></p>'+
+    '<p><input id="nu_pass" type="password" placeholder="密码"></p>'+
+    '<p><input id="nu_display" placeholder="显示名"></p>'+
+    '<p><select id="nu_role"><option value="doctor">医生</option><option value="nurse">护士</option><option value="receptionist">前台</option><option value="patient">患者</option></select></p>'+
+    '<p><button onclick="doAddUser()">创建</button></p></div>';
+}
+
+async function doAddUser() {
+  var body = {
+    username: document.getElementById('nu_name').value,
+    password: document.getElementById('nu_pass').value,
+    display_name: document.getElementById('nu_display').value,
+    role: document.getElementById('nu_role').value,
+  };
+  try {
+    await fetch('/api/users', {method:'POST', body:JSON.stringify(body), headers:{'Content-Type':'application/json'}});
+    showToast('用户已创建'); loadUsers();
+  } catch(e) { showToast('创建失败'); }
+}
+
+async function changeRole(uid, role) {
+  if (!role) return;
+  try {
+    await fetch('/api/users/'+uid+'/role', {method:'PUT', body:JSON.stringify({role}), headers:{'Content-Type':'application/json'}});
+    showToast('角色已更新'); loadUsers();
+  } catch(e) { showToast('更新失败'); }
 }
 
 loadAll();

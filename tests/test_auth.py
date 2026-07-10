@@ -61,3 +61,68 @@ def test_revoke_token():
 def test_validate_invalid_token():
     store = Store(":memory:")
     assert validate_token(store, "invalid_token_xxx") is None
+
+
+def test_check_permission_admin():
+    from khub.auth import check_permission
+    user = {"role": "admin", "user_id": 1}
+    assert check_permission(user, "patients", "read") is True
+    assert check_permission(user, "any_resource", "delete") is True
+
+
+def test_check_permission_doctor():
+    from khub.auth import check_permission
+    user = {"role": "doctor", "user_id": 1}
+    assert check_permission(user, "patients", "read") is True
+    assert check_permission(user, "patients", "create") is True
+    assert check_permission(user, "stats", "read") is True
+    assert check_permission(user, "users", "read") is False
+
+
+def test_check_permission_nurse():
+    from khub.auth import check_permission
+    user = {"role": "nurse", "user_id": 1}
+    assert check_permission(user, "patients", "read") is True
+    assert check_permission(user, "patients", "create") is False  # nurse 只有 r
+    assert check_permission(user, "appointments", "create") is True
+    assert check_permission(user, "exam", "create") is False
+
+
+def test_check_permission_patient():
+    from khub.auth import check_permission
+    user = {"role": "patient", "user_id": 1}
+    assert check_permission(user, "patients", "read") is True
+    assert check_permission(user, "appointments", "create") is True
+    assert check_permission(user, "courses", "read") is False
+    assert check_permission(user, "exam", "create") is False
+
+
+def test_check_permission_receptionist():
+    from khub.auth import check_permission
+    user = {"role": "receptionist", "user_id": 1}
+    assert check_permission(user, "appointments", "create") is True
+    assert check_permission(user, "patients", "read") is True
+    assert check_permission(user, "records", "create") is False
+
+
+def test_check_permission_no_user():
+    from khub.auth import check_permission
+    assert check_permission(None, "patients", "read") is False
+
+
+def test_list_users():
+    from khub.auth import list_users, create_user
+    store = Store(":memory:")
+    create_user(store, "u1", "p1", role="doctor")
+    create_user(store, "u2", "p2", role="nurse")
+    users = list_users(store)
+    assert len(users) == 3  # admin + u1 + u2
+
+
+def test_update_user_role():
+    from khub.auth import update_user_role, create_user
+    store = Store(":memory:")
+    uid = create_user(store, "u1", "p1", role="doctor")
+    update_user_role(store, uid, "nurse")
+    row = store.conn.execute("SELECT role FROM users WHERE id=?", (uid,)).fetchone()
+    assert row["role"] == "nurse"

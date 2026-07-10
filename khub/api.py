@@ -70,6 +70,30 @@ class App:
             return 401, {"error": "unauthorized"}
         # 将当前用户存入请求上下文供后续端点使用
         setattr(self, "_current_user", current_user)
+        # RBAC 权限检查
+        from .auth import check_permission
+        _resource_map = {
+            "/twin": "patients", "/patients": "patients", "/records": "records",
+            "/consultations": "consultations", "/appointments": "appointments",
+            "/api/courses": "courses", "/api/wechat": "wechat",
+            "/tags": "tags", "/favorites": "favorites",
+            "/stats": "stats", "/sync-status": "stats",
+            "/exam": "exam", "/api/users": "users",
+            "/documents": "docs", "/search": "docs", "/semantic": "docs",
+        }
+        _action_map = {"GET": "read", "POST": "create", "PUT": "update", "DELETE": "delete"}
+        _public_paths = ("/auth/login", "/web/", "/health")
+        skip_check = any(path.startswith(p) for p in _public_paths)
+        if not skip_check:
+            resource = None
+            for prefix, rsrc in _resource_map.items():
+                if path.startswith(prefix) or path.startswith("/api" + prefix):
+                    resource = rsrc
+                    break
+            if resource:
+                action = _action_map.get(method, "read")
+                if not check_permission(current_user, resource, action):
+                    return 403, {"error": "权限不足"}
         # 请求计数器
         _REQUESTS[method] = _REQUESTS.get(method, 0) + 1
 
@@ -819,6 +843,34 @@ class App:
         if method == "GET" and path == "/auth/me":
             cu = getattr(self, "_current_user", None)
             return 200, {"user": cu}
+
+        # 0.3.1 用户管理（admin 专用）
+        if method == "GET" and path == "/api/users":
+            if not check_permission(current_user, "users", "read"):
+                return 403, {"error": "权限不足"}
+            from .auth import list_users
+            return 200, {"users": list_users(self.store)}
+        if method == "POST" and path == "/api/users":
+            if not check_permission(current_user, "users", "create"):
+                return 403, {"error": "权限不足"}
+            from .auth import create_user
+            try:
+                uid = create_user(self.store, body.get("username", ""), body.get("password", ""),
+                                  display_name=body.get("display_name", ""),
+                                  role=body.get("role", "user"))
+                return 201, {"user_id": uid}
+            except Exception as e:
+                return 400, {"error": str(e)}
+        if method == "PUT" and path.startswith("/api/users/") and path.endswith("/role"):
+            if not check_permission(current_user, "users", "update"):
+                return 403, {"error": "权限不足"}
+            from .auth import update_user_role
+            uid = _safe_int([parts[2]], 0)
+            try:
+                update_user_role(self.store, uid, body.get("role", ""))
+                return 200, {"status": "ok"}
+            except ValueError as e:
+                return 400, {"error": str(e)}
 
         return 404, {"error": "not found"}
 
