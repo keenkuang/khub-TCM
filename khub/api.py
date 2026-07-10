@@ -40,6 +40,15 @@ def _safe_int(value, default: int) -> int:
         return default
 
 
+def _apply_scope(sql: str, clause: str) -> str:
+    """将 scope_filter 子句拼接到 SQL 语句中。"""
+    if not clause:
+        return sql
+    if "WHERE" in sql.upper():
+        return sql + f" AND {clause}"
+    return sql + f" WHERE {clause}"
+
+
 class App:
     """薄 REST 层：直接复用核心库 API，不重写业务逻辑。"""
 
@@ -565,7 +574,8 @@ class App:
 
         if method == "GET" and path == "/clinical/patients":
             from .clinical.patients import list_patients
-            return 200, list_patients(self.store)
+            cu = getattr(self, "_current_user", None)
+            return 200, list_patients(self.store, user=cu)
 
         if method == "POST" and path == "/clinical/records":
             from .clinical.records import add_record
@@ -614,7 +624,8 @@ class App:
         if method == "GET" and path == "/ops/appointments":
             from .ops.store import list_appointments
             date = qs.get("date", [None])[0]
-            return 200, list_appointments(self.store, date)
+            cu = getattr(self, "_current_user", None)
+            return 200, list_appointments(self.store, date, user=cu)
 
         if method == "GET" and path == "/ops/schedules":
             from .ops.store import list_schedules

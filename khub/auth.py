@@ -181,3 +181,47 @@ def update_user_role(store, user_id: int, new_role: str) -> bool:
         raise ValueError(f"无效角色：{new_role}")
     store.conn.execute("UPDATE users SET role=? WHERE id=?", (new_role, user_id))
     return True
+
+
+# ── 数据隔离（0.3.2） ──
+
+def scope_filter(user: dict | None, resource: str, alias: str = "") -> tuple[str, list]:
+    """返回 (where_clause, params) 供 SQL 查询追加数据隔离。
+
+    Args:
+        user: 当前用户 dict（含 role, user_id, username）
+        resource: 资源名（patients, records, consultations, appointments）
+        alias: 表别名（如 "p."），用于 JOIN 查询
+
+    Returns:
+        (where_clause, params) — clause 为空字符串时表示无限制
+    """
+    if not user:
+        return "1=0", []
+    role = user.get("role", "")
+    uid = user.get("user_id", 0)
+    username = user.get("username", "")
+    if role in ("admin",) or user.get("via_global_token"):
+        return "", []
+    p = alias + "." if alias else ""
+    if resource == "patients":
+        if role in ("patient", "guardian"):
+            return f"{p}id=?", [uid]
+        if role in ("doctor", "intern", "nurse"):
+            # 医生/护士/实习生：看到自己接诊/护理过的患者
+            return f"{p}id IN (SELECT DISTINCT patient_id FROM records)", []
+    elif resource in ("records",):
+        if role in ("patient", "guardian"):
+            return f"{p}patient_id=?", [uid]
+        # 医生/护士/实习生：看到所有记录（数据层面）
+    elif resource in ("consultations",):
+        if role in ("patient", "guardian"):
+            return f"{p}patient_id=?", [uid]
+    elif resource == "appointments":
+        if role in ("patient", "guardian"):
+            return f"{p}patient_id=?", [uid]
+        if role == "doctor":
+            return f"{p}doctor=?", [username]
+        if role == "intern":
+            return f"{p}1=1", []  # 仅查看
+    return "", []

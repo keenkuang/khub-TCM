@@ -82,12 +82,26 @@ def apply_visit(store, op, row_id, payload):
         (payload.get("id", row_id), payload.get("appointment_id", ""), payload.get("patient_id", ""),
          payload.get("checkin_at", ""), payload.get("note", "")))
 
-def list_appointments(store, date=None):
+def list_appointments(store, date=None, doctor=None, status=None, user=None):
+    from ..auth import scope_filter
+    clause, params = scope_filter(user, "appointments")
+    sql = "SELECT * FROM appointments"
+    conditions = []
     if date:
-        rows = store.conn.execute(
-            "SELECT * FROM appointments WHERE date=? ORDER BY id", (date,)).fetchall()
-    else:
-        rows = store.conn.execute("SELECT * FROM appointments ORDER BY id").fetchall()
+        conditions.append("date=?")
+        params.append(date)
+    if doctor:
+        conditions.append("doctor=?")
+        params.append(doctor)
+    if status:
+        conditions.append("status=?")
+        params.append(status)
+    if clause:
+        conditions.append(clause)
+    if conditions:
+        sql += " WHERE " + " AND ".join(conditions)
+    sql += " ORDER BY id"
+    rows = store.conn.execute(sql, params).fetchall()
     return [dict(r) for r in rows]
 
 

@@ -45,8 +45,13 @@ def get_patient(store, pid):
     record(store, "read_patient", scope="patient", patient_id=pid)
     return d
 
-def list_patients(store):
-    rows = store.conn.execute("SELECT * FROM patients ORDER BY id").fetchall()
+def list_patients(store, user=None):
+    from ..auth import scope_filter
+    clause, params = scope_filter(user, "patients", alias="")
+    sql = "SELECT * FROM patients ORDER BY id"
+    if clause:
+        sql = f"SELECT * FROM patients WHERE {clause} ORDER BY id"
+    rows = store.conn.execute(sql, params).fetchall()
     result = []
     for r in rows:
         d = dict(r)

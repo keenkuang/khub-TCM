@@ -126,3 +126,57 @@ def test_update_user_role():
     update_user_role(store, uid, "nurse")
     row = store.conn.execute("SELECT role FROM users WHERE id=?", (uid,)).fetchone()
     assert row["role"] == "nurse"
+
+
+# ── 0.3.2 数据隔离 scope_filter 测试 ──
+
+def test_scope_admin():
+    from khub.auth import scope_filter
+    user = {"role": "admin", "user_id": 1}
+    clause, params = scope_filter(user, "patients")
+    assert clause == ""
+    assert params == []
+
+def test_scope_patient_self():
+    from khub.auth import scope_filter
+    user = {"role": "patient", "user_id": 5}
+    clause, params = scope_filter(user, "patients")
+    assert "id=?" in clause
+    assert params == [5]
+
+def test_scope_doctor():
+    from khub.auth import scope_filter
+    user = {"role": "doctor", "user_id": 3, "username": "dr_li"}
+    clause, params = scope_filter(user, "patients")
+    assert "patient_id" in clause
+    assert params == []
+
+def test_scope_doctor_appointments():
+    from khub.auth import scope_filter
+    user = {"role": "doctor", "user_id": 3, "username": "dr_li"}
+    clause, params = scope_filter(user, "appointments")
+    assert "doctor=?" in clause
+    assert params == ["dr_li"]
+
+def test_scope_patient_appointments():
+    from khub.auth import scope_filter
+    user = {"role": "patient", "user_id": 5}
+    clause, params = scope_filter(user, "appointments")
+    assert "patient_id=?" in clause
+
+def test_scope_none_user():
+    from khub.auth import scope_filter
+    clause, params = scope_filter(None, "patients")
+    assert "1=0" in clause  # 未登录用户看不到任何数据
+
+def test_scope_guardian():
+    from khub.auth import scope_filter
+    user = {"role": "guardian", "user_id": 8}
+    clause, params = scope_filter(user, "patients")
+    assert clause != ""
+
+def test_scope_alias():
+    from khub.auth import scope_filter
+    user = {"role": "patient", "user_id": 5}
+    clause, params = scope_filter(user, "records", alias="r")
+    assert "r.patient_id=?" in clause

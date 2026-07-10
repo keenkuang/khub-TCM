@@ -43,14 +43,25 @@ def apply_change(store, op, row_id, payload):
          payload.get("tongue_pulse", ""), payload.get("differentiation", ""),
          payload.get("plan", ""), payload.get("created_at", "")))
 
-def list_consultations(store, patient_id):
-    rows = store.conn.execute(
-        "SELECT * FROM consultations WHERE patient_id=? ORDER BY id", (patient_id,)).fetchall()
+def list_consultations(store, patient_id=None, user=None):
+    from ..auth import scope_filter
+    clause, params = scope_filter(user, "consultations")
+    sql = "SELECT * FROM consultations"
+    conditions = []
+    if patient_id:
+        conditions.append("patient_id=?")
+        params = [patient_id] + (params or [])
+    if clause:
+        conditions.append(clause)
+    if conditions:
+        sql += " WHERE " + " AND ".join(conditions)
+    sql += " ORDER BY id"
+    rows = store.conn.execute(sql, params).fetchall()
     result = []
     for r in rows:
         d = dict(r)
         for field in _PII_FIELDS:
             d[field] = dec(d.get(field, ""))
         result.append(d)
-    record(store, "read_consultations", scope="consultation", patient_id=patient_id)
+    record(store, "read_consultations", scope="consultation", patient_id=patient_id or "")
     return result
