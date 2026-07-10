@@ -1150,6 +1150,11 @@ class App:
             from .analytics import appointment_trends
             return 200, {"trends": appointment_trends(store)}
 
+        # 0.8.3 integrations
+        if method == "GET" and path == "/api/integrations/status":
+            from .integrations.status import check_all
+            return 200, {"integrations": check_all()}
+
         return 404, {"error": "not found"}
 
     @staticmethod

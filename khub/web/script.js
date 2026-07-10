@@ -821,6 +821,21 @@ async function loadAuditLog() {
   } catch(e) { box.innerHTML = '<p class="meta">加载失败</p>'; }
 }
 
+async function loadIntegrations() {
+  var box = document.getElementById('admin-content');
+  if (!box) return;
+  box.innerHTML = '<p class="meta">加载中…</p>';
+  try {
+    var r = await fetch('/api/integrations/status').then(function(x){return x.json();});
+    if (!r.integrations) { box.innerHTML = '<p class="meta">暂无集成信息</p>'; return; }
+    var html = '<h3>集成状态</h3><table class="ops-table"><tr><th>集成</th><th>状态</th><th>环境变量</th></tr>';
+    r.integrations.forEach(function(i){
+      html += '<tr><td>' + esc(i.name) + '</td><td>' + (i.configured ? '✅ 已配置' : '⭕ 未配置') + '</td><td><code>' + esc(i.env_var) + '</code></td></tr>';
+    });
+    html += '</table>'; box.innerHTML = html;
+  } catch(e) { box.innerHTML = '<p class="meta">加载失败</p>'; }
+}
+
 async function loadUsers() {
   var box = document.getElementById('admin-content');
   box.innerHTML = '<p class="meta">加载中…</p>';
