@@ -508,6 +508,33 @@ class App:
             due = scan_due(store, as_of=as_of)
             return 200, {"due_plans": due}
 
+        # 0.2.7 clinical 增强 — 结构化抽取
+        if method == "POST" and path == "/clinical/extract":
+            from .clinical.extract import extract_structured, apply_struct
+            source = body.get("source", "")
+            source_id = body.get("source_id", 0)
+            text = body.get("text", "")
+            if not source or not source_id:
+                return 400, {"error": "source and source_id required"}
+            if not text:
+                if source == "record":
+                    row = store.conn.execute(
+                        "SELECT diagnosis, prescription FROM records WHERE id=?", (source_id,)
+                    ).fetchone()
+                    if row:
+                        text = f"{row['diagnosis'] or ''} {row['prescription'] or ''}"
+                elif source == "consult":
+                    row = store.conn.execute(
+                        "SELECT chief_complaint, differentiation FROM consultations WHERE id=?", (source_id,)
+                    ).fetchone()
+                    if row:
+                        text = f"{row['chief_complaint'] or ''} {row['differentiation'] or ''}"
+            if not text:
+                return 404, {"error": "source not found or text empty"}
+            struct = extract_structured(store, text)
+            apply_struct(store, source, source_id, struct)
+            return 200, {"structured": struct}
+
         return 404, {"error": "not found"}
 
     @staticmethod

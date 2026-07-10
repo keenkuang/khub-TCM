@@ -221,6 +221,13 @@ def build_parser():
     pa.add_argument("--attended", action="store_true")
     pa.add_argument("--missed", action="store_true")
     pa.add_argument("--note", default="")
+
+    # ── 结构化抽取（T5） ──────────────────────────────────────────────────
+    pr = sub.add_parser("record-extract", help="抽取病历结构化字段")
+    pr.add_argument("record_id", type=int)
+
+    pc = sub.add_parser("consult-extract", help="抽取问诊结构化字段")
+    pc.add_argument("consult_id", type=int)
     return ap
 
 
@@ -825,6 +832,32 @@ def main(argv=None):
             attended = False
         record_adherence(store, args.plan_id, attended, args.note)
         print(f"随访 #{args.plan_id} 依从性记录完成")
+    elif args.cmd == "record-extract":
+        from .clinical.extract import extract_structured, apply_struct
+        import json as _json
+        row = store.conn.execute(
+            "SELECT id, diagnosis, prescription FROM records WHERE id=?", (args.record_id,)
+        ).fetchone()
+        if not row:
+            print(f"病历 #{args.record_id} 不存在")
+            return
+        text = f"{row['diagnosis'] or ''} {row['prescription'] or ''}"
+        struct = extract_structured(store, text)
+        apply_struct(store, "record", row["id"], struct)
+        print(_json.dumps(struct, ensure_ascii=False, indent=2))
+    elif args.cmd == "consult-extract":
+        from .clinical.extract import extract_structured, apply_struct
+        import json as _json
+        row = store.conn.execute(
+            "SELECT id, chief_complaint, differentiation FROM consultations WHERE id=?", (args.consult_id,)
+        ).fetchone()
+        if not row:
+            print(f"问诊 #{args.consult_id} 不存在")
+            return
+        text = f"{row['chief_complaint'] or ''} {row['differentiation'] or ''}"
+        struct = extract_structured(store, text)
+        apply_struct(store, "consult", row["id"], struct)
+        print(_json.dumps(struct, ensure_ascii=False, indent=2))
     else:
         build_parser().print_help()
 
