@@ -50,3 +50,17 @@ def test_cli_bad_command_fails():
     """khub nonexistent 应报错。"""
     rc, _, err = _run("nonexistent")
     assert rc != 0
+
+
+def test_color_output():
+    from khub.color import C
+    assert C.green("ok") != "ok"
+    assert C.ok("done").startswith("\033[92m[OK]")
+
+
+def test_completion_subcommand():
+    from khub.cli import build_parser
+    parser = build_parser()
+    for action in parser._actions:
+        if hasattr(action, 'choices') and action.choices:
+            assert "completion" in action.choices

@@ -79,7 +79,7 @@ class App:
         from .auth import get_current_user
         current_user = get_current_user(self.store, auth_header)
         if not current_user:
-            return 401, {"error": "unauthorized"}
+            return 401, {"error": "unauthorized", "error_code": "AUTH_001", "message": "请提供有效的认证令牌"}
         # 将当前用户存入请求上下文供后续端点使用
         setattr(self, "_current_user", current_user)
         # RBAC 权限检查
@@ -106,7 +106,7 @@ class App:
             if resource:
                 action = _action_map.get(method, "read")
                 if not check_permission(current_user, resource, action):
-                    return 403, {"error": "权限不足"}
+                    return 403, {"error": "permission_denied", "error_code": "AUTH_002", "message": "权限不足"}
         # 请求计数器
         _REQUESTS[method] = _REQUESTS.get(method, 0) + 1
 
@@ -925,12 +925,12 @@ class App:
         # 0.3.1 用户管理（admin 专用）
         if method == "GET" and path == "/api/users":
             if not check_permission(current_user, "users", "read"):
-                return 403, {"error": "权限不足"}
+                return 403, {"error": "permission_denied", "error_code": "AUTH_002", "message": "权限不足"}
             from .auth import list_users
             return 200, {"users": list_users(self.store)}
         if method == "POST" and path == "/api/users":
             if not check_permission(current_user, "users", "create"):
-                return 403, {"error": "权限不足"}
+                return 403, {"error": "permission_denied", "error_code": "AUTH_002", "message": "权限不足"}
             from .auth import create_user
             try:
                 uid = create_user(self.store, body.get("username", ""), body.get("password", ""),
@@ -941,7 +941,7 @@ class App:
                 return 400, {"error": str(e)}
         if method == "PUT" and path.startswith("/api/users/") and path.endswith("/role"):
             if not check_permission(current_user, "users", "update"):
-                return 403, {"error": "权限不足"}
+                return 403, {"error": "permission_denied", "error_code": "AUTH_002", "message": "权限不足"}
             from .auth import update_user_role
             uid = _safe_int([parts[2]], 0)
             try:
@@ -1207,7 +1207,7 @@ def make_handler(app: App):
             from .auth import get_current_user
             cu = get_current_user(app.store, self.headers.get("Authorization", ""))
             if not cu:
-                return self._send(401, {"error": "unauthorized"})
+                return self._send(401, {"error": "unauthorized", "error_code": "AUTH_001", "message": "请提供有效的认证令牌"})
 
             question = (body or {}).get("question", "").strip()
             if not question:
@@ -1247,7 +1247,7 @@ def make_handler(app: App):
                 from .auth import get_current_user
                 cu = get_current_user(app.store, self.headers.get("Authorization", ""))
                 if not cu:
-                    return self._send(401, {"error": "unauthorized"})
+                    return self._send(401, {"error": "unauthorized", "error_code": "AUTH_001", "message": "请提供有效的认证令牌"})
                 from .events import subscribe, unsubscribe
                 sub_id, q = subscribe()
                 self.send_response(200)

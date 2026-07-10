@@ -10,6 +10,7 @@ import time
 import webbrowser
 
 from .api import serve
+from .color import C
 from .db import Store
 from .models import CanonicalDoc
 from .exam.generator import generate
@@ -386,6 +387,11 @@ def build_parser():
     sub.add_parser("analytics-forecast", help="就诊量预测")
     sub.add_parser("analytics-trends", help="预约趋势")
 
+    # 0.8.4 completion
+    pcomp = sub.add_parser("completion", help="生成 shell 自动补全脚本")
+    pcomp.add_argument("--bash", action="store_true", help="Bash 补全")
+    pcomp.add_argument("--zsh", action="store_true", help="Zsh 补全")
+
     return ap
 
 
@@ -447,6 +453,10 @@ def main(argv=None):
     store = Store(os.environ.get("KHUB_DB", DEFAULT_DB))
     lib = ManagedLibrary(os.environ.get("KHUB_LIBRARY", DEFAULT_LIB))
 
+    NO_COLOR = os.environ.get("NO_COLOR") or not sys.stdout.isatty()
+    def _c(color_func, text):
+        return text if NO_COLOR else color_func(text)
+
     if args.cmd == "add":
         cid = register_ebook(store, lib, args.path, move=args.move)
         print(cid)
@@ -474,11 +484,11 @@ def main(argv=None):
             with open(os.path.join(cred_dir, "credentials"), "w") as f:
                 f.write(f"KHUB_TOKEN={data['token']}\nKHUB_USER={username}\n")
             os.chmod(os.path.join(cred_dir, "credentials"), 0o600)
-            print(f"登录成功！欢迎 {data.get('user', {}).get('display_name', username)}")
+            print(_c(C.green, f"登录成功！欢迎 {data.get('user', {}).get('display_name', username)}"))
         except urllib.error.HTTPError as e:
-            print(f"登录失败：{e.code} {e.read().decode()}")
+            print(_c(C.fail, f"登录失败：{e.code} {e.read().decode()}"))
         except Exception as e:
-            print(f"连接失败：{e}")
+            print(_c(C.fail, f"连接失败：{e}"))
     elif args.cmd == "logout":
         token = ""
         try:
@@ -498,7 +508,7 @@ def main(argv=None):
         cred_file = os.path.expanduser("~/.khub/credentials")
         if os.path.isfile(cred_file):
             os.remove(cred_file)
-        print("已注销")
+        print(_c(C.green, "已注销"))
     elif args.cmd == "whoami":
         # 简单读取本地凭证
         username = os.environ.get("KHUB_USER", "")
@@ -1371,6 +1381,32 @@ def main(argv=None):
         from .analytics import appointment_trends
         import json as _j
         print(_j.dumps({"trends": appointment_trends(store)}, ensure_ascii=False, indent=2))
+    elif args.cmd == "completion":
+        if args.bash:
+            print("""_khub_completion() {
+    local cur=${COMP_WORDS[COMP_CWORD]}
+    COMPREPLY=($(compgen -W "$(khub completion --list)" -- $cur))
+}
+complete -F _khub_completion khub""")
+        elif args.zsh:
+            print("""#compdef khub
+_arguments \\
+  '1: :->cmd' \\
+  '*:: :->args'
+case $state in
+  cmd) _values 'command' help serve login logout whoami \
+    user-list user-create user-role \
+    course-create course-list course-info lesson-add lesson-list enrol grade \
+    kg-infer kg-herbs kg-formulas kg-similarity \
+    report-create report-list report-run report-export \
+    workflow-create workflow-list workflow-run workflow-instances \
+    audit-search retention-clean \
+    analytics-cohorts analytics-efficacy analytics-forecast analytics-trends \
+    kg-infer kg-herbs kg-formulas kg-similarity \
+    sync-status sync-push sync-pull ;;
+esac""")
+        else:
+            print("使用 --bash 或 --zsh 生成补全脚本")
     else:
         build_parser().print_help()
 
