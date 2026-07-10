@@ -35,11 +35,11 @@ def build_parser():
     sub.add_parser("list", help="列出已注册的电子书")
     pi = sub.add_parser("ingest", help="把已注册的电子书入库（抽文本+建索引）")
     pi.add_argument("canonical_id")
-    ps = sub.add_parser("serve", help="启动 REST API（薄层，复用核心库）")
+    ps = sub.add_parser("serve", help="启动 REST API（默认 FastAPI）")
     ps.add_argument("--host", default="127.0.0.1")
-    ps.add_argument("--port", type=int, default=8000)
-    ps.add_argument("--api2", action="store_true", help="启动 2.0 FastAPI 服务（并行）")
-    ps.add_argument("--api2-port", type=int, default=8766, help="2.0 API 端口（默认 8766）")
+    ps.add_argument("--port", type=int, default=8765, help="FastAPI 端口（默认 8765）")
+    ps.add_argument("--legacy", action="store_true", help="启动旧版 API（端口 +1）")
+    ps.add_argument("--api2", action="store_true", help="[已弃用] FastAPI 已为默认，此参数无效")
 
     pla = sub.add_parser("login", help="登录 kHUB")
     pla.add_argument("username", nargs="?", default="")
@@ -549,13 +549,18 @@ def main(argv=None):
         else:
             print("未登录。使用 `khub login` 登录")
     elif args.cmd == "serve":
-        if args.api2:
-            from .api2.server import serve as serve2
+        # 默认启动 FastAPI
+        from .api2.server import serve as serve_fastapi
+        fastapi_port = args.port or 8765
+        host = args.host or "127.0.0.1"
+        if args.legacy:
+            # 旧 API 在端口 +1 上运行
+            legacy_port = fastapi_port + 1
             import threading
-            t = threading.Thread(target=serve2, args=(args.host or "127.0.0.1", args.api2_port), daemon=True)
+            t = threading.Thread(target=serve, args=(store, lib, host, legacy_port), daemon=True)
             t.start()
-            print(f"2.0 API 已在 http://{args.host or '127.0.0.1'}:{args.api2_port}/docs 启动")
-        serve(store, lib, args.host, args.port)
+            print(f"旧版 API 已在 http://{host}:{legacy_port}")
+        serve_fastapi(host=host, port=fastapi_port)
     elif args.cmd == "query":
         q = " ".join(args.keywords)
         hits, total = store.search(q)
