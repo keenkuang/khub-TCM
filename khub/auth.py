@@ -103,7 +103,10 @@ def get_current_user(store, auth_header: str) -> Optional[dict]:
         if global_token:
             return {"user_id": 0, "username": "admin", "display_name": "系统管理员",
                     "role": "admin", "via_global_token": True}
-        # 未设 KHUB_API_TOKEN 时，允许本地访问（向后兼容）
+        # 未设 KHUB_API_TOKEN 且无 auth header 时，允许本地访问（向后兼容）
+        # 生产环境下建议设置 KHUB_API_TOKEN 或配置反向代理鉴权
+        import warnings as _w
+        _w.warn("无认证信息：以 admin 身份运行（本地模式）。生产环境请设置 KHUB_API_TOKEN", RuntimeWarning, stacklevel=2)
         return {"user_id": 1, "username": "admin", "display_name": "系统管理员",
                 "role": "admin", "via_global_token": False}
     if auth_header.startswith("Bearer "):

@@ -24,7 +24,7 @@ def suggest_formula(syndrome: str, provider=None) -> list[dict]:
     """LLM 或离线知识库推荐方剂。"""
     offline = [{"formula": f, "source": "knowledge_base", "confidence": "medium"}
                for f in _SYNDROME_FORMULA_MAP.get(syndrome, [])]
-    if provider is None or not hasattr(provider, 'complete') or not getattr(provider, 'complete', None):
+    if provider is None or not callable(getattr(provider, 'complete', None)):
         return offline
     prompt = f"中医辨证：{syndrome}。推荐 3 个经典方剂并简述理由。"
     try:

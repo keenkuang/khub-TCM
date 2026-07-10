@@ -1,6 +1,9 @@
 """0.7.2 统一搜索——跨实体检索 + 混合排序。"""
 from __future__ import annotations
+import logging
 from .db import Store
+
+_logger = logging.getLogger("khub.search2")
 
 
 def unified_search(store: Store, q: str, type: str = "all", limit: int = 20) -> list[dict]:
@@ -31,7 +34,8 @@ def _search_docs(store, q, limit) -> list[dict]:
             (q, limit)).fetchall()
         return [{"entity_type": "document", "id": r["id"], "title": r.get("title", ""),
                  "subtitle": r.get("source_ids", ""), "score": r.get("score", 0) or 0} for r in rows]
-    except Exception:
+    except Exception as _e:
+        _logger.warning("搜索异常: %s", _e)
         return []
 
 
@@ -44,7 +48,8 @@ def _search_patients(store, q, limit) -> list[dict]:
             (f"%{q}%", limit)).fetchall()
         return [{"entity_type": "patient", "id": r["id"], "title": r["name"],
                  "subtitle": f"患者 #{r['id']}", "score": 0.5} for r in rows]
-    except Exception:
+    except Exception as _e:
+        _logger.warning("搜索异常: %s", _e)
         return []
 
 
@@ -55,7 +60,8 @@ def _search_courses(store, q, limit) -> list[dict]:
             (f"%{q}%", f"%{q}%", limit)).fetchall()
         return [{"entity_type": "course", "id": r["id"], "title": r["name"],
                  "subtitle": r["teacher"] or "", "score": 0.4} for r in rows]
-    except Exception:
+    except Exception as _e:
+        _logger.warning("搜索异常: %s", _e)
         return []
 
 
@@ -68,7 +74,8 @@ def _search_herbs(store, q, limit) -> list[dict]:
         return [{"entity_type": "herb", "id": r["name"], "title": r["name"],
                  "subtitle": f"{r['nature']} {r['flavor']} 归{r['channel']}",
                  "score": 0.3} for r in rows]
-    except Exception:
+    except Exception as _e:
+        _logger.warning("搜索异常: %s", _e)
         return []
 
 
@@ -81,7 +88,8 @@ def _search_formulas(store, q, limit) -> list[dict]:
         return [{"entity_type": "formula", "id": r["name"], "title": r["name"],
                  "subtitle": f"{r['source']} {r['功效']}",
                  "score": 0.3} for r in rows]
-    except Exception:
+    except Exception as _e:
+        _logger.warning("搜索异常: %s", _e)
         return []
 
 
@@ -94,5 +102,6 @@ def _search_syndromes(store, q, limit) -> list[dict]:
         return [{"entity_type": "syndrome", "id": r["name"], "title": r["name"],
                  "subtitle": f"{r['category'] or ''} — {r['treatment_principle'] or ''}",
                  "score": 0.3} for r in rows]
-    except Exception:
+    except Exception as _e:
+        _logger.warning("搜索异常: %s", _e)
         return []

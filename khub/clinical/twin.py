@@ -9,8 +9,6 @@ from ..models import CanonicalDoc
 
 def _build_context(store: Store, patient_id: str):
     """聚合患者及其病历/问诊的真实数据，返回 (patient, recs, cons)。"""
-    init_records(store)
-    init_consultations(store)
     row = get_patient(store, patient_id)
     patient = dict(row) if row else None
     recs = list_records(store, patient_id)
@@ -54,6 +52,9 @@ def _fallback_text(patient, recs, cons) -> str:
     return "；".join(parts) + "。"
 
 def build_summary(store: Store, patient_id: str, provider: Optional[LLMProvider] = None) -> str:
+    from .records import init as init_records
+    from .consultations import init as init_consultations
+    init_records(store); init_consultations(store)
     provider = provider or get_provider()
     record(store, "read_twin", scope="twin", patient_id=patient_id)
     patient, recs, cons = _build_context(store, patient_id)

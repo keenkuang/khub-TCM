@@ -3,10 +3,10 @@ from __future__ import annotations
 import json
 from ..db import Store
 from .intents import parse as parse_intent
-from . import tools as tool_registry
 
 
 def process(store: Store, text: str, current_user: dict | None = None) -> dict:
+    from . import tools as tool_registry
     intent = parse_intent(text)
     intent_name = intent.get("intent", "help")
     entities = intent.get("entities", {})
