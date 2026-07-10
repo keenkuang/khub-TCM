@@ -99,6 +99,8 @@ class Store:
         self.wal_flusher = WalFlusher(self)
         if self.path != ":memory:":
             self.wal_flusher.start()
+        # 0.2.7 临床增强业务表
+        self._init_clinical_v2_tables(self.conn)
 
     def _migrate(self):
         cols = {r["name"] for r in self.conn.execute("PRAGMA table_info(documents)")}
@@ -592,6 +594,84 @@ class Store:
                     "INSERT INTO attachments(doc_id, version_id, kind, path, hash) "
                     "VALUES(?,?,?,?,?)",
                     (cid, vid, a.get("kind", ""), a.get("path", ""), a.get("hash", "")))
+
+
+    def _init_clinical_v2_tables(self, conn):
+        """0.2.7 临床增强的业务表（遵循"业务模块只加表"）。"""
+        from .replication import install_triggers
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS twin_versions (
+                id INTEGER PRIMARY KEY,
+                patient_id INTEGER NOT NULL,
+                base_record_id INTEGER DEFAULT 0,
+                base_consult_id INTEGER DEFAULT 0,
+                summary TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )""")
+        install_triggers(conn, "twin_versions")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS consult_sessions (
+                id INTEGER PRIMARY KEY,
+                patient_id INTEGER NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )""")
+        install_triggers(conn, "consult_sessions")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS consult_messages (
+                id INTEGER PRIMARY KEY,
+                session_id INTEGER NOT NULL,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )""")
+        install_triggers(conn, "consult_messages")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS followup_plans (
+                id INTEGER PRIMARY KEY,
+                patient_id INTEGER NOT NULL,
+                due_date TEXT NOT NULL,
+                reason TEXT,
+                status TEXT DEFAULT 'active',
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )""")
+        install_triggers(conn, "followup_plans")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS followup_reminders (
+                id INTEGER PRIMARY KEY,
+                plan_id INTEGER NOT NULL,
+                due_date TEXT NOT NULL,
+                channel TEXT DEFAULT 'internal',
+                status TEXT DEFAULT 'pending',
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )""")
+        install_triggers(conn, "followup_reminders")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS followup_adherence (
+                id INTEGER PRIMARY KEY,
+                plan_id INTEGER NOT NULL,
+                attended INTEGER NOT NULL DEFAULT 0,
+                note TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )""")
+        install_triggers(conn, "followup_adherence")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS record_struct (
+                id INTEGER PRIMARY KEY,
+                source TEXT NOT NULL,
+                source_id INTEGER NOT NULL,
+                differentiation_norm TEXT,
+                syndrome TEXT,
+                formula TEXT,
+                method TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )""")
+        install_triggers(conn, "record_struct")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS syndrome_vocab (
+                canonical TEXT PRIMARY KEY,
+                aliases TEXT NOT NULL
+            )""")
+        install_triggers(conn, "syndrome_vocab")
 
 
 # ── WAL / 快照底层工具 ──────────────────────────────────────────────────────

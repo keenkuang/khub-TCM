@@ -28,3 +28,20 @@ def test_second_version_is_new_row_not_overwrite():
     v2 = s.store_document(d2, parent_version=v1)
     assert v1 != v2
     assert len(s.get_versions("d1")) == 2
+
+def test_clinical_v2_tables_exist():
+    from khub.db import Store
+    store = Store(":memory:")
+    for tbl in ("twin_versions", "consult_sessions", "consult_messages",
+                "followup_plans", "followup_reminders", "followup_adherence",
+                "record_struct", "syndrome_vocab"):
+        row = store.conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?", (tbl,)
+        ).fetchone()
+        assert row is not None, f"表 {tbl} 未创建"
+        # 验证 WAL trigger 已安装（install_triggers 使用 khub_rpl_ 前缀）
+        trig = store.conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='trigger' AND name LIKE ?",
+            (f"khub_rpl_{tbl}_%",)
+        ).fetchone()
+        assert trig is not None, f"表 {tbl} 缺 WAL trigger"
