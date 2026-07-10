@@ -16,6 +16,8 @@
 | `KHUB_BRAND_NAME` | `kHUB` | 品牌名称（覆盖 Web UI 标题与 API 返回） |
 | `KHUB_BRAND_LOGO` | 空 | 品牌 Logo URL（显示在 Web UI 导航栏） |
 | `KHUB_ADMIN_PASSWORD` | 自动生成 | admin 用户的初始密码（首次启动时） |
+| `KHUB_RATE_LIMIT_RATE` | `100` | 令牌桶速率（每秒令牌数） |
+| `KHUB_RATE_LIMIT_BURST` | `50` | 令牌桶突发上限 |
 | `KHUB_API_TOKEN` | 空（不鉴权） | REST API 鉴权令牌；设置后所有端点需 `Bearer <token>` |
 | `KHUB_HTTPS` | 空 | 设为 `1` 启用 HTTPS 合规检查 |
 | `NO_COLOR` | 空 | 设为任意值禁用 CLI 彩色输出 |
