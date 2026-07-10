@@ -146,6 +146,14 @@ class RAGEngine:
                 break
         return sources
 
+    def search_context(self, query: str, k: int = 3, max_chars: int = 1500) -> str:
+        """公开方法：检索并组装 context 文本（供 consult_chat 等外部调用）。"""
+        from .retrieval import Retriever
+        retriever = Retriever(self.store)
+        hits = retriever.search_similar(query, limit=k)
+        sources = self._fetch_sources(hits, k=k)
+        return self._assemble_context(sources, max_chars)
+
     def _assemble_context(self, sources: list[dict], max_chars: int = 3000) -> str:
         """将多篇文档拼成 LLM context 文本。两层截断：先均分截断，超长时逐步移除低分来源。"""
         if not sources:

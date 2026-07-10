@@ -1,3 +1,6 @@
+import pytest
+pytestmark = pytest.mark.smoke
+
 import json
 from khub.db import Store
 from khub.analytics import patient_cohorts, visit_forecast

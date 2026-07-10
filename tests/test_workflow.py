@@ -1,3 +1,6 @@
+import pytest
+pytestmark = pytest.mark.smoke
+
 import json, pytest
 from khub.db import Store
 from khub.workflow.store import create_definition, list_definitions, create_instance, get_instance

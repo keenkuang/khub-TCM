@@ -37,6 +37,8 @@ def _search_docs(store, q, limit) -> list[dict]:
 
 def _search_patients(store, q, limit) -> list[dict]:
     try:
+        from .clinical.patients import list_patients, init as _pinit
+        _pinit(store)  # 确保表存在
         rows = store.conn.execute(
             "SELECT id, name FROM patients WHERE name LIKE ? LIMIT ?",
             (f"%{q}%", limit)).fetchall()

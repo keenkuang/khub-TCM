@@ -54,8 +54,7 @@ def chat(store: Store, session_id: int, user_msg: str) -> str:
     # RAG 知识片段
     try:
         engine = RAGEngine(store)
-        rag_sources = engine._fetch_sources(user_msg, k=3)
-        rag_context = engine._assemble_context(rag_sources, max_chars=1500)
+        rag_context = engine.search_context(user_msg, k=3, max_chars=1500)
     except Exception:
         rag_context = ""
     rag_part = f"\n参考知识：\n{rag_context}\n\n" if rag_context else ""

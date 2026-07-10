@@ -1,3 +1,6 @@
+import pytest
+pytestmark = pytest.mark.smoke
+
 import json, pytest
 from khub.db import Store
 from khub.knowledge.herbs import add_herb, search_herbs, get_herb

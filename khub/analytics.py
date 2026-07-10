@@ -16,7 +16,7 @@ def patient_cohorts(store: Store) -> dict:
         gender_dist[g] = gender_dist.get(g, 0) + 1
         if p.get("born"):
             try:
-                age = 2026 - int(p["born"][:4])
+                age = datetime.now().year - int(p["born"][:4])
                 if age <= 18: age_groups["0-18"] += 1
                 elif age <= 35: age_groups["19-35"] += 1
                 elif age <= 55: age_groups["36-55"] += 1

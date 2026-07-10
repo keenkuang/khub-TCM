@@ -1,4 +1,7 @@
 import pytest
+pytestmark = pytest.mark.smoke
+
+import pytest
 from khub.db import Store
 from khub.notifications import create, list_recent, unread_count, mark_read, mark_all_read
 

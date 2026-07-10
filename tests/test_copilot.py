@@ -1,3 +1,6 @@
+import pytest
+pytestmark = pytest.mark.smoke
+
 """AI Copilot 测试。"""
 import pytest
 from khub.db import Store

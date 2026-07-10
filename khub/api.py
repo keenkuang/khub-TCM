@@ -1183,7 +1183,10 @@ class App:
             result = run_with_llm(store, aid, user_input=body.get("input",""), current_user=getattr(self,"_current_user",None))
             return 200, result
 
-        # 0.9.1 多租户管理
+        # 0.9.1 多租户管理（仅 admin）
+        cu = getattr(self, "_current_user", None) or current_user
+        if not check_permission(cu, "users", "create"):
+            return 403, {"error": "permission_denied", "error_code": "AUTH_002", "message": "仅管理员可管理租户"}
         if method == "POST" and path == "/api/tenants":
             from .tenants import create_tenant
             tid = create_tenant(store, body.get("name", ""), body.get("slug", ""),

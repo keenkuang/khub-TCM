@@ -1,3 +1,6 @@
+import pytest
+pytestmark = pytest.mark.smoke
+
 from khub.db import Store
 from khub.community.articles import create_article, list_articles, get_article, list_tags
 from khub.community.comments import add_comment, list_comments

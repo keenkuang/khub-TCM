@@ -1,3 +1,6 @@
+import pytest
+pytestmark = pytest.mark.smoke
+
 """0.9.0 AI Agent 平台测试。"""
 import json
 import pytest
