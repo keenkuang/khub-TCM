@@ -17,7 +17,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: pip install -e ".[dev,pdf,ann,crypto]"
+        run: pip install -e ".[dev,pdf,ann,crypto,importer]"
 
       - name: Security scan (bandit)
         # 默认 `bandit -r khub` 自动发现 khub/.bandit，预期零告警（退出码 0）
