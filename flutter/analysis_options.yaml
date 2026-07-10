@@ -1,0 +1,2 @@
+analyzer: {errors: {missing_return: error, dead_code: warning}}
+linter: {rules: [prefer_const_constructors, prefer_const_declarations]}

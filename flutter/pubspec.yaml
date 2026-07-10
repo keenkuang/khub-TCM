@@ -1,0 +1,13 @@
+name: khub_app
+description: kHUB 个人知识中枢移动端
+publish_to: 'none'
+version: 1.0.0+1
+environment: {sdk: '>=3.0.0 <4.0.0'}
+dependencies:
+  flutter: {sdk: flutter}
+  http: ^1.1.0
+  shared_preferences: ^2.2.0
+  local_auth: ^2.1.0
+  sqflite: ^2.3.0
+  path_provider: ^2.1.0
+  intl: ^0.18.0
