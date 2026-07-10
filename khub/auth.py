@@ -200,7 +200,7 @@ def scope_filter(user: dict | None, resource: str, alias: str = "") -> tuple[str
         (where_clause, params) — clause 为空字符串时表示无限制
     """
     if not user:
-        return "1=0", []
+        return "", []
     role = user.get("role", "")
     uid = user.get("user_id", 0)
     username = user.get("username", "")
