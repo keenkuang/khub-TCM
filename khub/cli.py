@@ -71,6 +71,12 @@ def build_parser():
     pt = sub.add_parser("twin-summary", help="生成患者数字孪生摘要")
     pt.add_argument("patient_id")
 
+    ptwin = sub.add_parser("twin", help="患者数字孪生操作（摘要刷新等）")
+    twin_sub = ptwin.add_subparsers(dest="twin_cmd")
+    prefresh = twin_sub.add_parser("refresh", help="增量刷新患者数字孪生摘要")
+    prefresh.add_argument("twin_arg", help="患者 ID")
+    prefresh.add_argument("--full", action="store_true", help="全量重建（非增量）")
+
     pd = sub.add_parser("doc-add", help="直接入库一份文档（KZOCR/OCR 产出，不依赖原始文件）")
     pd.add_argument("--title", required=True)
     src = pd.add_mutually_exclusive_group(required=True)
@@ -296,6 +302,13 @@ def main(argv=None):
         print(aid)
     elif args.cmd == "twin-summary":
         print(build_summary(store, args.patient_id))
+    elif args.cmd == "twin" and args.twin_cmd == "refresh":
+        from .clinical.twin_v2 import build_summary_incremental
+        from .clinical.twin import build_summary
+        pid_str = args.twin_arg
+        pid_int = int(pid_str)
+        summary = build_summary(store, pid_str) if getattr(args, 'full', False) else build_summary_incremental(store, pid_int)
+        print(summary)
     elif args.cmd == "doc-add":
         content = args.content
         if args.file:

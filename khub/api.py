@@ -462,6 +462,21 @@ class App:
             date = qs.get("date", [None])[0]
             return 200, list_appointments(self.store, date)
 
+        # 0.2.7 clinical 增强 — 孪生摘要
+        if method == "GET" and path.startswith("/twin/") and len(path) > len("/twin/"):
+            pid_str = path[len("/twin/"):]
+            if "/" in pid_str:
+                return 404, {"error": "not found"}
+            pid = _safe_int(pid_str, 0)
+            if not pid:
+                return 400, {"error": "invalid patient_id"}
+            from .clinical.twin_v2 import get_timeline, get_syndrome_evolution, build_summary_incremental
+            summary = build_summary_incremental(store, pid)
+            timeline = get_timeline(store, pid)
+            evolution = get_syndrome_evolution(store, pid)
+            return 200, {"patient_id": pid, "summary": summary,
+                         "timeline": timeline, "syndrome_evolution": evolution}
+
         return 404, {"error": "not found"}
 
     @staticmethod
