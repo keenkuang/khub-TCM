@@ -1342,6 +1342,15 @@ class App:
             from .compliance import generate_report
             return 200, {"report": generate_report(store)}
 
+        # 1.4.0 wellness — 养生保健
+        if method == "GET" and path == "/api/wellness/questions":
+            from .vertical.wellness.constitution import get_questions
+            return 200, {"questions": get_questions()}
+        if method == "POST" and path == "/api/wellness/assess":
+            from .vertical.wellness.constitution import assess
+            result = assess(body.get("answers", {}))
+            return 200, result
+
         return 404, {"error": "not found"}
 
     @staticmethod
