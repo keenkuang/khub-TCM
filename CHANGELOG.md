@@ -1,5 +1,43 @@
 # 变更日志
 
+## [0.2.7] — 2026-07-10
+
+### 新增
+
+#### 孪生摘要增强（`khub/clinical/twin_v2.py`）
+- `build_summary_incremental(store, pid)`：基于 `twin_versions` 游标的增量摘要聚合，仅聚合新增条目，无增量时跳过返回既有摘要
+- `get_timeline(store, pid)`：按日期排序的患者就诊/问诊时间线
+- `get_syndrome_evolution(store, pid)`：历次辨证/舌脉演变序列
+- `GET /twin/<pid>` 端点返回摘要 + 时间线 + 辨证脉络；`khub twin refresh [--full]` CLI 子命令
+
+#### 问诊助手（`khub/clinical/consult_chat.py`）
+- `start_session(store, pid)` / `chat(store, session_id, user_msg)`：会话管理 + 多轮 prompt 拼接（历史 + 孪生摘要 + 检索片段），历史按 6000 字截断防超上下文
+- `POST /clinical/consult/chat` 端点（支持新会话/续会话）；`khub consult-chat <pid> [--message]` CLI（交互/单次模式）
+- 消息内容经 `crypto.enc` 加密落盘，读取经 `audit.record` 留痕
+
+#### 随访与复诊管理（`khub/clinical/followup.py`）
+- `add_plan(store, pid, due_date, reason)` / `scan_due(store, as_of)` / `record_adherence(store, plan_id, attended)`
+- `POST /clinical/followup`（建计划）、`GET /clinical/followup/scan`（扫描到期）；CLI：`followup-add` / `followup-scan` / `followup-adherence`
+- MVP 仅库内状态标记（`active→due→done`），`auto_book` 可选调用 `ops.book_appointment`
+
+#### 病历/问诊结构化抽取（`khub/clinical/extract.py`）
+- `extract_structured(store, text)`：先走 LLM 返回 JSON（辨证/证型/方剂/治法），失败/LLM 回退时退词典/正则（`_SYNDROME_KEYWORDS` + 方剂/治法模式）
+- `apply_struct(store, source, source_id, structured)`：写 `record_struct` 表；原始 `records`/`consultations` 列保持自由文本
+- `POST /clinical/extract` 端点；CLI：`record-extract <id>` / `consult-extract <id>`
+
+### 横切约定
+- 新增 8 张临床业务表（`twin_versions` / `consult_sessions` / `consult_messages` / `followup_plans` / `followup_reminders` / `followup_adherence` / `record_struct` / `syndrome_vocab`），全部 `install_triggers` 接 WAL
+- PII 字段经 `crypto.enc` 加密落盘 + `audit.record` 审计留痕；所有 LLM 路径走 `get_provider()`，`NoOpProvider` 返回占位模板
+
+### 测试
+- 新增测试文件：`tests/test_twin_v2.py` / `test_consult_chat.py` / `test_followup.py` / `test_extract.py`（共 19 个新测试）
+- 全量 smoke：187 passed（+19 新用例）
+- 发布验证：`pytest -q` 全部通过
+
+### 文档
+- `docs/superpowers/specs/2026-07-10-khub-0.2.7-design.md`：0.2.7 设计说明（四线并行，方案 A）
+- `docs/superpowers/plans/2026-07-10-khub-0.2.7-plan.md`：0.2.7 实现计划（6 任务组）
+
 ## [0.2.6] — 2026-07-10
 
 ### 新增
