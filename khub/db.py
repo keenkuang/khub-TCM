@@ -114,6 +114,32 @@ class Store:
         _it(self.conn, "favorites")
         # 0.2.10 课程运营管理系统
         self._init_course_tables(self.conn)
+        # 0.2.11 微信公众号
+        from .replication import install_triggers as _wxtrig
+        self.conn.execute("""CREATE TABLE IF NOT EXISTS wechat_articles (
+            id INTEGER PRIMARY KEY, doc_id TEXT, title TEXT NOT NULL, author TEXT DEFAULT '',
+            digest TEXT DEFAULT '', content TEXT NOT NULL,
+            content_source_url TEXT DEFAULT '', thumb_media_id TEXT DEFAULT '',
+            need_open_comment INTEGER DEFAULT 0, only_fans_can_comment INTEGER DEFAULT 0,
+            wechat_media_id TEXT DEFAULT '', wechat_url TEXT DEFAULT '',
+            status TEXT DEFAULT 'draft',
+            created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')))""")
+        _wxtrig(self.conn, "wechat_articles")
+        self.conn.execute("""CREATE TABLE IF NOT EXISTS wechat_schedules (
+            id INTEGER PRIMARY KEY, article_id INTEGER NOT NULL,
+            publish_at TEXT NOT NULL, tag_id INTEGER DEFAULT 0,
+            status TEXT DEFAULT 'pending', error_msg TEXT DEFAULT '',
+            created_at TEXT DEFAULT (datetime('now')), published_at TEXT)""")
+        _wxtrig(self.conn, "wechat_schedules")
+        self.conn.execute("""CREATE TABLE IF NOT EXISTS wechat_followers (
+            openid TEXT PRIMARY KEY, subscribe INTEGER DEFAULT 1,
+            nickname TEXT DEFAULT '', sex INTEGER DEFAULT 0,
+            language TEXT DEFAULT 'zh_CN', city TEXT DEFAULT '', province TEXT DEFAULT '',
+            country TEXT DEFAULT '', headimgurl TEXT DEFAULT '',
+            subscribe_time TEXT, unionid TEXT DEFAULT '', remark TEXT DEFAULT '',
+            tagid_list TEXT DEFAULT '[]', subscribe_scene TEXT DEFAULT '',
+            last_sync_at TEXT DEFAULT (datetime('now')))""")
+        _wxtrig(self.conn, "wechat_followers")
 
     def _migrate(self):
         cols = {r["name"] for r in self.conn.execute("PRAGMA table_info(documents)")}

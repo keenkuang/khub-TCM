@@ -34,6 +34,8 @@
 | `KHUB_DISABLE_ANN` | 禁用 ANN（近似最近邻）向量索引 | 空 | `1` |
 | `KHUB_WAL_KEEP` | 本地保留最近 N 条已推送 WAL（prune_wal 窗口） | 空（保留全量） | `1000` |
 | `KHUB_WAL_KEEP_DAYS` | 保留最近 D 天内的已推送 WAL（优先级低于 KHUB_WAL_KEEP） | 空（保留全量） | `7` |
+| `WECHAT_APPID` | — | 微信公众号 AppID（必填） |
+| `WECHAT_SECRET` | — | 微信公众号 AppSecret（必填） |
 
 ---
 

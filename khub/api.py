@@ -780,6 +780,25 @@ class App:
             eid = _safe_int([parts[2]], 0)
             return 200, {"grades": list_grades(store, eid)}
 
+        # 0.2.11 wechat
+        if method == "POST" and path == "/api/wechat/articles":
+            from .wechat.store import add_article
+            aid = add_article(store, title=body.get("title",""), content=body.get("content",""),
+                              author=body.get("author",""), digest=body.get("digest",""),
+                              content_source_url=body.get("content_source_url",""))
+            return 201, {"article_id": aid}
+        if method == "GET" and path == "/api/wechat/articles":
+            from .wechat.store import list_articles
+            return 200, {"articles": list_articles(store, status=qs.get("status", [None])[0])}
+        if method == "POST" and path == "/api/wechat/schedules":
+            from .wechat.store import add_schedule
+            sid = add_schedule(store, int(body.get("article_id",0)),
+                               body.get("publish_at",""), int(body.get("tag_id",0)))
+            return 201, {"schedule_id": sid}
+        if method == "GET" and path == "/api/wechat/followers":
+            rows = store.conn.execute("SELECT openid, nickname, city, province, subscribe FROM wechat_followers ORDER BY last_sync_at DESC LIMIT 100").fetchall()
+            return 200, {"followers": rows}
+
         return 404, {"error": "not found"}
 
     @staticmethod

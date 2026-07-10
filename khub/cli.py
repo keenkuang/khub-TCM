@@ -274,6 +274,23 @@ def build_parser():
     pg = sub.add_parser("grade", help="录入成绩")
     pg.add_argument("enrollment_id", type=int); pg.add_argument("score", type=float)
     pg.add_argument("--lesson", type=int, default=0); pg.add_argument("--comment", default="")
+
+    # 0.2.11 微信公众号
+    pw = sub.add_parser("wechat-article-add", help="创建微信文章")
+    pw.add_argument("--title", required=True); pw.add_argument("--content", required=True)
+    pw.add_argument("--author", default=""); pw.add_argument("--digest", default="")
+
+    pwl = sub.add_parser("wechat-article-list", help="列出文章")
+    pwl.add_argument("--status", default="")
+
+    pws = sub.add_parser("wechat-schedule", help="排期发布")
+    pws.add_argument("article_id", type=int); pws.add_argument("publish_at")
+
+    pwp = sub.add_parser("wechat-publish", help="发布到期文章")
+    pwp.add_argument("--due", action="store_true", help="扫描到期排期并发布")
+
+    pwf = sub.add_parser("wechat-sync-followers", help="同步粉丝数据")
+
     return ap
 
 
@@ -974,6 +991,55 @@ def main(argv=None):
         gid = record_grade(store, args.enrollment_id, args.score,
                            lesson_id=args.lesson, comment=args.comment)
         print(f"成绩 #{gid} 已录入")
+    elif args.cmd == "wechat-article-add":
+        from .wechat.store import add_article
+        aid = add_article(store, title=args.title, content=args.content,
+                          author=args.author, digest=args.digest)
+        print(f"文章 #{aid} 已创建（草稿）")
+    elif args.cmd == "wechat-article-list":
+        from .wechat.store import list_articles
+        for a in list_articles(store, status=args.status or None):
+            print(f"  #{a['id']} {a['title']} [{a['status']}] {a.get('wechat_url','')}")
+    elif args.cmd == "wechat-schedule":
+        from .wechat.store import add_schedule
+        sid = add_schedule(store, args.article_id, args.publish_at)
+        print(f"排期 #{sid} 已创建（{args.publish_at} 发布）")
+    elif args.cmd == "wechat-publish":
+        if args.due:
+            from .wechat.store import scan_due_schedules, update_schedule_status
+            from .wechat.api import upload_news, send_mass
+            due = scan_due_schedules(store)
+            if not due: print("没有到期排期"); return
+            for s in due:
+                print(f"发布 #{s['article_id']} {s.get('article_title','')} ...", end="")
+                resp = upload_news([{
+                    "title": s.get("article_title",""), "content": s.get("content",""),
+                    "thumb_media_id": s.get("thumb_media_id","") or "",
+                    "need_open_comment": 0, "only_fans_can_comment": 0,
+                }])
+                if resp.get("media_id"):
+                    send_resp = send_mass({"media_id": resp["media_id"]}, is_to_all=s["tag_id"]==0, tag_id=s["tag_id"])
+                    if send_resp.get("errcode", -1) == 0:
+                        update_schedule_status(store, s["id"], "published")
+                        print(" 已发布")
+                    else:
+                        update_schedule_status(store, s["id"], "failed", str(send_resp))
+                        print(f" 失败：{send_resp}")
+                else:
+                    update_schedule_status(store, s["id"], "failed", str(resp))
+                    print(f" 素材上传失败：{resp}")
+    elif args.cmd == "wechat-sync-followers":
+        from .wechat.api import get_followers, batchget_user_info
+        from .wechat.store import sync_followers
+        data = get_followers()
+        openids = data.get("data", {}).get("openid", [])
+        if not openids: print("无粉丝"); return
+        total = data.get("total", 0)
+        batch = []
+        for i in range(0, len(openids), 100):
+            batch.extend(batchget_user_info(openids[i:i+100]))
+        sync_followers(store, batch)
+        print(f"已同步 {total} 个粉丝")
     else:
         build_parser().print_help()
 
