@@ -1,5 +1,27 @@
 # 变更日志
 
+## [0.3.2] — 2026-07-10
+
+### 数据隔离（0.3.x 迭代三）
+
+#### scope_filter 函数
+- `khub/auth.py` 新增 `scope_filter(user, resource, alias) -> (WHERE_clause, params)`：按角色+资源返回 SQL 过滤条件
+- admin/全局 token：无限制（`""`）
+- patient/guardian：仅自己的数据（`id=?` / `patient_id=?`）
+- doctor/nurse/intern：限制到有记录的患者
+- receptionist：全部患者（仅基本）
+
+#### 隔离应用
+- `khub/clinical/patients.py` `list_patients(store, user=None)` — scope 拼接到 WHERE
+- `khub/clinical/records.py` `list_records(store, patient_id=None, user=None)` — 多条件 AND
+- `khub/clinical/consultations.py` `list_consultations(store, patient_id=None, user=None)` — 同上
+- `khub/ops/store.py` `list_appointments(store, ..., user=None)` — 新增 doctor/status 过滤 + scope
+- `khub/api.py` — `GET /clinical/patients` + `GET /ops/appointments` 传入 `current_user`
+
+### 测试
+- 新增 8 个 scope_filter 测试：admin/patient/doctor/guardian/none/alias/未登录
+- 全部 24 通过
+
 ## [0.3.1] — 2026-07-10
 
 ### RBAC 权限框架（0.3.x 迭代二）
