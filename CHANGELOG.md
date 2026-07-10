@@ -1,5 +1,32 @@
 # 变更日志
 
+## [0.7.0] — 2026-07-10
+
+### AI Copilot 智能助手
+
+**跃升至 0.7.x 系列——从工具升级为智能助手。**
+
+#### 意图识别
+- 8 种意图：`search_docs` / `get_patient` / `book_appointment` / `list_courses` / `query_knowledge_graph` / `create_notification` / `run_report` / `help`
+- 双层解析：LLM 优先 + 正则表达式离线回退（正则匹配 8 种模式 + 日期/医生/证型实体提取）
+
+#### 工具注册表
+- `khub/copilot/tools.py`：`Tool` 类 + 8 个预注册工具 + `call_tool` 执行器
+- 每个工具包含名称、描述、参数 schema、执行函数
+- `GET /api/copilot/tools` 列出可用工具（供前端动态展示）
+
+#### 执行引擎
+- `khub/copilot/engine.py`：`process(text, current_user)` → 解析意图 → 选择工具 → 执行 → 格式化回复
+- 工具调用集成到各业务模块（Retriever / patients / ops / courses / knowledge graph / notifications / reports）
+
+#### Web UI
+- Copilot 对话输入栏（AI 助手浮窗底部）
+- 输入自然语言 → POST `/api/copilot/chat` → 显示工具执行结果
+- 支持流式对话（用户消息 + 助手回复交替显示）
+
+### 测试
+- 新增 8 个测试（意图解析 5 + 工具列表 1 + help 调用 1 + search_docs 调用 1）
+
 ## [0.6.2] — 2026-07-10
 
 ### 高级 BI 与报表
