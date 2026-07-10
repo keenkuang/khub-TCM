@@ -354,6 +354,17 @@ def build_parser():
     pre = sub.add_parser("report-export", help="导出报表 CSV")
     pre.add_argument("template_id", type=int); pre.add_argument("--output", default="")
 
+    pwd = sub.add_parser("workflow-create", help="创建工作流定义")
+    pwd.add_argument("name"); pwd.add_argument("--desc", default="")
+
+    pwl = sub.add_parser("workflow-list", help="工作流定义列表")
+
+    pwr = sub.add_parser("workflow-run", help="运行工作流")
+    pwr.add_argument("definition_id", type=int)
+
+    pwi = sub.add_parser("workflow-instances", help="实例列表")
+    pwi.add_argument("--status", default="")
+
     return ap
 
 
@@ -1264,6 +1275,25 @@ def main(argv=None):
             print(f"已导出到 {args.output}")
         else:
             print(csv_data)
+    elif args.cmd == "workflow-create":
+        from .workflow.store import create_definition
+        steps = json.loads(input("步骤 JSON: ")) if sys.stdin.isatty() else json.load(sys.stdin)
+        did = create_definition(store, args.name, steps, description=args.desc)
+        print(f"工作流定义 #{did} 已创建")
+    elif args.cmd == "workflow-list":
+        from .workflow.store import list_definitions
+        for d in list_definitions(store):
+            print(f"  #{d['id']} {d['name']} — {d['description'] or '(无描述)'} [{d['active'] and '激活' or '停用'}]")
+    elif args.cmd == "workflow-run":
+        from .workflow.store import create_instance
+        from .workflow.engine import run
+        iid = create_instance(store, args.definition_id)
+        result = run(store, iid)
+        print(f"工作流实例 #{iid}: {result['status']}")
+    elif args.cmd == "workflow-instances":
+        from .workflow.store import list_instances
+        for inst in list_instances(store, status=args.status):
+            print(f"  #{inst['id']} def={inst['definition_id']} {inst['status']} step={inst['current_step']} {inst['created_at']}")
     else:
         build_parser().print_help()
 

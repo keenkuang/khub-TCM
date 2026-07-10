@@ -1060,6 +1060,25 @@ class App:
             from .copilot.tools import list_tools
             return 200, {"tools": list_tools()}
 
+        # 0.7.1 workflow
+        if method == "POST" and path == "/api/workflow/definitions":
+            from .workflow.store import create_definition
+            did = create_definition(store, body.get("name",""), body.get("steps",[]), description=body.get("description",""))
+            return 201, {"definition_id": did}
+        if method == "GET" and path == "/api/workflow/definitions":
+            from .workflow.store import list_definitions
+            return 200, {"definitions": list_definitions(store)}
+        if method == "POST" and path.startswith("/api/workflow/definitions/") and path.endswith("/run"):
+            from .workflow.store import create_instance
+            from .workflow.engine import run
+            did = _safe_int([parts[2]], 0)
+            iid = create_instance(store, did, entity_type=body.get("entity_type",""), entity_id=body.get("entity_id",""), context=body.get("context"))
+            result = run(store, iid)
+            return 200, {"instance_id": iid, "result": result}
+        if method == "GET" and path == "/api/workflow/instances":
+            from .workflow.store import list_instances
+            return 200, {"instances": list_instances(store, status=qs.get("status",[""])[0])}
+
         return 404, {"error": "not found"}
 
     @staticmethod

@@ -207,6 +207,19 @@ class Store:
             output TEXT, error TEXT, created_at TEXT DEFAULT (datetime('now')),
             completed_at TEXT)""")
         _rtrig(self.conn, "report_jobs")
+        # 0.7.1 工作流引擎
+        from .replication import install_triggers as _wftrig
+        self.conn.execute("""CREATE TABLE IF NOT EXISTS workflow_definitions (
+            id INTEGER PRIMARY KEY, name TEXT NOT NULL, description TEXT,
+            steps TEXT NOT NULL, version INTEGER DEFAULT 1, active INTEGER DEFAULT 1,
+            created_at TEXT DEFAULT (datetime('now')))""")
+        _wftrig(self.conn, "workflow_definitions")
+        self.conn.execute("""CREATE TABLE IF NOT EXISTS workflow_instances (
+            id INTEGER PRIMARY KEY, definition_id INTEGER NOT NULL,
+            entity_type TEXT, entity_id TEXT, status TEXT DEFAULT 'running',
+            current_step TEXT, context TEXT, history TEXT,
+            created_at TEXT DEFAULT (datetime('now')), completed_at TEXT)""")
+        _wftrig(self.conn, "workflow_instances")
 
     def _migrate(self):
         cols = {r["name"] for r in self.conn.execute("PRAGMA table_info(documents)")}
