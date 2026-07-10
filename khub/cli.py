@@ -237,7 +237,7 @@ def _dr_parse_restore_target(spec, changes):
             at = c.get("at") or ""
             try:
                 ct = time.strptime(at, "%Y-%m-%dT%H:%M:%S")
-            except Exception:
+            except Exception:  # nosec B112
                 continue
             if ct <= t:
                 lsn = c.get("lsn") or c.get("id") or 0
@@ -315,7 +315,7 @@ def main(argv=None):
         try:
             from .retrieval import Retriever
             Retriever(store).index_ebook(doc.canonical_id)
-        except Exception:
+        except Exception:  # nosec B110
             pass
         print(f"{doc.canonical_id} -> version {vid}")
     elif args.cmd == "watch":
@@ -498,7 +498,7 @@ def main(argv=None):
                     rep = LocalFileReplica(
                         os.path.expanduser(info["target"][len("file://"):]))
                     meta = rep.fetch_snapshot()
-                except Exception:
+                except Exception:  # nosec B110
                     pass
             print(f"目标类型：{info['type']}")
             print(f"目标地址：{info['target']}")

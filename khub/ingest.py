@@ -70,6 +70,6 @@ def ingest_ebook(store, canonical_id):
     try:
         from .retrieval import Retriever
         Retriever(store).index_ebook(canonical_id)
-    except Exception:  # 向量化失败不阻塞入库主流程
+    except Exception:  # 向量化失败不阻塞入库主流程  # nosec B110
         pass
     return version_id

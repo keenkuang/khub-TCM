@@ -117,7 +117,7 @@ class App:
                     "SELECT count(*) FROM embeddings").fetchone()[0]
                 conflict_count = cur.execute(
                     "SELECT count(*) FROM documents WHERE conflict=1").fetchone()[0]
-            except Exception:
+            except Exception:  # nosec B110
                 pass
 
             recent = cur.execute(
@@ -374,7 +374,7 @@ class App:
             try:
                 from .retrieval import Retriever
                 Retriever(self.store).index_ebook(doc.canonical_id)
-            except Exception:  # 向量化失败不影响入库
+            except Exception:  # 向量化失败不影响入库  # nosec B110
                 pass
             return 201, {"status": "ok", "doc_id": doc.canonical_id,
                          "version_id": version_id, "message": "document ingested"}

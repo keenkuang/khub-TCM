@@ -55,7 +55,7 @@ def watch_and_ingest(store: Store, directory: str, interval: float = 3.0, stop=N
                 store.store_document(doc)
                 try:
                     retr.index_ebook(sid)
-                except Exception:  # 向量化失败不影响入库
+                except Exception:  # 向量化失败不影响入库  # nosec B110
                     pass
                 seen[sid] = mtime
                 print(f"[watch] 入库 {fp}")

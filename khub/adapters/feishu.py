@@ -76,7 +76,7 @@ class FeishuAdapter:
     def _list_spaces(self) -> list[dict]:
         """列出当前应用可访问的知识空间。"""
         items = []
-        page_token = ""
+        page_token = ""  # nosec B105
         while True:
             params = {"page_size": "50"}
             if page_token:
@@ -94,7 +94,7 @@ class FeishuAdapter:
     def _list_space_nodes(self, space_id: str) -> list[dict]:
         """递归遍历知识空间中的 wiki 节点（文档）。"""
         nodes = []
-        page_token = ""
+        page_token = ""  # nosec B105
         while True:
             params = {"page_size": "50"}
             if page_token:
@@ -117,7 +117,7 @@ class FeishuAdapter:
     def _list_node_children(self, space_id: str, node_token: str) -> list[dict]:
         """递归获取子节点。"""
         children = []
-        page_token = ""
+        page_token = ""  # nosec B105
         while True:
             params = {"page_size": "50"}
             if page_token:

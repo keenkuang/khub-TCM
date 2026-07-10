@@ -65,6 +65,6 @@ def _import_file(store: Store, vault_path: str, fp: str):
     try:
         from .retrieval import Retriever
         Retriever(store).index_ebook(source_id)
-    except Exception:
+    except Exception:  # nosec B110
         pass
     return 1, 0  # ingested

@@ -37,6 +37,8 @@ warn_return_any = false
 warn_unreachable = false
 
 [tool.bandit]
+# 注意：bandit 默认 `bandit -r khub` 只自动发现扫描树内的 khub/.bandit 文件，
+#       不会读取本段。本段仅在显式 `-c pyproject.toml` 时生效；skips 须与 khub/.bandit 保持一致。
 exclude_dirs = ["tests", ".git", "build", "dist", "node_modules"]
 # 以下为有意为之、经验证安全的跳过项：
 #   B101  assert 用于内部不变量检查

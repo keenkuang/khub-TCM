@@ -239,7 +239,7 @@ class LocalFileReplica(ReplicaTarget):
             try:
                 with open(os.path.join(d, fn)) as f:
                     manifest = json.load(f)
-            except Exception:
+            except Exception:  # nosec B112
                 continue
             versions.append({
                 "ts": ts,
@@ -518,7 +518,7 @@ class WalFlusher:
             except Exception as e:
                 try:
                     conn.execute("ROLLBACK")
-                except Exception:
+                except Exception:  # nosec B110
                     pass
                 logging.warning("[wal] 刷盘失败（仅告警，不阻塞业务写）: %s", e)
 
@@ -883,7 +883,7 @@ class SshReplica(ReplicaTarget):
         lp = os.path.join(self.stage, "wal.ndjson")
         try:
             self.transport.recv(f"{self.remote_dir}/wal.ndjson", lp)
-        except Exception:
+        except Exception:  # nosec B110
             pass
         with open(lp, "a") as f:
             for ch in changes:
