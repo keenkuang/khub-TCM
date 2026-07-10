@@ -1,5 +1,31 @@
 # 变更日志
 
+## [0.6.1] — 2026-07-10
+
+### 实时协作与消息推送
+
+#### 通知系统
+- `notifications` 表（用户/标题/正文/事件类型/关联资源/已读状态），接 WAL 复制
+- `khub/notifications.py`：`create`/`list_recent`/`unread_count`/`mark_read`/`mark_all_read`
+- REST 端点：`GET /api/notifications`（含未读数）、`POST /api/notifications/{id}/read`、`POST /api/notifications/read-all`
+
+#### SSE 实时推送
+- `GET /events` — SSE 长连接端点（30 秒心跳），认证用户即可订阅
+- `khub/events.py`：事件总线（`subscribe`/`unsubscribe`/`broadcast`），基于线程安全队列
+- 与 `webhook.trigger()` 集成：业务事件触发时自动广播到所有 SSE 连接
+
+#### Web UI 通知
+- 导航栏通知铃铛 `🔔` + 未读数红点
+- 通知面板（点击展开，最近 10 条）
+- `EventSource('/events')` 实时连接，新通知自动更新未读数
+- 支持全部标记已读
+
+#### CLI
+- `khub notify-list <user_id>` — 查看用户通知列表
+
+### 测试
+- 新增 6 个通知系统测试（创建/列表/未读数/标记已读/全部已读/广播）
+
 ## [0.6.0] — 2026-07-10
 
 ### 开放平台与插件系统
