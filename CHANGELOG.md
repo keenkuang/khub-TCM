@@ -1,5 +1,34 @@
 # 变更日志
 
+## [0.2.8] — 2026-07-10
+
+### 线 A：Web UI + 运营子系统增强
+
+#### Web UI 体验升级
+- 修复 PUT 编辑 format 降级 bug（编辑 HTML 文档不再降级为 plain）
+- 运营 Web UI：导航栏「运营」入口、排班表、预约列表（含签到/取消按钮）、骨架屏加载
+- 搜索体验增强：`AbortController` 消除快速搜索竞争、键盘快捷键（`/` 聚焦、`Escape` 清空）
+- 移动端打磨：运营表格响应式、AI 面板全屏适配
+
+#### 运营子系统增强
+- 预约状态机补全：`cancel_appointment`(`cancelled`)、`mark_no_show`(`no_show`)、`complete_visit`(`completed`)、`reschedule_appointment`(原单 cancelled + 新单 booked)
+- 排班冲突检测：`add_schedule` 检查同一 `(date, doctor, slot)` 占用
+- CLI 补齐：`ops-list`、`ops-cancel`、`ops-reschedule`、`ops-schedule`
+- 运营统计扩展：`/stats` 返回 `appointments_by_status`、`schedules_coverage`
+
+### 线 B：运维可观测性
+
+- **结构化日志**：`khub/log.py` 重写——默认 JSON/NDJSON 格式、`TimedRotatingFileHandler` 按天轮转、`KHUB_LOG_FORMAT=text` 回退纯文本、`KHUB_LOG_ROTATION` 控制保留天数
+- **HTTP 访问日志恢复**：`Handler.log_message` 改为写入 `khub.api` 日志器（此前被设为 `pass` 静默丢弃）
+- **`/health` 深度增强**：四维度检查（DB可达/FTS可查/磁盘可用空间>100MB/WAL堆积<1000），单项失败返回 `degraded`
+- **`/stats` 扩展**：新增 `db_file_size_mb`、`wal_pending_count`、`table_rows.*`（4 张业务表）
+- **`/metrics` Prometheus 端点**：受 `KHUB_METRICS_ENABLED=1` 控制，输出请求计数/文档数/DB 大小/WAL 堆积
+- 配置文档补充：`KHUB_LOG_FORMAT`、`KHUB_LOG_ROTATION`、`KHUB_METRICS_ENABLED`
+
+### 测试
+- 新增 11 个测试：ops 状态机(4) + stats 扩展(1) + health(1) + metrics(2) + health 适配(1)
+- 全量测试通过
+
 ## [0.2.7] — 2026-07-10
 
 ### 新增
