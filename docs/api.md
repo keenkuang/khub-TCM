@@ -1,13 +1,259 @@
 # API 参考
 
+> 版本：v0.9.4 ｜ 更新：2026-07-10
+>
 > REST API 基址：`http://127.0.0.1:8765`（默认绑定 127.0.0.1，端口由 `--port` 指定）
 
 所有请求均使用 JSON 编码。请求头 `Content-Type: application/json`。响应默认为 `application/json; charset=utf-8` 格式。
 
-## API 端点一览
+## 鉴权
 
-| 方法 | 路径 | 说明 | 请求体 | 响应示例 |
-|------|------|------|--------|----------|
+- 无 `KHUB_API_TOKEN` 时：无需鉴权（本地模式）
+- 设 `KHUB_API_TOKEN` 后：所有请求需 `Authorization: Bearer <token>`
+- 多用户模式：登录 POST `/auth/login` → 获取 JWT → `Authorization: Bearer <jwt>`
+- 多租户：请求头 `X-Tenant-ID`（租户 ID 或 slug）
+
+## 状态码
+
+| 码 | 说明 |
+|----|------|
+| `200` | 成功 |
+| `201` | 创建成功 |
+| `400` | 请求参数错误 |
+| `401` | 未认证（`AUTH_001`） |
+| `403` | 权限不足（`AUTH_002`） |
+| `404` | 资源不存在 |
+| `413` | 请求体过大 |
+| `429` | 请求频率超限 |
+| `500` | 服务端错误 |
+
+错误响应：
+```json
+{"error": "描述", "error_code": "AUTH_001", "message": "详细说明"}
+```
+
+## 端点一览
+
+### 系统
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/health` | 健康检查（深度：DB/FTS/磁盘/WAL） |
+| `GET` | `/stats` | 统计（文档 + 运营 + 系统指标） |
+| `GET` | `/api/info` | 系统信息（版本/品牌/uptime） |
+| `GET` | `/api/openapi.json` | OpenAPI 3.0 规范 |
+| `GET` | `/api/docs` | Swagger UI |
+| `GET` | `/api/i18n` | 国际化翻译（`?lang=` 或 Accept-Language） |
+
+### 鉴权
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `POST` | `/auth/login` | 登录（`username` + `password` → token） |
+| `POST` | `/auth/logout` | 注销 |
+| `GET` | `/auth/me` | 当前用户信息 |
+
+### 文档
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/documents` | 文档列表 |
+| `GET` | `/documents/{id}` | 文档详情（含 tags/favorited） |
+| `PUT` | `/documents/{id}` | 编辑文档 |
+| `GET` | `/documents/{id}/versions` | 版本列表 |
+| `GET` | `/documents/{id}/diff?v1=&v2=` | 版本对比 |
+| `POST` | `/documents/{id}/resolve` | 冲突解决 |
+| `POST` | `/documents/{id}/tags` | 添加标签 |
+| `DELETE` | `/documents/{id}/tags?tag=` | 删除标签 |
+| `POST` | `/documents/{id}/favorite` | 切换收藏 |
+
+### 搜索
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/search?q=&tag=&cursor=` | 全文检索（游标分页） |
+| `GET` | `/semantic?q=` | 语义检索 |
+| `GET` | `/api/search?q=&type=all` | 统一搜索（跨文档/患者/课程/中药/方剂/证型） |
+| `POST` | `/ask` | RAG 问答（支持 `stream=true` SSE 流式） |
+
+### 标签与收藏
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/tags` | 标签列表（含文档计数） |
+| `GET` | `/favorites` | 收藏列表 |
+
+### 通知
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/api/notifications` | 通知列表（含 `unread` 计数） |
+| `POST` | `/api/notifications/{id}/read` | 标记已读 |
+| `POST` | `/api/notifications/read-all` | 全部已读 |
+| `GET` | `/events` | SSE 实时通知推送 |
+
+### 临床
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/twin/{pid}` | 孪生摘要（含时间线 + 辨证脉络） |
+| `POST` | `/clinical/consult/chat` | 问诊助手对话 |
+| `GET` | `/clinical/consultations` | 问诊列表（`?patient_id=`） |
+| `GET` | `/clinical/patients` | 患者列表 |
+| `POST` | `/clinical/extract` | 结构化抽取 |
+| `GET` | `/clinical/analysis/{pid}/matrix` | 证型→方剂关联 |
+| `GET` | `/clinical/analysis/{pid}/evolution` | 体质演变 |
+| `GET` | `/clinical/tracking/{pid}` | 疗效评估 |
+| `GET` | `/clinical/trends/{pid}` | 健康趋势 |
+| `POST` | `/clinical/diagnosis/suggest` | AI 辨证推荐 |
+
+### 运营
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/ops/appointments` | 预约列表（`?date=&doctor=&status=&patient_id=`） |
+| `POST` | `/ops/appointments` | 预约挂号 |
+| `GET` | `/ops/schedules` | 排班列表 |
+| `POST` | `/ops/schedules` | 新建排班 |
+| `POST` | `/ops/visits` | 到诊签到 |
+| `GET` | `/sync-status` | 数据源同步状态 |
+| `GET` | `/clinical/followup` | 随访计划 |
+| `GET` | `/clinical/followup/scan` | 扫描到期随访 |
+
+### 考试
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/exam/questions` | 题目列表 |
+| `POST` | `/exam/questions` | 创建题目 |
+| `POST` | `/exam/generate` | 自动出题 |
+| `POST` | `/exam/grade` | 判分 |
+
+### 课程
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/api/courses` | 课程列表 |
+| `POST` | `/api/courses` | 创建课程 |
+| `GET` | `/api/courses/{id}` | 课程详情 |
+| `POST` | `/api/courses/{id}/lessons` | 添加课时 |
+| `GET` | `/api/courses/{id}/lessons` | 课时列表 |
+| `POST` | `/api/courses/{id}/enroll` | 学员报名 |
+| `GET` | `/api/courses/{id}/enrollments` | 报名列表 |
+| `POST` | `/api/grades` | 录入成绩 |
+| `GET` | `/api/enrollments/{id}/grades` | 成绩列表 |
+
+### 知识图谱
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/api/kg/infer?syndrome=` | 证型推理 |
+| `GET` | `/api/kg/herbs` | 中药查询（`?channel=&nature=`） |
+| `GET` | `/api/kg/formulas` | 方剂列表 |
+| `GET` | `/api/kg/syndromes` | 证型列表 |
+| `GET` | `/api/kg/similarity?f1=&f2=` | 方剂相似度 |
+
+### 报表
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/api/reports` | 报表模板列表 |
+| `POST` | `/api/reports` | 创建报表 |
+| `POST` | `/api/reports/{id}/run` | 运行报表 |
+| `GET` | `/api/reports/{id}/csv` | 导出 CSV |
+
+### Webhook
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/api/webhooks` | 订阅列表 |
+| `POST` | `/api/webhooks` | 创建订阅 |
+| `DELETE` | `/api/webhooks/{id}` | 删除订阅 |
+
+### Copilot / Agent
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `POST` | `/api/copilot/chat` | Copilot 对话 |
+| `GET` | `/api/copilot/tools` | 工具列表 |
+| `GET` | `/api/agents` | Agent 列表 |
+| `POST` | `/api/agents` | 创建 Agent |
+| `POST` | `/api/agents/{id}/run` | 运行 Agent |
+
+### 工作流
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/api/workflow/definitions` | 定义列表 |
+| `POST` | `/api/workflow/definitions` | 创建定义 |
+| `POST` | `/api/workflow/definitions/{id}/run` | 运行工作流 |
+| `GET` | `/api/workflow/instances` | 实例列表 |
+
+### 远程医疗
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `POST` | `/api/telemedicine/room` | 创建视频房间 |
+| `GET` | `/api/telemedicine/room/{id}` | 房间信息 |
+| `POST` | `/api/telemedicine/room/{id}/start` | 开始通话 |
+| `POST` | `/api/telemedicine/room/{id}/end` | 结束通话 |
+| `GET` | `/api/prescriptions` | 处方列表（`?patient_id=&doctor_id=`） |
+| `POST` | `/api/prescriptions` | 创建处方 |
+
+### 知识社区
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/api/community/articles` | 文章列表（`?tag=`） |
+| `POST` | `/api/community/articles` | 发布文章 |
+| `GET` | `/api/community/tags` | 社区标签 |
+| `POST` | `/api/community/comments` | 添加评论 |
+
+### 集成
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/api/integrations/status` | 集成状态（8 项检测） |
+
+### 合规
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/api/compliance/checklist` | 合规检查清单 |
+| `GET` | `/api/compliance/report` | 合规报告 |
+
+### 数据分析
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/api/analytics/cohorts` | 患者分群 |
+| `GET` | `/api/analytics/efficacy` | 疗效分析 |
+| `GET` | `/api/analytics/forecast` | 就诊预测 |
+| `GET` | `/api/analytics/trends` | 预约趋势 |
+
+### 多租户
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/api/tenants` | 租户列表 |
+| `POST` | `/api/tenants` | 创建租户 |
+| `POST` | `/api/tenants/members` | 添加成员 |
+| `GET` | `/api/tenants/{id}/members` | 成员列表 |
+
+### 同步
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `POST` | `/api/sync/push` | 推送变更 |
+| `GET` | `/api/sync/pull` | 拉取变更（`?since=&client_id=`） |
+| `GET` | `/api/sync/status` | 同步状态 |
+
+### 用户管理
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/api/users` | 用户列表（admin 专用） |
+| `POST` | `/api/users` | 创建用户（admin 专用） |
+| `PUT` | `/api/users/{id}/role` | 修改角色（admin 专用） |
+
+### 审计
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/api/admin/audit` | 审计日志查询（`?event=&actor=&since=`） |
+
+### 微信
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/api/wechat/articles` | 微信文章列表 |
+| `POST` | `/api/wechat/articles` | 创建微信文章 |
+| `POST` | `/api/wechat/schedules` | 排期发布 |
+| `GET` | `/api/wechat/followers` | 粉丝列表 |
+
+### 插件
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/api/plugins` | 已加载插件列表 |
+
+## 全量端点统计
+
+当前共 **150+ 个 REST 端点**，覆盖系统/鉴权/文档/搜索/临床/运营/考试/课程/知识图谱/报表/Webhook/Copilot/Agent/工作流/远程医疗/社区/集成/合规/数据分析/多租户/同步/用户管理/审计/微信/插件 25 个领域。
 | GET | `/` | Web UI 首页 | — | HTML 页面 |
 | GET | `/stats` | 数据看板统计 | — | `{"total":1861, "sources":{"obsidian":1711,...}, "today":0, "recent":[...]}` |
 | GET | `/health` | 健康检查 | — | `{"status":"ok","version":"0.2.1","documents":42,"uptime_sec":3600.0}` |

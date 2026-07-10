@@ -1,52 +1,95 @@
 # khub 配置参考
 
-**版本**: 0.2.4
+> 版本：v0.9.4 ｜ 更新：2026-07-10
 
 ---
 
 ## 环境变量
 
-以下环境变量可用于配置 khub 行为。变量可通过 `export VAR=value` 设置，或写入 systemd service 的 `Environment=` 字段。**当前核心配置全部走环境变量**（无全局 `config.yaml` 加载器）。
+以下环境变量可用于配置 khub 行为。**当前核心配置全部走环境变量**（无全局 `config.yaml` 加载器）。
 
-| 变量 | 用途 | 默认值 | 示例 |
-|------|------|--------|------|
-| `KHUB_BRAND_NAME` | 品牌名称（覆盖 Web UI 标题与 API 返回的 name） | `kHUB` | `中医知识库` |
-| `KHUB_BRAND_LOGO` | 品牌 Logo URL（显示在 Web UI 导航栏） | 空 | `https://example.com/logo.png` |
-| `KHUB_DB` | SQLite 数据库文件路径 | `~/.khub/khub.db` | `/data/khub/khub.db` |
-| `KHUB_LIBRARY` | 受管库目录（文档存储位置） | `~/.khub/library` | `/data/khub/library` |
-| `KHUB_LOG_LEVEL` | 日志级别 | `INFO` | `DEBUG` |
-| `KHUB_LOG_FILE` | 日志文件路径（空表示输出到 stderr） | 空 | `/var/log/khub/khub.log` |
+### 基础
+| 变量 | 默认值 | 用途 |
+|------|--------|------|
+| `KHUB_DB` | `~/.khub/khub.db` | SQLite 数据库文件路径 |
+| `KHUB_LIBRARY` | `~/.khub/library` | 受管库目录（文档存储位置） |
+| `KHUB_BRAND_NAME` | `kHUB` | 品牌名称（覆盖 Web UI 标题与 API 返回） |
+| `KHUB_BRAND_LOGO` | 空 | 品牌 Logo URL（显示在 Web UI 导航栏） |
+| `KHUB_ADMIN_PASSWORD` | 自动生成 | admin 用户的初始密码（首次启动时） |
+| `KHUB_API_TOKEN` | 空（不鉴权） | REST API 鉴权令牌；设置后所有端点需 `Bearer <token>` |
+| `KHUB_HTTPS` | 空 | 设为 `1` 启用 HTTPS 合规检查 |
+| `NO_COLOR` | 空 | 设为任意值禁用 CLI 彩色输出 |
+
+### 日志
+| 变量 | 默认值 | 用途 |
+|------|--------|------|
+| `KHUB_LOG_LEVEL` | `INFO` | 日志级别 |
+| `KHUB_LOG_FILE` | 空（stderr） | 日志文件路径 |
 | `KHUB_LOG_FORMAT` | `json` | 日志格式。`json`=结构化 JSON，`text`=纯文本（本地开发） |
-| `KHUB_LOG_ROTATION` | `30` | JSON 日志文件保留天数（配合 TimedRotatingFileHandler） |
-| `KHUB_METRICS_ENABLED` | `0` | 设为 `1` 启用 `/metrics` Prometheus 端点 |
-| `KHUB_API_TOKEN` | REST API 鉴权令牌；设置后**所有**端点（含读）需 `Bearer <token>` | 空（不鉴权） | `sk-xxx` |
-| `KHUB_ADMIN_PASSWORD` | — | 首次启动时 admin 用户的密码。不设则自动生成随机密码并打印到控制台 |
-| `KHUB_PII_ENCRYPT` | PII 加密开关（设置后启用） | 空 | `1` |
-| `KHUB_PII_KEY` | Fernet 对称加密密钥（base64 编码，44 字符） | 自动生成 | `(base64 44 字符)` |
-| `KHUB_PII_KEY_FILE` | Fernet 密钥文件路径（优先于自动生成；推荐方式） | `~/.khub/pii.key` | `/secret/pii.key` |
-| `KHUB_EMBEDDING_URL` | 向量嵌入服务 URL（OpenAI 风格 `/v1/embeddings`） | 空 | `http://127.0.0.1:8080` |
-| `KHUB_EMBED_DIM` | 嵌入向量维度 | `256` | `768` |
-| `KHUB_EMBED_API_KEY` | 嵌入服务鉴权密钥 | 空 | `sk-xxx` |
-| `KHUB_EMBED_MODEL` | 嵌入模型名（请求体 `model` 字段） | 空 | `bge-m3` |
-| `KHUB_LLM_URL` | LLM 服务 URL（OpenAI 风格 `/v1/chat/completions`） | 空 | `http://127.0.0.1:8080` |
-| `KHUB_LLM_API_KEY` | LLM 服务鉴权密钥 | 空 | `sk-xxx` |
-| `KHUB_LLM_MODEL` | LLM 模型名称 | `default` | `gpt-4o-mini` |
-| `KHUB_QUIP_TOKEN` | Quip API 访问令牌 | 空 | `(Quip token)` |
-| `IMA_CLIENT_ID` | IMA 客户端 ID | 空 | `(IMA client id)` |
-| `IMA_API_KEY` | IMA API 密钥 | 空 | `(IMA api key)` |
-| `KHUB_DISABLE_ANN` | 禁用 ANN（近似最近邻）向量索引 | 空 | `1` |
-| `KHUB_WAL_KEEP` | 本地保留最近 N 条已推送 WAL（prune_wal 窗口） | 空（保留全量） | `1000` |
-| `KHUB_WAL_KEEP_DAYS` | 保留最近 D 天内的已推送 WAL（优先级低于 KHUB_WAL_KEEP） | 空（保留全量） | `7` |
-| `WECHAT_APPID` | — | 微信公众号 AppID（必填） |
-| `WECHAT_SECRET` | — | 微信公众号 AppSecret（必填） |
+| `KHUB_LOG_ROTATION` | `30` | JSON 日志文件保留天数 |
+
+### LLM / AI
+| 变量 | 默认值 | 用途 |
+|------|--------|------|
+| `KHUB_LLM_URL` | 空 | LLM 服务 URL（OpenAI 风格 `/v1/chat/completions`） |
+| `KHUB_LLM_API_KEY` | 空 | LLM 服务鉴权密钥 |
+| `KHUB_LLM_MODEL` | `default` | LLM 模型名称 |
+| `KHUB_EMBEDDING_URL` | 空 | 向量嵌入服务 URL（OpenAI 风格 `/v1/embeddings`） |
+| `KHUB_EMBED_DIM` | `256` | 嵌入向量维度 |
+| `KHUB_EMBED_API_KEY` | 空 | 嵌入服务鉴权密钥 |
+| `KHUB_EMBED_MODEL` | 空 | 嵌入模型名 |
+| `KHUB_DISABLE_ANN` | 空 | 设为 `1` 禁用 ANN 向量索引 |
+
+### 安全与合规
+| 变量 | 默认值 | 用途 |
+|------|--------|------|
+| `KHUB_PII_ENCRYPT` | 空 | 设为 `1` 启用 PII 字段加密落盘 |
+| `KHUB_PII_KEY` | 自动生成 | Fernet 对称加密密钥（base64 44 字符） |
+| `KHUB_PII_KEY_FILE` | `~/.khub/pii.key` | Fernet 密钥文件路径 |
+| `KHUB_TENANT_MODE` | 空 | 设为 `1` 启用多租户模式 |
+| `KHUB_RETENTION_AUDIT_LOG` | `365` | 审计日志保留天数 |
+| `KHUB_RETENTION_NOTIFICATIONS` | `90` | 通知保留天数 |
+| `KHUB_RETENTION_SYNC_CHANGES` | `180` | 同步变更保留天数 |
+| `KHUB_RETENTION_WEBHOOK_DELIVERIES` | `30` | Webhook 投递记录保留天数 |
+| `KHUB_RETENTION_WORKFLOW_INSTANCES` | `90` | 工作流实例保留天数 |
+
+### 灾备
+| 变量 | 默认值 | 用途 |
+|------|--------|------|
+| `KHUB_WAL_KEEP` | 空（保留全量） | 本地保留最近 N 条已推送 WAL |
+| `KHUB_WAL_KEEP_DAYS` | 空（保留全量） | 保留最近 D 天内的已推送 WAL |
+
+### 数据源
+| 变量 | 用途 |
+|------|------|
+| `KHUB_QUIP_TOKEN` | Quip API 访问令牌 |
+| `IMA_CLIENT_ID` | IMA 客户端 ID |
+| `IMA_API_KEY` | IMA API 密钥 |
+| `FEISHU_APP_ID` | 飞书 AppID |
+| `FEISHU_APP_SECRET` | 飞书 AppSecret |
+| `FEISHU_SPACE_ID` | 飞书知识空间 ID |
+| `WECHAT_APPID` | 微信公众号 AppID |
+| `WECHAT_SECRET` | 微信公众号 AppSecret |
+
+### 集成
+| 变量 | 用途 |
+|------|------|
+| `WECHAT_WEBHOOK` | 企业微信群机器人 Webhook URL |
+| `DINGTALK_WEBHOOK` | 钉钉群机器人 Webhook URL |
+| `KHUB_METRICS_ENABLED` | 设为 `1` 启用 `/metrics` Prometheus 端点 |
+
+### CLI
+| 变量 | 用途 |
+|------|------|
+| `KHUB_USER` | `khub whoami` 默认用户名 |
+| `KHUB_TOKEN` | CLI 默认鉴权令牌 |
 
 ---
 
 ## 配置文件
 
-核心 **不读取** 任何全局 `config.yaml`；所有运行参数通过上方环境变量注入（CLI 子命令与 REST 服务均从环境变量读取）。
+核心 **不读取** 任何全局 `config.yaml`；所有运行参数通过上方环境变量注入。
 
 各子系统有各自独立的配置文件：
-
-- **定时调度**：`khub schedule --config tasks.yaml` 读取 YAML 任务定义（`name` / `command` / `interval`），见 `khub/scheduler.py` 与 `docs/operations.md`。
-- **数据源客户端**（IMA / Quip / Obsidian 等）：凭据与路径通过各自环境变量传入，不依赖统一配置文件。
+- **定时调度**：`khub schedule --config tasks.yaml` 读取 YAML 任务定义
+- **Electron 桌面**：`desktop/package.json` — 启动端口通过 `KHUB_PORT` 环境变量配置
