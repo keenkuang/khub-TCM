@@ -785,6 +785,23 @@ class App:
             warnings = check_incompatibility(formulas) if formulas else []
             return 200, {"suggestions": suggestions, "incompatibility_warnings": warnings}
 
+        # 1.2.0 clinical v3 — 用药安全
+        if method == "POST" and path == "/api/clinical/safety":
+            from .clinical.safety import check_all
+            result = check_all(body.get("formulas", []), is_pregnant=body.get("is_pregnant", False))
+            return 200, result
+        if method == "POST" and path == "/api/clinical/interview":
+            from .clinical.interview import generate_interview
+            return 200, generate_interview(store, body.get("text", ""))
+        if method == "POST" and path == "/api/clinical/cdss":
+            from .clinical.cdss import evaluate
+            from datetime import datetime
+            age = datetime.now().year - int(body.get("birth_year", 1990))
+            patient_data = {"age": age, "pregnancy": body.get("pregnancy", False),
+                            "adherence": body.get("adherence", 1.0), "visit_count": body.get("visit_count", 0)}
+            alerts = evaluate(patient_data, diagnosis=body.get("diagnosis", ""), dosage=body.get("dosage", 0))
+            return 200, {"alerts": alerts, "count": len(alerts), "patient_data": patient_data}
+
         # 0.2.9 knowledge base — tags
         parts = path.strip("/").split("/")
         if method == "POST" and path.startswith("/documents/") and path.endswith("/tags") and len(parts) >= 3:
