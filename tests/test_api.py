@@ -182,7 +182,7 @@ def test_api_health():
     code, obj = app.dispatch("GET", "/health")
     assert code == 200
     assert obj["status"] == "ok"
-    assert obj["version"] == "2.1.0"
+    assert obj["version"] == "3.0.0"
     assert "uptime_sec" in obj
     assert "checks" in obj
     assert obj["checks"]["db"]["documents"] == 0
