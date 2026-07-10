@@ -1,5 +1,24 @@
 # 变更日志
 
+## [0.2.11] — 2026-07-10
+
+### 桌面体验增强
+- **修复端口双启动 bug**：`cli.py --electron` 模式不再自启后端，由 Electron `main.js` 统一管理（通过 `KHUB_PORT` 环境变量传递端口）
+- **托盘图标**：从 `nativeImage.createEmpty()` 空白占位替换为实际 PNG 图标
+- **Ollama 本地模型检测**：Electron 启动时自动探测本地 Ollama（`127.0.0.1:11434`），成功则注入 `KHUB_LLM_URL` 环境变量
+- **系统菜单**：新增 File（打开本地库/退出）和 Help（关于）菜单
+
+### 微信公众号发布系统
+- 3 张业务表：`wechat_articles`（文章素材）、`wechat_schedules`（发布排期）、`wechat_followers`（粉丝），均接 WAL 复制
+- `khub/wechat/auth.py`：Token 管理器（appid+secret → access_token，缓存 + 过期前 120 秒自动刷新）
+- `khub/wechat/api.py`：微信平台 API 封装（素材上传 `upload_news`、群发 `send_mass`、粉丝拉取 `get_followers`/`batchget_user_info`）
+- `khub/wechat/store.py`：文章/排期/粉丝 CRUD（`add_article`/`list_articles`/`add_schedule`/`scan_due_schedules`/`sync_followers`）
+- REST 端点：`POST/GET /api/wechat/articles`、`POST /api/wechat/schedules`、`GET /api/wechat/followers`
+- CLI：`wechat-article-add/list`、`wechat-schedule`、`wechat-publish --due`、`wechat-sync-followers`
+
+### 测试
+- 新增 10 个测试（微信 7 + 桌面 3），全部通过
+
 ## [0.2.10] — 2026-07-10
 
 ### 课程运营管理系统
