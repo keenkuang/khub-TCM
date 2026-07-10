@@ -201,6 +201,11 @@ def build_parser():
                       help="稳态阶段主库写入文档数（默认 5）")
     pdri.add_argument("--manual", action="store_true",
                       help="以 --manual 模式演练（双域丢失仅检测+告警，不自动提升）")
+
+    # ── 问诊助手（T3） ──────────────────────────────────────────────────
+    pc = sub.add_parser("consult-chat", help="问诊助手对话")
+    pc.add_argument("patient_id", type=int)
+    pc.add_argument("--message", default="", help="单次消息（默认交互模式）")
     return ap
 
 
@@ -770,6 +775,22 @@ def main(argv=None):
                 _shutil.rmtree(_base, ignore_errors=True)
         else:
             pha.print_help()
+    elif args.cmd == "consult-chat":
+        from .clinical.consult_chat import start_session, chat
+        pid = args.patient_id
+        sid = start_session(store, pid)
+        if args.message:
+            print(chat(store, sid, args.message))
+        else:
+            print("问诊助手已启动（输入空行退出）")
+            while True:
+                try:
+                    msg = input("> ").strip()
+                    if not msg:
+                        break
+                    print(chat(store, sid, msg))
+                except (EOFError, KeyboardInterrupt):
+                    break
     else:
         build_parser().print_help()
 

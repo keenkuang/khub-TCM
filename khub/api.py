@@ -477,6 +477,21 @@ class App:
             return 200, {"patient_id": pid, "summary": summary,
                          "timeline": timeline, "syndrome_evolution": evolution}
 
+        # 0.2.7 clinical 增强 — 问诊助手
+        if method == "POST" and path == "/clinical/consult/chat":
+            from .clinical.consult_chat import start_session, chat
+            pid = body.get("patient_id", 0)
+            if not pid:
+                return 400, {"error": "patient_id required"}
+            sid = body.get("session_id")
+            if not sid:
+                sid = start_session(self.store, pid)
+            msg = body.get("message", "")
+            if not msg:
+                return 400, {"error": "message required"}
+            reply = chat(self.store, sid, msg)
+            return 200, {"session_id": sid, "reply": reply}
+
         return 404, {"error": "not found"}
 
     @staticmethod
