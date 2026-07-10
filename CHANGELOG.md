@@ -1,5 +1,32 @@
 # 变更日志
 
+## [0.7.1] — 2026-07-10
+
+### 工作流引擎
+
+#### 工作流定义
+- `workflow_definitions` / `workflow_instances` 表（JSON 步骤定义 + 实例追踪），接 WAL 复制
+- `khub/workflow/store.py`：定义/实例 CRUD
+
+#### 状态机引擎
+- `khub/workflow/engine.py`：支持 3 种步骤类型：
+  - `auto`：自动执行动作（`create_notification` / `run_report`）
+  - `condition`：条件分支（`${变量}` 插值 + branches 映射）
+  - `notify`：发送通知
+- 变量解析：`${key}` 从上下文读取并替换
+- 实例追踪：历史记录（每步结果）、状态（running/completed/failed）
+
+#### 事件触发
+- `khub/workflow/triggers.py`：`on_event` 函数，匹配活跃定义中 `trigger` 类型的步骤后自动创建并运行实例
+- 与 Webhook 事件系统集成
+
+#### 接口
+- REST：`POST/GET /api/workflow/definitions`、`POST /api/workflow/definitions/{id}/run`、`GET /api/workflow/instances`
+- CLI：`workflow-create` / `workflow-list` / `workflow-run` / `workflow-instances`
+
+### 测试
+- 新增 5 个测试（定义创建/列表/简单运行/条件分支/trigger 触发），全部通过
+
 ## [0.7.0] — 2026-07-10
 
 ### AI Copilot 智能助手
