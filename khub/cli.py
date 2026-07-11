@@ -357,6 +357,33 @@ def build_parser():
     pre = sub.add_parser("report-export", help="导出报表 CSV")
     pre.add_argument("template_id", type=int); pre.add_argument("--output", default="")
 
+    pu = sub.add_parser("report-update", help="更新报表模板")
+    pu.add_argument("template_id", type=int)
+    pu.add_argument("--name")
+    pu.add_argument("--query")
+    pu.add_argument("--desc")
+    pu.add_argument("--type")
+
+    sub.add_parser("report-delete", help="删除报表模板").add_argument("template_id", type=int)
+    sub.add_parser("report-jobs", help="报表执行历史").add_argument("template_id", type=int)
+
+    pr = sub.add_parser("report-prebuilt", help="预建报表操作")
+    pr.add_argument("--run", type=str, default="", help="执行预建报表 ID")
+    pr.add_argument("--list", action="store_true", help="列出所有预建报表")
+
+    sub.add_parser("dashboard-summary", help="经营看板总览")
+
+    sub.add_parser("dashboard-tile-list", help="列出看板瓦片")
+
+    pta = sub.add_parser("dashboard-tile-add", help="添加看板瓦片")
+    pta.add_argument("--name", default="未命名")
+    pta.add_argument("--type", default="stat")
+    pta.add_argument("--query", default="")
+    pta.add_argument("--chart", default="table")
+
+    ptd = sub.add_parser("dashboard-tile-del", help="删除看板瓦片")
+    ptd.add_argument("--tile-id", type=int, required=True)
+
     pwd = sub.add_parser("workflow-create", help="创建工作流定义")
     pwd.add_argument("name"); pwd.add_argument("--desc", default="")
 
@@ -1341,6 +1368,49 @@ def main(argv=None):
             print(f"已导出到 {args.output}")
         else:
             print(csv_data)
+    elif args.cmd == "report-update":
+        from .reports import update_template
+        kw = {}
+        if args.name: kw["name"] = args.name
+        if args.query: kw["query"] = args.query
+        if args.desc: kw["description"] = args.desc
+        if args.type: kw["chart_type"] = args.type
+        updated = update_template(store, args.template_id, **kw)
+        print(json.dumps(updated, ensure_ascii=False, indent=2))
+    elif args.cmd == "report-delete":
+        from .reports import delete_template
+        delete_template(store, args.template_id)
+        print(f"已删除模板 #{args.template_id}")
+    elif args.cmd == "report-jobs":
+        from .reports import list_jobs
+        jobs = list_jobs(store, args.template_id)
+        print(json.dumps(jobs, ensure_ascii=False, indent=2))
+    elif args.cmd == "report-prebuilt":
+        from .prebuilt import get_prebuilt_reports, execute_prebuilt
+        if args.list:
+            reports = get_prebuilt_reports()
+            print(json.dumps(reports, ensure_ascii=False, indent=2))
+        elif args.run:
+            result = execute_prebuilt(store, args.run)
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+        else:
+            print("请使用 --list 或 --run")
+    elif args.cmd == "dashboard-summary":
+        from .dashboard import dashboard_summary
+        summary = dashboard_summary(store)
+        print(json.dumps(summary, ensure_ascii=False, indent=2))
+    elif args.cmd == "dashboard-tile-list":
+        from .dashboard import list_tiles
+        tiles = list_tiles(store)
+        print(json.dumps(tiles, ensure_ascii=False, indent=2))
+    elif args.cmd == "dashboard-tile-add":
+        from .dashboard import create_tile
+        tid = create_tile(store, args.name, tile_type=args.type, query=args.query, chart_type=args.chart)
+        print(f"已创建瓦片 #{tid}")
+    elif args.cmd == "dashboard-tile-del":
+        from .dashboard import delete_tile
+        ok = delete_tile(store, args.tile_id)
+        print(f"已删除瓦片 #{args.tile_id}" if ok else "瓦片不存在")
     elif args.cmd == "workflow-create":
         from .workflow.store import create_definition
         steps = json.loads(input("步骤 JSON: ")) if sys.stdin.isatty() else json.load(sys.stdin)
@@ -1442,7 +1512,8 @@ case $state in
     user-list user-create user-role \
     course-create course-list course-info lesson-add lesson-list enrol grade \
     kg-infer kg-herbs kg-formulas kg-similarity \
-    report-create report-list report-run report-export \
+    report-create report-list report-run report-export report-update report-delete report-jobs report-prebuilt \
+    dashboard-summary dashboard-tile-list dashboard-tile-add dashboard-tile-del \
     workflow-create workflow-list workflow-run workflow-instances \
     audit-search retention-clean \
     analytics-cohorts analytics-efficacy analytics-forecast analytics-trends \

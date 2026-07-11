@@ -969,21 +969,32 @@ async function doCreateReport() {
 }
 
 async function runReport(id) {
-  var box = document.getElementById('reports-content');
-  box.innerHTML = '<p class="meta">运行中…</p>';
-  try {
-    var r = await fetch('/api/reports/' + id + '/run', {method:'POST'}).then(function(x){return x.json();});
-    if (!r.rows || !r.rows.length) { box.innerHTML = '<p class="meta">无数据</p>'; return; }
-    var html = '<h3>' + esc(r.name) + ' (' + r.row_count + ' 条)</h3><table class="ops-table"><tr>';
-    r.columns.forEach(function(c){html += '<th>' + esc(c) + '</th>';});
-    html += '</tr>';
-    r.rows.forEach(function(row){
-      html += '<tr>';
-      r.columns.forEach(function(c){html += '<td>' + esc(String(row[c]||'')) + '</td>';});
-      html += '</tr>';
-    });
-    html += '</table>'; box.innerHTML = html;
-  } catch(e) { box.innerHTML = '<p class="meta">失败: ' + esc(e.message) + '</p>'; }
+    const cont = document.getElementById('reports-content');
+    cont.innerHTML = '执行中...';
+    try {
+        const r = await fetch(`/api/reports/${id}/run`, {method:'POST'});
+        const data = await r.json();
+        // 获取模板信息以确定 chart_type
+        const tr = await fetch(`/api/reports/${id}`);
+        const tpl = await tr.json();
+        
+        const chartData = {
+            type: tpl.chart_type || 'table',
+            columns: data.columns || [],
+            rows: data.rows || [],
+            labels: (data.rows || []).map(r => r[data.columns?.[0] || '']),
+            datasets: data.columns?.slice(1).map((col, i) => ({
+                label: col,
+                data: data.rows.map(r => r[col] || 0)
+            })) || []
+        };
+        cont.innerHTML = '<div id="report-result"></div>';
+        window.renderChart(chartData, document.getElementById('report-result'));
+        // 添加 CSV 导出按钮
+        cont.innerHTML += `<p><a href="/api/reports/${id}/csv" class="btn-link" download>下载 CSV</a></p>`;
+    } catch(e) {
+        cont.innerHTML = `<div class="error">执行失败: ${e.message}</div>`;
+    }
 }
 
 async function downloadCSV(id) {
@@ -994,8 +1005,125 @@ async function downloadCSV(id) {
   } catch(e) { showToast('导出失败'); }
 }
 
+// ── 预建报表 ──
+async function showPrebuiltReports() {
+    const cont = document.getElementById('reports-content');
+    cont.innerHTML = '加载中...';
+    try {
+        const r = await fetch('/api/prebuilt');
+        const data = await r.json();
+        if (!data.reports?.length) { cont.innerHTML = '<div class="empty-chart">暂无预建报表</div>'; return; }
+        let html = '<h3>预建报表</h3><div class="tile-grid">';
+        data.reports.forEach(rp => {
+            const icon = rp.chart_type === 'pie' ? '📊' : rp.chart_type === 'line' ? '📈' : rp.chart_type === 'bar' ? '📉' : '📋';
+            html += `<div class="tile-card" onclick="runPrebuilt('${rp.id}')">
+                <div class="tile-icon">${icon}</div>
+                <div class="tile-title">${rp.name}</div>
+                <div class="tile-desc">${rp.description || ''}</div>
+            </div>`;
+        });
+        html += '</div><div id="prebuilt-result"></div>';
+        cont.innerHTML = html;
+    } catch(e) {
+        cont.innerHTML = `<div class="error">加载失败: ${e.message}</div>`;
+    }
+}
+
+async function runPrebuilt(id) {
+    const cont = document.getElementById('prebuilt-result');
+    cont.innerHTML = '执行中...';
+    try {
+        const r = await fetch(`/api/prebuilt/${id}/run`, {method:'POST'});
+        const data = await r.json();
+        if (data.chart_data) {
+            window.renderChart(data.chart_data, cont);
+        } else {
+            window.renderTable(data, cont);
+        }
+    } catch(e) {
+        cont.innerHTML = `<div class="error">执行失败: ${e.message}</div>`;
+    }
+}
+
+// ── 经营看板 ──
+async function loadDashboardSummary() {
+    const cont = document.getElementById('reports-content');
+    cont.innerHTML = '<h3>经营看板</h3><div id="dash-summary">加载中...</div>';
+    try {
+        const r = await fetch('/api/dashboard/summary');
+        const data = await r.json();
+        let html = '<div class="dash-grid">';
+        // 就诊趋势
+        if (data.visit_trend?.length) {
+            html += '<div class="dash-card"><div class="dash-title">就诊趋势</div><div id="dash-visit-trend"></div></div>';
+        }
+        // 患者画像
+        if (data.demographics?.length) {
+            html += '<div class="dash-card"><div class="dash-title">患者画像</div><div id="dash-demographics"></div></div>';
+        }
+        // 预约统计
+        if (data.appointment_stats?.length) {
+            html += '<div class="dash-card"><div class="dash-title">预约状态</div><div id="dash-appointments"></div></div>';
+        }
+        // 诊断 TOP
+        if (data.diagnosis_top?.length) {
+            html += '<div class="dash-card"><div class="dash-title">TOP 诊断</div><div id="dash-diagnosis"></div></div>';
+        }
+        // 收入
+        if (data.billing?.length) {
+            html += '<div class="dash-card"><div class="dash-title">收入趋势</div><div id="dash-billing"></div></div>';
+        }
+        html += '</div>';
+        cont.innerHTML = html;
+        
+        // 渲染各图表
+        if (data.visit_trend?.length) {
+            window.renderLineChart({
+                labels: data.visit_trend.map(r => r.label),
+                datasets: [{label: '就诊量', data: data.visit_trend.map(r => r.count)}]
+            }, document.getElementById('dash-visit-trend'));
+        }
+        if (data.demographics?.length) {
+            const grouped = {};
+            data.demographics.forEach(d => { grouped[d.age_group] = (grouped[d.age_group] || 0) + d.count; });
+            window.renderPieChart({
+                labels: Object.keys(grouped),
+                datasets: [{label: '人数', data: Object.values(grouped)}]
+            }, document.getElementById('dash-demographics'));
+        }
+        if (data.appointment_stats?.length) {
+            window.renderBarChart({
+                labels: data.appointment_stats.map(r => r.status),
+                datasets: [{label: '数量', data: data.appointment_stats.map(r => r.count)}]
+            }, document.getElementById('dash-appointments'));
+        }
+        if (data.diagnosis_top?.length) {
+            window.renderBarChart({
+                labels: data.diagnosis_top.map(r => r.diagnosis),
+                datasets: [{label: '诊断数', data: data.diagnosis_top.map(r => r.count)}]
+            }, document.getElementById('dash-diagnosis'));
+        }
+        if (data.billing?.length) {
+            window.renderLineChart({
+                labels: data.billing.map(r => r.month),
+                datasets: [{label: '收入', data: data.billing.map(r => r.total)}]
+            }, document.getElementById('dash-billing'));
+        }
+    } catch(e) {
+        document.getElementById('dash-summary').innerHTML = `<div class="error">加载失败: ${e.message}</div>`;
+    }
+}
+
+// ── 覆盖 loadDashboard 函数以使用增强的看板 ──
+// 保持向后兼容: 旧 loadDashboard 显示 stats，增强版显示完整看板
+const _origLoadDashboard = window.loadDashboard || function(){};
+window.loadDashboard = function() {
+    loadDashboardSummary();
+};
+
 loadAll();
 
 // PWA Service Worker 注册
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/web/sw.js').catch(function(e){ console.log('SW注册失败', e); }}
+  navigator.serviceWorker.register('/web/sw.js').catch(function(e){ console.log('SW注册失败', e); });
+}

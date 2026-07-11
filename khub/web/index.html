@@ -5,6 +5,21 @@
 <link rel="stylesheet" href="/web/style.css">
 <link rel="manifest" href="/web/manifest.json">
 <meta name="theme-color" content="#4488cc">
+<style>
+.report-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.report-table th, .report-table td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; }
+.report-table th { background: #f5f5f5; font-weight: 600; }
+.empty-chart { color: #999; padding: 40px; text-align: center; }
+.tile-grid { display: flex; flex-wrap: wrap; gap: 12px; margin: 16px 0; }
+.tile-card { border: 1px solid #ddd; border-radius: 8px; padding: 16px; width: 180px; cursor: pointer; }
+.tile-card:hover { border-color: #4e79a7; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+.tile-icon { font-size: 28px; margin-bottom: 8px; }
+.tile-title { font-weight: 600; font-size: 14px; }
+.tile-desc { font-size: 12px; color: #666; margin-top: 4px; }
+.dash-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 16px; }
+.dash-card { border: 1px solid #ddd; border-radius: 8px; padding: 12px; background: #fff; }
+.dash-title { font-weight: 600; font-size: 14px; margin-bottom: 8px; color: #333; }
+</style>
 <script>
 fetch('/api/info').then(r=>r.json()).then(d=>{
   if(d.name) document.title = d.name;
@@ -100,6 +115,7 @@ fetch('/api/info').then(r=>r.json()).then(d=>{
   </div>
   <div id="results"></div>
 </div>
+<script src="charts.js"></script>
 <script src="/web/script.js"></script>
 
 <!-- AI 助手对话框 -->

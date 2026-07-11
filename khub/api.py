@@ -1109,6 +1109,119 @@ class App:
             csv_data = export_csv(self.store, tid)
             return 200, csv_data, "text/csv; charset=utf-8"
 
+        # ---- BI reports: update/delete/jobs ----
+        if method == "PUT" and path.startswith("/api/reports/") and len(parts) == 3:
+            from .reports import update_template
+            tid = _safe_int([parts[2]], 0)
+            if not tid: return 400, {"error": "invalid id"}
+            try:
+                updated = update_template(self.store, tid, **body)
+                return 200, updated
+            except ValueError as e:
+                return 404, {"error": str(e)}
+
+        if method == "DELETE" and path.startswith("/api/reports/") and len(parts) == 3:
+            from .reports import delete_template
+            tid = _safe_int([parts[2]], 0)
+            if not tid: return 400, {"error": "invalid id"}
+            try:
+                delete_template(self.store, tid)
+                return 200, {"ok": True}
+            except ValueError as e:
+                return 404, {"error": str(e)}
+
+        if method == "GET" and path.startswith("/api/reports/") and path.endswith("/jobs"):
+            from .reports import list_jobs
+            tid_str = parts[2] if len(parts) >= 3 else None
+            tid = _safe_int([tid_str], 0) if tid_str and tid_str.isdigit() else None  # type: ignore[assignment]
+            return 200, {"jobs": list_jobs(self.store, tid=tid)}
+
+        # ---- Prebuilt reports ----
+        if method == "GET" and path == "/api/prebuilt":
+            from .prebuilt import get_prebuilt_reports
+            return 200, {"reports": get_prebuilt_reports()}
+
+        if method == "POST" and path.startswith("/api/prebuilt/") and path.endswith("/run"):
+            from .prebuilt import execute_prebuilt
+            pb_id = parts[2] if len(parts) >= 3 else ""
+            if not pb_id: return 400, {"error": "invalid prebuilt id"}
+            try:
+                result = execute_prebuilt(self.store, pb_id, **body)
+                return 200, result
+            except ValueError as e:
+                return 404, {"error": str(e)}
+
+        # ---- DB introspection ----
+        if method == "GET" and path == "/api/reports/tables":
+            from .reports import list_tables
+            return 200, {"tables": list_tables(self.store)}
+
+        if method == "GET" and path.startswith("/api/reports/tables/") and len(parts) == 4:
+            from .reports import describe_table
+            table_name = parts[3]
+            try:
+                return 200, {"columns": describe_table(self.store, table_name)}
+            except ValueError as e:
+                return 404, {"error": str(e)}
+
+        # ---- Dashboard summary ----
+        if method == "GET" and path == "/api/dashboard/summary":
+            from .dashboard import dashboard_summary
+            return 200, dashboard_summary(self.store)
+
+        # ---- Dashboard tiles CRUD ----
+        if method == "GET" and path == "/api/dashboard/tiles":
+            from .dashboard import list_tiles
+            return 200, {"tiles": list_tiles(self.store)}
+
+        if method == "POST" and path == "/api/dashboard/tiles":
+            from .dashboard import create_tile
+            tid = create_tile(self.store, body.get("name", "未命名"),
+                            tile_type=body.get("tile_type", "stat"),
+                            query=body.get("query", ""),
+                            chart_type=body.get("chart_type", "table"),
+                            position=body.get("position", 0))
+            return 201, {"tile_id": tid}
+
+        if method == "PUT" and path.startswith("/api/dashboard/tiles/") and len(parts) == 4:
+            from .dashboard import update_tile
+            tid = _safe_int([parts[3]], 0)
+            if not tid: return 400, {"error": "invalid id"}
+            ok = update_tile(self.store, tid, **body)
+            if ok:
+                return 200, {"ok": True}
+            return 404, {"error": "not found"}
+
+        if method == "DELETE" and path.startswith("/api/dashboard/tiles/") and len(parts) == 4:
+            from .dashboard import delete_tile
+            tid = _safe_int([parts[3]], 0)
+            if not tid: return 400, {"error": "invalid id"}
+            ok = delete_tile(self.store, tid)
+            if ok:
+                return 200, {"ok": True}
+            return 404, {"error": "not found"}
+
+        if method == "POST" and path == "/api/dashboard/tiles/reorder":
+            from .dashboard import reorder_tiles
+            ids = body.get("ids", [])
+            reorder_tiles(self.store, ids)
+            return 200, {"ok": True}
+
+        if method == "GET" and path.startswith("/api/dashboard/tiles/") and path.endswith("/data"):
+            from .reports import build_chart_data
+            tid = _safe_int([parts[3]], 0)
+            if not tid: return 400, {"error": "invalid id"}
+            from .dashboard import get_tile
+            tile = get_tile(self.store, tid)
+            if not tile: return 404, {"error": "tile not found"}
+            if not tile.get("query"):
+                return 200, {"data": None}
+            rows = self.store.conn.execute(tile["query"]).fetchall()
+            columns = [desc[0] for desc in self.store.conn.description] if rows else []
+            data = [dict(r) for r in rows]
+            chart_data = build_chart_data(tile.get("chart_type", "table"), columns, data)
+            return 200, {"data": chart_data}
+
         # 0.7.0 copilot
         if method == "POST" and path == "/api/copilot/chat":
             from .copilot.engine import process

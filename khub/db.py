@@ -207,6 +207,19 @@ class Store:
             output TEXT, error TEXT, created_at TEXT DEFAULT (datetime('now')),
             completed_at TEXT)""")
         _rtrig(self.conn, "report_jobs")
+        self.conn.execute("""CREATE TABLE IF NOT EXISTS dashboard_tiles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            tile_type TEXT DEFAULT 'stat',
+            query TEXT DEFAULT '',
+            chart_type TEXT DEFAULT 'table',
+            position INTEGER DEFAULT 0,
+            width INTEGER DEFAULT 1,
+            height INTEGER DEFAULT 1,
+            active INTEGER DEFAULT 1,
+            created_at TEXT DEFAULT (datetime('now'))
+        )""")
+        _rtrig(self.conn, "dashboard_tiles")
         # 0.7.1 工作流引擎
         from .replication import install_triggers as _wftrig
         self.conn.execute("""CREATE TABLE IF NOT EXISTS workflow_definitions (
