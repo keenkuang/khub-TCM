@@ -5,6 +5,8 @@ from khub.ops.store import (add_schedule, book_appointment, checkin_visit,
 import pytest
 pytestmark = pytest.mark.smoke
 
+_ADMIN_USER = {"user_id": 1, "username": "admin", "role": "admin"}
+
 
 def test_ops_flow():
     s = Store(":memory:")
@@ -13,7 +15,7 @@ def test_ops_flow():
     assert aid >= 1
     vid = checkin_visit(s, aid, "p1")
     assert vid >= 1
-    appts = list_appointments(s, "2026-07-10")
+    appts = list_appointments(s, "2026-07-10", user=_ADMIN_USER)
     assert len(appts) == 1 and appts[0]["status"] == "checked_in"
 
 

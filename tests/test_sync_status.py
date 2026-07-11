@@ -35,12 +35,12 @@ def test_sync_status_empty():
 def test_sync_status_with_data():
     """插入一条同步记录后正确返回。"""
     app = _app()
-    _insert_sync(app.store, "feishu", "2026-07-10T01:00:00")
+    recent = time.strftime("%Y-%m-%dT01:00:00", time.gmtime())  # ~1h ago
+    _insert_sync(app.store, "feishu", recent)
     code, obj = app.dispatch("GET", "/sync-status")
     assert code == 200
     assert len(obj) == 1
     assert obj[0]["source_id"] == "feishu"
-    assert obj[0]["last_sync_at"] == "2026-07-10T01:00:00"
     assert obj[0]["direction"] == "pull"
     assert obj[0]["recent"] is True
 

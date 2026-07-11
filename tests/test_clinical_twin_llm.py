@@ -5,6 +5,8 @@ from khub.clinical import patients, records, consultations
 from khub.clinical.twin import build_summary
 pytestmark = pytest.mark.smoke
 
+_ADMIN_USER = {"user_id": 1, "username": "admin", "role": "admin"}
+
 
 
 class FakeProvider:
@@ -46,7 +48,7 @@ def test_build_summary_uses_real_provider(store):
 def test_build_summary_fallback_aggregates_real_data(store):
     pid = _seed(store)
     # 默认 get_provider() 无 KHUB_LLM_URL 时为 NoOpProvider，complete 返回 "" -> 走兜底模板
-    out = build_summary(store, pid)
+    out = build_summary(store, pid, user=_ADMIN_USER)
     assert isinstance(out, str)
     assert out  # 非空
     assert "张三" in out

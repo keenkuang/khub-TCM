@@ -16,6 +16,9 @@ import pytest
 pytestmark = pytest.mark.smoke
 
 
+_ADMIN_USER = {"user_id": 1, "username": "admin", "role": "admin"}
+
+
 
 # ---------------------------------------------------------------------------
 # helpers
@@ -57,7 +60,7 @@ def test_passthrough_record(monkeypatch):
     store = Store(":memory:")
     add_patient(store, "p1", "张三")
     add_record(store, "p1", diagnosis="太阳病", prescription="桂枝汤", note="忌生冷")
-    rows = list_records(store, "p1")
+    rows = list_records(store, "p1", user=_ADMIN_USER)
     assert len(rows) == 1
     assert rows[0]["diagnosis"] == "太阳病"
     assert rows[0]["prescription"] == "桂枝汤"
@@ -70,7 +73,7 @@ def test_passthrough_consultation(monkeypatch):
     add_patient(store, "p1", "张三")
     add_consultation(store, "p1", chief_complaint="发热", tongue_pulse="弦数",
                      differentiation="表虚", plan="桂枝汤")
-    rows = list_consultations(store, "p1")
+    rows = list_consultations(store, "p1", user=_ADMIN_USER)
     assert len(rows) == 1
     assert rows[0]["chief_complaint"] == "发热"
     assert rows[0]["tongue_pulse"] == "弦数"
@@ -118,7 +121,7 @@ def test_encrypt_patient_list(monkeypatch):
     add_patient(store, "p1", "张三", "男", "1980-01-01")
     add_patient(store, "p2", "李四", "女", "1990-06-15")
 
-    patients = list_patients(store)
+    patients = list_patients(store, user=_ADMIN_USER)
     assert len(patients) == 2
     names = {p["name"] for p in patients}
     assert names == {"张三", "李四"}
@@ -144,7 +147,7 @@ def test_encrypt_record(monkeypatch):
     assert "忌生冷" not in raw["note"]
 
     # list_records decrypts
-    rows = list_records(store, "p1")
+    rows = list_records(store, "p1", user=_ADMIN_USER)
     assert len(rows) == 1
     assert rows[0]["diagnosis"] == "太阳病"
     assert rows[0]["prescription"] == "桂枝汤"
@@ -174,7 +177,7 @@ def test_encrypt_consultation(monkeypatch):
     assert "桂枝汤" not in raw["plan"]
 
     # list_consultations decrypts
-    rows = list_consultations(store, "p1")
+    rows = list_consultations(store, "p1", user=_ADMIN_USER)
     assert len(rows) == 1
     assert rows[0]["chief_complaint"] == "发热"
     assert rows[0]["tongue_pulse"] == "弦数"

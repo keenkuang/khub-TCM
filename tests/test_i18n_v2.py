@@ -35,7 +35,7 @@ def test_detect_langs():
     assert detect_lang("en-US,en;q=0.9") == "en"
     assert detect_lang("ja-JP,ja;q=0.9") == "ja"
     assert detect_lang("ko-KR,ko;q=0.9") == "ko"
-    assert detect_lang("") == "en"
+    assert detect_lang("") == "zh"  # 默认中文
 
 
 def test_get_translations():

@@ -2,6 +2,7 @@ import os
 import tempfile
 import zipfile
 
+from khub import __version__
 from khub.api import App
 from khub.db import Store
 from khub.storage import ManagedLibrary
@@ -182,7 +183,7 @@ def test_api_health():
     code, obj = app.dispatch("GET", "/health")
     assert code == 200
     assert obj["status"] == "ok"
-    assert obj["version"] == "3.2.0"
+    assert obj["version"] == __version__
     assert "uptime_sec" in obj
     assert "checks" in obj
     assert obj["checks"]["db"]["documents"] == 0

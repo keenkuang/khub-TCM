@@ -19,6 +19,8 @@ COPY docker-entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENV KHUB_DB=/data/khub.db KHUB_LIBRARY=/data/library
 EXPOSE 8765
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
+    CMD python3 -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/health')" || exit 1
 VOLUME ["/data"]
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["python3", "-m", "khub.cli", "serve", "--port", "8765"]

@@ -658,7 +658,7 @@ class App:
             from .clinical.twin import build_summary
             init_records(self.store)
             init_consultations(self.store)
-            text = build_summary(self.store, pid)
+            text = build_summary(self.store, pid, user=current_user)
             return 200, {"patient_id": pid, "summary": text}
 
         # ---- Ops subsystem ----

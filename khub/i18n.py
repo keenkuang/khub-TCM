@@ -60,6 +60,8 @@ def t(key: str, lang: str = "en") -> str:
 
 
 def detect_lang(accept_language: str = "") -> str:
+    if not accept_language:
+        return "zh"  # 默认中文
     if accept_language.startswith("ja"): return "ja"
     if accept_language.startswith("ko"): return "ko"
     if accept_language.startswith("zh"): return "zh"

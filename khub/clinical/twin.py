@@ -7,12 +7,12 @@ from .consultations import list_consultations, init as init_consultations
 from .patients import get_patient
 from ..models import CanonicalDoc
 
-def _build_context(store: Store, patient_id: str):
+def _build_context(store: Store, patient_id: str, user: dict | None = None):
     """聚合患者及其病历/问诊的真实数据，返回 (patient, recs, cons)。"""
     row = get_patient(store, patient_id)
     patient = dict(row) if row else None
-    recs = list_records(store, patient_id)
-    cons = list_consultations(store, patient_id)
+    recs = list_records(store, patient_id, user=user)
+    cons = list_consultations(store, patient_id, user=user)
     return patient, recs, cons
 
 def _patient_label(patient) -> str:
@@ -51,13 +51,13 @@ def _fallback_text(patient, recs, cons) -> str:
         parts.append("问诊0条")
     return "；".join(parts) + "。"
 
-def build_summary(store: Store, patient_id: str, provider: Optional[LLMProvider] = None) -> str:
+def build_summary(store: Store, patient_id: str, provider: Optional[LLMProvider] = None, user: dict | None = None) -> str:
     from .records import init as init_records
     from .consultations import init as init_consultations
     init_records(store); init_consultations(store)
     provider = provider or get_provider()
     record(store, "read_twin", scope="twin", patient_id=patient_id)
-    patient, recs, cons = _build_context(store, patient_id)
+    patient, recs, cons = _build_context(store, patient_id, user=user)
 
     ctx = (
         f"患者{_patient_label(patient)}；"
@@ -85,8 +85,8 @@ def build_summary(store: Store, patient_id: str, provider: Optional[LLMProvider]
         return out
     return _fallback_text(patient, recs, cons)
 
-def persist_summary(store: Store, patient_id: str, provider: Optional[LLMProvider] = None) -> str:
-    text = build_summary(store, patient_id, provider)
+def persist_summary(store: Store, patient_id: str, provider: Optional[LLMProvider] = None, user: dict | None = None) -> str:
+    text = build_summary(store, patient_id, provider, user=user)
     store.store_document(CanonicalDoc(
         canonical_id=f"twin:{patient_id}", title=f"孪生体:{patient_id}",
         content=text, source="twin", source_id=patient_id, doc_type="twin", origin="hub"))
