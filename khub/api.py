@@ -3,7 +3,7 @@ import os
 import queue
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Optional
+from typing import Optional, Any
 from urllib.parse import parse_qs, urlparse, unquote
 
 # 请求计数器（用于 /metrics）
@@ -59,7 +59,7 @@ class App:
         self.store = store
         self.library = library
         self._started = time.time()
-        self.ratelimit: PersistentTokenBucket | None = make_ratelimit(store)
+        self.ratelimit: PersistentTokenBucket | None = make_ratelimit(self.store)
 
     def dispatch(self, method: str, raw_path: str, body: Optional[dict] = None,
                  auth_header: str = "", tenant_header: str = ""):
@@ -609,7 +609,7 @@ class App:
         # ---- Clinical subsystem ----
         if method == "POST" and path == "/clinical/patients":
             from .clinical.patients import add_patient
-            pid = add_patient(self.store, body["id"], body["name"],
+            pid: Any = add_patient(self.store, body["id"], body["name"],
                               gender=body.get("gender", ""), born=body.get("born", ""))
             return 201, {"id": pid}
 
@@ -696,13 +696,13 @@ class App:
             pid_str = path[len("/twin/"):]
             if "/" in pid_str:
                 return 404, {"error": "not found"}
-            pid = _safe_int(pid_str, 0)
+            pid: int = _safe_int(pid_str, 0)  # type: ignore[no-redef]
             if not pid:
                 return 400, {"error": "invalid patient_id"}
             from .clinical.twin_v2 import get_timeline, get_syndrome_evolution, build_summary_incremental
-            summary = build_summary_incremental(store, pid)
-            timeline = get_timeline(store, pid)
-            evolution = get_syndrome_evolution(store, pid)
+            summary = build_summary_incremental(self.store, pid)
+            timeline = get_timeline(self.store, pid)
+            evolution = get_syndrome_evolution(self.store, pid)
             return 200, {"patient_id": pid, "summary": summary,
                          "timeline": timeline, "syndrome_evolution": evolution}
 
@@ -712,9 +712,9 @@ class App:
             pid = body.get("patient_id", 0)
             if not pid:
                 return 400, {"error": "patient_id required"}
-            sid = body.get("session_id")
+            sid = body.get("session_id")  # type: ignore[assignment, no-redef]
             if not sid:
-                sid = start_session(self.store, pid)
+                sid = start_session(self.store, pid)  # type: ignore[no-redef]
             msg = body.get("message", "")
             if not msg:
                 return 400, {"error": "message required"}
@@ -729,12 +729,12 @@ class App:
             reason = body.get("reason", "")
             if not pid or not due:
                 return 400, {"error": "patient_id and due_date required"}
-            plan_id = add_plan(store, pid, due, reason)
+            plan_id = add_plan(self.store, pid, due, reason)
             return 201, {"plan_id": plan_id}
         if method == "GET" and path == "/clinical/followup/scan":
             from .clinical.followup import scan_due
             as_of = qs.get("as_of", [None])[0]
-            due = scan_due(store, as_of=as_of)
+            due = scan_due(self.store, as_of=as_of)
             return 200, {"due_plans": due}
 
         # 0.2.7 clinical 增强 — 结构化抽取
@@ -760,30 +760,30 @@ class App:
                         text = f"{row['chief_complaint'] or ''} {row['differentiation'] or ''}"
             if not text:
                 return 404, {"error": "source not found or text empty"}
-            struct = extract_structured(store, text)
-            apply_struct(store, source, source_id, struct)
+            struct = extract_structured(self.store, text)
+            apply_struct(self.store, source, source_id, struct)
             return 200, {"structured": struct}
 
         # 0.4.0 clinical intelligence
         if method == "GET" and path.startswith("/clinical/analysis/") and path.endswith("/matrix"):
             from .clinical.analysis import build_syndrome_formula_matrix_for_patient
             _segments = path.strip("/").split("/")
-            pid = _safe_int(_segments[2:3] if len(_segments) >= 3 else [0], 0)
+            pid: int = _safe_int(_segments[2:3] if len(_segments) >= 3 else [0], 0)  # type: ignore[no-redef]
             return 200, {"matrix": build_syndrome_formula_matrix_for_patient(self.store, pid)}
         if method == "GET" and path.startswith("/clinical/analysis/") and path.endswith("/evolution"):
             from .clinical.analysis import analyze_constitution_evolution
             _segments = path.strip("/").split("/")
-            pid = _safe_int(_segments[2:3] if len(_segments) >= 3 else [0], 0)
+            pid: int = _safe_int(_segments[2:3] if len(_segments) >= 3 else [0], 0)  # type: ignore[no-redef]
             return 200, {"evolution": analyze_constitution_evolution(self.store, pid)}
         if method == "GET" and path.startswith("/clinical/tracking/") and len(path.strip("/").split("/")) == 3:
             from .clinical.tracking import evaluate_efficacy
             _segments = path.strip("/").split("/")
-            pid = _safe_int(_segments[2:3] if len(_segments) >= 3 else [0], 0)
+            pid: int = _safe_int(_segments[2:3] if len(_segments) >= 3 else [0], 0)  # type: ignore[no-redef]
             return 200, {"efficacy": evaluate_efficacy(self.store, pid)}
         if method == "GET" and path.startswith("/clinical/trends/") and len(path.strip("/").split("/")) == 3:
             from .clinical.visualize import get_health_trends
             _segments = path.strip("/").split("/")
-            pid = _safe_int(_segments[2:3] if len(_segments) >= 3 else [0], 0)
+            pid: int = _safe_int(_segments[2:3] if len(_segments) >= 3 else [0], 0)  # type: ignore[no-redef]
             return 200, {"trends": get_health_trends(self.store, pid)}
         if method == "POST" and path == "/clinical/diagnosis/suggest":
             from .clinical.diagnosis import suggest_formula, check_incompatibility
@@ -801,7 +801,7 @@ class App:
             return 200, result
         if method == "POST" and path == "/api/clinical/interview":
             from .clinical.interview import generate_interview
-            return 200, generate_interview(store, body.get("text", ""))
+            return 200, generate_interview(self.store, body.get("text", ""))
         if method == "POST" and path == "/api/clinical/cdss":
             from .clinical.cdss import evaluate
             from datetime import datetime
@@ -819,7 +819,7 @@ class App:
             tag = body.get("tag", "")
             if not tag:
                 return 400, {"error": "tag required"}
-            add_tag(store, doc_id, tag)
+            add_tag(self.store, doc_id, tag)
             return 200, {"status": "ok", "tag": tag}
         if method == "DELETE" and path.startswith("/documents/") and path.endswith("/tags"):
             from .tags import remove_tag
@@ -827,21 +827,21 @@ class App:
             tag = qs.get("tag", [""])[0]
             if not tag:
                 return 400, {"error": "tag query param required"}
-            remove_tag(store, doc_id, tag)
+            remove_tag(self.store, doc_id, tag)
             return 200, {"status": "ok"}
         if method == "GET" and path == "/tags":
             from .tags import list_tags
-            return 200, {"tags": list_tags(store)}
+            return 200, {"tags": list_tags(self.store)}
 
         # 0.2.9 knowledge base — favorites
         if method == "POST" and path.startswith("/documents/") and path.endswith("/favorite"):
             from .favorites import toggle_favorite
             doc_id = parts[1]
-            is_fav = toggle_favorite(store, doc_id)
+            is_fav = toggle_favorite(self.store, doc_id)
             return 200, {"favorited": is_fav}
         if method == "GET" and path == "/favorites":
             from .favorites import list_favorites
-            return 200, {"favorites": list_favorites(store)}
+            return 200, {"favorites": list_favorites(self.store)}
 
         # /metrics — Prometheus 格式指标
         if method == "GET" and path == "/metrics":
@@ -879,7 +879,7 @@ class App:
         # 0.2.10 course management
         if method == "POST" and path == "/api/courses":
             from .course.store import add_course
-            cid = add_course(store, name=body.get("name",""), teacher=body.get("teacher",""),
+            cid = add_course(self.store, name=body.get("name",""), teacher=body.get("teacher",""),
                              description=body.get("description",""),
                              start_date=body.get("start_date",""), end_date=body.get("end_date",""),
                              capacity=int(body.get("capacity", 0)),
@@ -887,30 +887,30 @@ class App:
             return 201, {"course_id": cid}
         if method == "GET" and path == "/api/courses":
             from .course.store import list_courses
-            return 200, {"courses": list_courses(store, status=qs.get("status", [None])[0])}
+            return 200, {"courses": list_courses(self.store, status=qs.get("status", [None])[0])}
         if method == "GET" and path.startswith("/api/courses/") and len(parts) == 3:
             from .course.store import get_course
             cid = _safe_int([parts[2]], 0)
             if not cid: return 400, {"error": "invalid id"}
-            course = get_course(store, cid)
+            course = get_course(self.store, cid)
             if not course: return 404, {"error": "not found"}
             return 200, {"course": dict(course)}
         if method == "POST" and path.startswith("/api/courses/") and len(parts) == 4 and parts[3] == "lessons":
             from .course.store import add_lesson
             cid = _safe_int([parts[2]], 0)
-            lid = add_lesson(store, cid, title=body.get("title",""), lesson_date=body.get("lesson_date",""),
+            lid = add_lesson(self.store, cid, title=body.get("title",""), lesson_date=body.get("lesson_date",""),
                              start_time=body.get("start_time",""), end_time=body.get("end_time",""),
                              location=body.get("location",""), content=body.get("content",""))
             return 201, {"lesson_id": lid}
         if method == "GET" and path.startswith("/api/courses/") and len(parts) == 4 and parts[3] == "lessons":
             from .course.store import list_lessons
             cid = _safe_int([parts[2]], 0)
-            return 200, {"lessons": list_lessons(store, cid)}
+            return 200, {"lessons": list_lessons(self.store, cid)}
         if method == "POST" and path.startswith("/api/courses/") and len(parts) == 4 and parts[3] == "enroll":
             from .course.store import enroll_student
             cid = _safe_int([parts[2]], 0)
             try:
-                eid = enroll_student(store, cid, student_name=body.get("student_name",""),
+                eid = enroll_student(self.store, cid, student_name=body.get("student_name",""),
                                      student_phone=body.get("student_phone",""))
                 return 201, {"enrollment_id": eid}
             except ValueError as e:
@@ -918,10 +918,10 @@ class App:
         if method == "GET" and path.startswith("/api/courses/") and len(parts) == 4 and parts[3] == "enrollments":
             from .course.store import list_enrollments
             cid = _safe_int([parts[2]], 0)
-            return 200, {"enrollments": list_enrollments(store, cid)}
+            return 200, {"enrollments": list_enrollments(self.store, cid)}
         if method == "POST" and path == "/api/grades":
             from .course.store import record_grade
-            gid = record_grade(store, int(body.get("enrollment_id", 0)),
+            gid = record_grade(self.store, int(body.get("enrollment_id", 0)),
                                float(body.get("score", 0)),
                                lesson_id=int(body.get("lesson_id", 0)),
                                comment=body.get("comment", ""))
@@ -929,21 +929,21 @@ class App:
         if method == "GET" and path.startswith("/api/enrollments/") and len(parts) == 4 and parts[3] == "grades":
             from .course.store import list_grades
             eid = _safe_int([parts[2]], 0)
-            return 200, {"grades": list_grades(store, eid)}
+            return 200, {"grades": list_grades(self.store, eid)}
 
         # 0.2.11 wechat
         if method == "POST" and path == "/api/wechat/articles":
             from .wechat.store import add_article
-            aid = add_article(store, title=body.get("title",""), content=body.get("content",""),
+            aid = add_article(self.store, title=body.get("title",""), content=body.get("content",""),
                               author=body.get("author",""), digest=body.get("digest",""),
                               content_source_url=body.get("content_source_url",""))
             return 201, {"article_id": aid}
         if method == "GET" and path == "/api/wechat/articles":
             from .wechat.store import list_articles
-            return 200, {"articles": list_articles(store, status=qs.get("status", [None])[0])}
+            return 200, {"articles": list_articles(self.store, status=qs.get("status", [None])[0])}
         if method == "POST" and path == "/api/wechat/schedules":
-            from .wechat.store import add_schedule
-            sid = add_schedule(store, int(body.get("article_id",0)),
+            from .wechat.store import add_schedule  # type: ignore[assignment]
+            sid = add_schedule(self.store, int(body.get("article_id",0)),
                                body.get("publish_at",""), int(body.get("tag_id",0)))
             return 201, {"schedule_id": sid}
         if method == "GET" and path == "/api/wechat/followers":
@@ -994,21 +994,21 @@ class App:
             from .knowledge.inference import infer
             syd = qs.get("syndrome", [""])[0]
             if not syd: return 400, {"error": "syndrome param required"}
-            return 200, {"result": infer(store, syd)}
+            return 200, {"result": infer(self.store, syd)}
         if method == "GET" and path == "/api/kg/herbs":
             from .knowledge.herbs import search_herbs
-            return 200, {"herbs": search_herbs(store, channel=qs.get("channel", [""])[0], nature=qs.get("nature", [""])[0])}
+            return 200, {"herbs": search_herbs(self.store, channel=qs.get("channel", [""])[0], nature=qs.get("nature", [""])[0])}
         if method == "GET" and path == "/api/kg/formulas":
             from .knowledge.formulas import list_formulas
-            return 200, {"formulas": list_formulas(store, category=qs.get("category", [""])[0])}
+            return 200, {"formulas": list_formulas(self.store, category=qs.get("category", [""])[0])}
         if method == "GET" and path == "/api/kg/syndromes":
             from .knowledge.syndromes import list_syndromes
-            return 200, {"syndromes": list_syndromes(store, category=qs.get("category", [""])[0])}
+            return 200, {"syndromes": list_syndromes(self.store, category=qs.get("category", [""])[0])}
         if method == "GET" and path.startswith("/api/kg/similarity"):
             from .knowledge.formulas import formula_similarity
             f1 = qs.get("f1", [""])[0]; f2 = qs.get("f2", [""])[0]
             if not f1 or not f2: return 400, {"error": "f1 and f2 required"}
-            return 200, {"formula1": f1, "formula2": f2, "similarity": formula_similarity(store, f1, f2)}
+            return 200, {"formula1": f1, "formula2": f2, "similarity": formula_similarity(self.store, f1, f2)}
 
         # 0.5.1 deployment info
         if method == "GET" and path == "/api/info":
@@ -1044,19 +1044,19 @@ class App:
         if method == "POST" and path == "/api/webhooks":
             from .webhook import subscribe
             try:
-                sid = subscribe(store, body.get("event", ""), body.get("url", ""),
+                sid = subscribe(self.store, body.get("event", ""), body.get("url", ""),
                                 secret=body.get("secret", ""))
                 return 201, {"subscription_id": sid}
             except ValueError as e:
                 return 400, {"error": str(e)}
         if method == "GET" and path == "/api/webhooks":
             from .webhook import list_subscriptions
-            return 200, {"subscriptions": list_subscriptions(store)}
+            return 200, {"subscriptions": list_subscriptions(self.store)}
         parts = path.strip("/").split("/")
         if method == "DELETE" and path.startswith("/api/webhooks/") and len(parts) == 3:
             from .webhook import unsubscribe
             try:
-                unsubscribe(store, int(parts[2]))
+                unsubscribe(self.store, int(parts[2]))
                 return 200, {"status": "deleted"}
             except Exception as e:
                 return 400, {"error": str(e)}
@@ -1065,37 +1065,37 @@ class App:
         if method == "GET" and path == "/api/notifications":
             from .notifications import list_recent, unread_count
             uid = getattr(self, "_current_user", {}).get("user_id", 0)
-            return 200, {"notifications": list_recent(store, uid),
-                         "unread": unread_count(store, uid)}
+            return 200, {"notifications": list_recent(self.store, uid),
+                         "unread": unread_count(self.store, uid)}
         if method == "POST" and path.startswith("/api/notifications/") and path.endswith("/read"):
             from .notifications import mark_read
             nid = _safe_int([parts[2]], 0)
             uid = getattr(self, "_current_user", {}).get("user_id", 0)
-            mark_read(store, nid, uid)
+            mark_read(self.store, nid, uid)
             return 200, {"status": "ok"}
         if method == "POST" and path == "/api/notifications/read-all":
             from .notifications import mark_all_read
             uid = getattr(self, "_current_user", {}).get("user_id", 0)
-            mark_all_read(store, uid)
+            mark_all_read(self.store, uid)
             return 200, {"status": "ok"}
 
         # 0.6.2 reports
         if method == "POST" and path == "/api/reports":
             from .reports import create_template
-            tid = create_template(store, body.get("name", ""), body.get("query", ""),
+            tid = create_template(self.store, body.get("name", ""), body.get("query", ""),
                                   description=body.get("description", ""),
                                   chart_type=body.get("chart_type", "table"))
             return 201, {"template_id": tid}
         if method == "GET" and path == "/api/reports":
             from .reports import list_templates
-            return 200, {"templates": list_templates(store)}
+            return 200, {"templates": list_templates(self.store)}
         if method == "POST" and path.startswith("/api/reports/") and path.endswith("/run"):
             from .reports import execute
             tid = _safe_int([parts[2]], 0)
             if not tid:
                 return 400, {"error": "invalid id"}
             try:
-                result = execute(store, tid)
+                result = execute(self.store, tid)
                 return 200, result
             except ValueError as e:
                 return 404, {"error": str(e)}
@@ -1106,7 +1106,7 @@ class App:
             tid = _safe_int([parts[2]], 0)
             if not tid:
                 return 400, {"error": "invalid id"}
-            csv_data = export_csv(store, tid)
+            csv_data = export_csv(self.store, tid)
             return 200, csv_data, "text/csv; charset=utf-8"
 
         # 0.7.0 copilot
@@ -1114,7 +1114,7 @@ class App:
             from .copilot.engine import process
             text = body.get("text", "")
             if not text: return 400, {"error": "text required"}
-            result = process(store, text, current_user=getattr(self, "_current_user", None))
+            result = process(self.store, text, current_user=getattr(self, "_current_user", None))
             return 200, result
         if method == "GET" and path == "/api/copilot/tools":
             from .copilot.tools import list_tools
@@ -1123,21 +1123,21 @@ class App:
         # 0.7.1 workflow
         if method == "POST" and path == "/api/workflow/definitions":
             from .workflow.store import create_definition
-            did = create_definition(store, body.get("name",""), body.get("steps",[]), description=body.get("description",""))
+            did = create_definition(self.store, body.get("name",""), body.get("steps",[]), description=body.get("description",""))
             return 201, {"definition_id": did}
         if method == "GET" and path == "/api/workflow/definitions":
             from .workflow.store import list_definitions
-            return 200, {"definitions": list_definitions(store)}
+            return 200, {"definitions": list_definitions(self.store)}
         if method == "POST" and path.startswith("/api/workflow/definitions/") and path.endswith("/run"):
             from .workflow.store import create_instance
             from .workflow.engine import run
             did = _safe_int([parts[2]], 0)
-            iid = create_instance(store, did, entity_type=body.get("entity_type",""), entity_id=body.get("entity_id",""), context=body.get("context"))
-            result = run(store, iid)
+            iid = create_instance(self.store, did, entity_type=body.get("entity_type",""), entity_id=body.get("entity_id",""), context=body.get("context"))
+            result = run(self.store, iid)
             return 200, {"instance_id": iid, "result": result}
         if method == "GET" and path == "/api/workflow/instances":
             from .workflow.store import list_instances
-            return 200, {"instances": list_instances(store, status=qs.get("status",[""])[0])}
+            return 200, {"instances": list_instances(self.store, status=qs.get("status",[""])[0])}
 
         # 0.7.2 unified search
         if method == "GET" and path == "/api/search":
@@ -1146,114 +1146,114 @@ class App:
             if not q: return 200, {"results": []}
             stype = qs.get("type", ["all"])[0]
             limit = int(qs.get("limit", [20])[0])
-            results = unified_search(store, q, type=stype, limit=limit)
+            results = unified_search(self.store, q, type=stype, limit=limit)
             return 200, {"query": q, "type": stype, "count": len(results), "results": results}
 
         # 0.7.3 sync
         if method == "POST" and path == "/api/sync/push":
             from .sync2 import push
             client_id = body.get("client_id", "unknown")
-            result = push(store, client_id, body.get("changes", []))
+            result = push(self.store, client_id, body.get("changes", []))
             return 200, result
         if method == "GET" and path == "/api/sync/pull":
             from .sync2 import pull
             client_id = qs.get("client_id", ["unknown"])[0]
             since = int(qs.get("since", ["0"])[0])
-            result = pull(store, client_id, since)
+            result = pull(self.store, client_id, since)
             return 200, result
         if method == "GET" and path == "/api/sync/status":
             from .sync2 import status
-            return 200, status(store)
+            return 200, status(self.store)
 
         # 0.8.1 安全合规——审计日志查询
         if method == "GET" and path == "/api/admin/audit":
             from .audit import search_audit
             event = qs.get("event", [None])[0]
             actor = qs.get("actor", [None])[0]
-            since = qs.get("since", [None])[0]
+            since = qs.get("since", [None])[0]  # type: ignore[assignment, no-redef]
             limit = int(qs.get("limit", [100])[0])
-            results = search_audit(store, event=event, actor=actor, since=since, limit=limit)
+            results = search_audit(self.store, event=event, actor=actor, since=since, limit=limit)
             return 200, {"audit_logs": results}
 
         # 0.8.2 analytics
         if method == "GET" and path == "/api/analytics/cohorts":
             from .analytics import patient_cohorts
-            return 200, patient_cohorts(store)
+            return 200, patient_cohorts(self.store)
         if method == "GET" and path == "/api/analytics/efficacy":
             from .analytics import syndrome_efficacy
-            return 200, {"efficacy": syndrome_efficacy(store)}
+            return 200, {"efficacy": syndrome_efficacy(self.store)}
         if method == "GET" and path == "/api/analytics/forecast":
             from .analytics import visit_forecast
-            return 200, visit_forecast(store)
+            return 200, visit_forecast(self.store)
         if method == "GET" and path == "/api/analytics/trends":
             from .analytics import appointment_trends
-            return 200, {"trends": appointment_trends(store)}
+            return 200, {"trends": appointment_trends(self.store)}
 
         # 0.8.3 integrations
         if method == "GET" and path == "/api/integrations/status":
-            from .integrations.status import check_all
-            return 200, {"integrations": check_all()}
+            from .integrations.status import check_all  # type: ignore[assignment]
+            return 200, {"integrations": check_all()}  # type: ignore[call-arg]
 
         # 0.9.0 agents
         if method == "POST" and path == "/api/agents":
             from .agents.store import create_agent
-            aid = create_agent(store, body.get("name",""), system_prompt=body.get("system_prompt",""),
+            aid = create_agent(self.store, body.get("name",""), system_prompt=body.get("system_prompt",""),
                                tools=body.get("tools",[]), description=body.get("description",""))
             return 201, {"agent_id": aid}
         if method == "GET" and path == "/api/agents":
             from .agents.store import list_agents
-            return 200, {"agents": list_agents(store)}
+            return 200, {"agents": list_agents(self.store)}
         if method == "POST" and path.startswith("/api/agents/") and path.endswith("/run"):
             from .agents.engine import run_with_llm
             aid = _safe_int([parts[2]], 0)
-            result = run_with_llm(store, aid, user_input=body.get("input",""), current_user=getattr(self,"_current_user",None))
+            result = run_with_llm(self.store, aid, user_input=body.get("input",""), current_user=getattr(self,"_current_user",None))
             return 200, result
 
         # 1.1.0 agents v2 — 模板市场 + 记忆系统 + 多 Agent 协作
         if method == "GET" and path == "/api/agents/templates":
-            from .agents.templates import list_templates, seed
-            seed(store)
+            from .agents.templates import list_templates as _list_templates, seed
+            seed(self.store)
             cat = qs.get("category", [""])[0]
-            return 200, {"templates": list_templates(store, category=cat)}
+            return 200, {"templates": _list_templates(self.store, category=cat)}
         if method == "POST" and path == "/api/agents/create-from-template":
             from .agents.templates import create_from_template
-            aid = create_from_template(store, body.get("template_id", 0), name=body.get("name", ""))
+            aid = create_from_template(self.store, body.get("template_id", 0), name=body.get("name", ""))
             return 201, {"agent_id": aid}
         if method == "POST" and path == "/api/agents/memory":
             from .agents.memory import store as mem_store
-            mem_store(store, body.get("agent_id", 0), body.get("key", ""), body.get("value", ""), type=body.get("type", "string"))
+            mem_store(self.store, body.get("agent_id", 0), body.get("key", ""), body.get("value", ""), type=body.get("type", "string"))
             return 200, {"status": "stored"}
         if method == "GET" and path.startswith("/api/agents/") and path.endswith("/memory"):
             from .agents.memory import list_memory
             aid = _safe_int([parts[2]], 0)
-            return 200, {"memory": list_memory(store, aid)}
+            return 200, {"memory": list_memory(self.store, aid)}
         if method == "POST" and path == "/api/agents/pipelines":
             from .agents.pipeline import create_pipeline
-            pid = create_pipeline(store, body.get("name",""), body.get("agent_ids",[]), description=body.get("description",""))
+            pid: int = create_pipeline(self.store, body.get("name",""), body.get("agent_ids",[]), description=body.get("description",""))  # type: ignore[no-redef]
             return 201, {"pipeline_id": pid}
         if method == "GET" and path == "/api/agents/pipelines":
             from .agents.pipeline import list_pipelines
-            return 200, {"pipelines": list_pipelines(store)}
+            return 200, {"pipelines": list_pipelines(self.store)}
         if method == "POST" and path.startswith("/api/agents/pipelines/") and path.endswith("/run"):
             from .agents.pipeline import run as run_pipeline
-            pid = _safe_int([parts[3]], 0)
-            results = run_pipeline(store, pid, input_text=body.get("input",""), current_user=getattr(self,"_current_user",None))
+            pid: int = _safe_int([parts[3]], 0)  # type: ignore[no-redef]
+            results = run_pipeline(self.store, pid, input_text=body.get("input",""), current_user=getattr(self,"_current_user",None))
             return 200, {"results": results}
 
         # 2.1 agents v3 — 多 Agent 集成（并行/投票/级联）
         if method == "POST" and path == "/api/agents/parallel":
             from .agents.ensemble import run_parallel
-            results = run_parallel(store, body.get("agent_ids", []), input_text=body.get("input",""),
+            results = run_parallel(self.store, body.get("agent_ids", []), input_text=body.get("input",""),
                                    current_user=getattr(self,"_current_user",None))
             return 200, {"results": results}
         if method == "POST" and path == "/api/agents/vote":
             from .agents.ensemble import vote
-            result = vote(store, body.get("agent_ids", []), input_text=body.get("input",""),
+            result = vote(self.store, body.get("agent_ids", []), input_text=body.get("input",""),
                           current_user=getattr(self,"_current_user",None))
             return 200, result
         if method == "POST" and path == "/api/agents/cascade":
             from .agents.ensemble import cascade
-            results = cascade(store, body.get("pipeline", []), input_text=body.get("input",""),
+            results = cascade(self.store, body.get("pipeline", []), input_text=body.get("input",""),
                               current_user=getattr(self,"_current_user",None))
             return 200, {"results": results}
 
@@ -1261,14 +1261,14 @@ class App:
         if method == "GET" and path == "/api/kg/search":
             from .knowledge.search import search_kg
             q = qs.get("q", [""])[0]
-            return 200, {"results": search_kg(store, q)}
+            return 200, {"results": search_kg(self.store, q)}
         if method == "GET" and path == "/api/kg/stats":
             from .knowledge.search import kg_stats
-            return 200, kg_stats(store)
+            return 200, kg_stats(self.store)
         if method == "POST" and path == "/api/kg/extract":
             from .knowledge.extractor import extract_from_text, cache_names
-            cache_names(store)
-            return 200, extract_from_text(store, body.get("text", ""))
+            cache_names(self.store)
+            return 200, extract_from_text(self.store, body.get("text", ""))
 
         # 0.9.1 多租户管理（仅 admin）
         cu = getattr(self, "_current_user", None) or current_user
@@ -1276,55 +1276,55 @@ class App:
             return 403, {"error": "permission_denied", "error_code": "AUTH_002", "message": "仅管理员可管理租户"}
         if method == "POST" and path == "/api/tenants":
             from .tenants import create_tenant
-            tid = create_tenant(store, body.get("name", ""), body.get("slug", ""),
+            tid = create_tenant(self.store, body.get("name", ""), body.get("slug", ""),
                                 plan=body.get("plan", "free"))
             return 201, {"tenant_id": tid}
         if method == "GET" and path == "/api/tenants":
             from .tenants import list_tenants
-            return 200, {"tenants": list_tenants(store)}
+            return 200, {"tenants": list_tenants(self.store)}
         if method == "POST" and path == "/api/tenants/members":
             from .tenants import add_member
-            add_member(store, body.get("tenant_id", 0), body.get("user_id", 0),
+            add_member(self.store, body.get("tenant_id", 0), body.get("user_id", 0),
                        role=body.get("role", "member"))
             return 200, {"status": "added"}
         if method == "GET" and path.startswith("/api/tenants/") and path.endswith("/members"):
             from .tenants import list_members
             tid = _safe_int([parts[2]], 0)
-            return 200, {"members": list_members(store, tid)}
+            return 200, {"members": list_members(self.store, tid)}
 
         # 0.9.2 远程医疗 —— 视频问诊信令
         if method == "POST" and path == "/api/telemedicine/rooms":
             from .telemedicine import create_room
-            result = create_room(store, body.get("appointment_id", 0))
+            result = create_room(self.store, body.get("appointment_id", 0))
             return 201, result
         if method == "GET" and path.startswith("/api/telemedicine/rooms/"):
             from .telemedicine import get_room
             room_id = path[len("/api/telemedicine/rooms/"):]
-            room = get_room(store, room_id)
+            room = get_room(self.store, room_id)
             if not room:
                 return 404, {"error": "room not found"}
             return 200, room
         if method == "POST" and path.startswith("/api/telemedicine/rooms/") and path.endswith("/offer"):
             from .telemedicine import set_offer
             room_id = path[len("/api/telemedicine/rooms/"):-len("/offer")]
-            set_offer(store, room_id, body.get("offer", ""))
+            set_offer(self.store, room_id, body.get("offer", ""))
             return 200, {"status": "ok"}
         if method == "POST" and path.startswith("/api/telemedicine/rooms/") and path.endswith("/answer"):
             from .telemedicine import set_answer
             room_id = path[len("/api/telemedicine/rooms/"):-len("/answer")]
-            set_answer(store, room_id, body.get("answer", ""))
+            set_answer(self.store, room_id, body.get("answer", ""))
             return 200, {"status": "ok"}
         if method == "POST" and path.startswith("/api/telemedicine/rooms/") and path.endswith("/end"):
             from .telemedicine import end_call
             room_id = path[len("/api/telemedicine/rooms/"):-len("/end")]
-            end_call(store, room_id)
+            end_call(self.store, room_id)
             return 200, {"status": "ok"}
 
         # 0.9.2 远程医疗 —— 电子处方
         if method == "POST" and path == "/api/prescriptions":
             from .telemedicine import create_prescription
-            pid = create_prescription(
-                store,
+            pid: int = create_prescription(  # type: ignore[no-redef]
+                self.store,
                 body.get("consultation_id", 0),
                 body.get("doctor_id", 0),
                 body.get("patient_id", 0),
@@ -1332,15 +1332,15 @@ class App:
             return 201, {"prescription_id": pid}
         if method == "GET" and path == "/api/prescriptions":
             from .telemedicine import list_prescriptions
-            pid = qs.get("patient_id", [None])[0]
+            pid: str | None = qs.get("patient_id", [None])[0]  # type: ignore[no-redef]
             patient_id = int(pid) if (pid and pid.isdigit()) else 0
-            return 200, {"prescriptions": list_prescriptions(store, patient_id)}
+            return 200, {"prescriptions": list_prescriptions(self.store, patient_id)}
         if method == "GET" and path.startswith("/api/prescriptions/") and len(parts) == 3:
             from .telemedicine import get_prescription
-            pid = _safe_int([parts[2]], 0)
+            pid: int = _safe_int([parts[2]], 0)  # type: ignore[no-redef]
             if not pid:
                 return 400, {"error": "invalid id"}
-            presc = get_prescription(store, pid)
+            presc = get_prescription(self.store, pid)
             if not presc:
                 return 404, {"error": "not found"}
             return 200, presc
@@ -1348,38 +1348,38 @@ class App:
         # 0.9.3 community — 文章
         if method == "POST" and path == "/api/community/articles":
             from .community.articles import create_article
-            aid = create_article(store, body.get("title", ""), body.get("content", ""),
+            aid = create_article(self.store, body.get("title", ""), body.get("content", ""),
                                  author_id=0, tags=body.get("tags", []),
                                  is_public=body.get("is_public", True))
             return 201, {"article_id": aid}
         if method == "GET" and path == "/api/community/articles":
-            from .community.articles import list_articles
-            return 200, {"articles": list_articles(store, tag=qs.get("tag", [""])[0])}
+            from .community.articles import list_articles  # type: ignore[assignment]
+            return 200, {"articles": list_articles(self.store, tag=qs.get("tag", [""])[0])}  # type: ignore[call-arg]
         if method == "GET" and path.startswith("/api/community/articles/") and len(parts) == 4 and parts[3]:
             from .community.articles import get_article
             aid = _safe_int([parts[3]], 0)
-            article = get_article(store, aid)
+            article = get_article(self.store, aid)
             if not article:
                 return 404, {"error": "not found"}
             from .community.comments import list_comments
-            return 200, {"article": dict(article), "comments": list_comments(store, aid)}
+            return 200, {"article": dict(article), "comments": list_comments(self.store, aid)}
         if method == "GET" and path == "/api/community/tags":
-            from .community.articles import list_tags
-            return 200, {"tags": list_tags(store)}
+            from .community.articles import list_tags  # type: ignore[assignment]
+            return 200, {"tags": list_tags(self.store)}
         # 0.9.3 community — 评论
         if method == "POST" and path == "/api/community/comments":
             from .community.comments import add_comment
-            cid = add_comment(store, body.get("article_id", 0), body.get("content", ""),
+            cid = add_comment(self.store, body.get("article_id", 0), body.get("content", ""),
                               author_id=0)
             return 201, {"comment_id": cid}
 
         # 0.9.4 合规认证
         if method == "GET" and path == "/api/compliance/checklist":
             from .compliance import run_checklist
-            return 200, run_checklist(store)
+            return 200, run_checklist(self.store)
         if method == "GET" and path == "/api/compliance/report":
             from .compliance import generate_report
-            return 200, {"report": generate_report(store)}
+            return 200, {"report": generate_report(self.store)}
 
         # 1.4.0 wellness — 养生保健
         if method == "GET" and path == "/api/wellness/questions":
@@ -1393,29 +1393,29 @@ class App:
         # 2.3 clinic saas
         if method == "POST" and path == "/api/clinic/billings":
             from .clinic.billing import create_billing
-            bid = create_billing(store, body.get("appointment_id", 0), body.get("patient_id", 0),
+            bid = create_billing(self.store, body.get("appointment_id", 0), body.get("patient_id", 0),
                                  body.get("items", []), method=body.get("method", ""))
             return 201, {"billing_id": bid}
         if method == "GET" and path == "/api/clinic/billings":
             from .clinic.billing import list_billings
-            return 200, {"billings": list_billings(store, patient_id=int(qs.get("patient_id", [0])[0]))}
+            return 200, {"billings": list_billings(self.store, patient_id=int(qs.get("patient_id", [0])[0]))}
         if method == "POST" and path.startswith("/api/clinic/billings/") and path.endswith("/pay"):
             from .clinic.billing import pay
             _parts = path.strip("/").split("/")
             bid = _safe_int([_parts[3]], 0)
-            pay(store, bid, float(body.get("amount", 0)), method=body.get("method", "cash"))
+            pay(self.store, bid, float(body.get("amount", 0)), method=body.get("method", "cash"))
             return 200, {"status": "paid"}
         if method == "POST" and path == "/api/clinic/inventory":
             from .clinic.pharmacy import add_stock
-            iid = add_stock(store, body.get("herb_name", ""), int(body.get("qty", 0)),
+            iid = add_stock(self.store, body.get("herb_name", ""), int(body.get("qty", 0)),
                             unit=body.get("unit", "g"), price=float(body.get("price", 0)))
             return 201, {"inventory_id": iid}
         if method == "GET" and path == "/api/clinic/inventory":
             from .clinic.pharmacy import list_inventory
-            return 200, {"inventory": list_inventory(store, low_stock=qs.get("low_stock", [""])[0] == "1")}
+            return 200, {"inventory": list_inventory(self.store, low_stock=qs.get("low_stock", [""])[0] == "1")}
         if method == "POST" and path == "/api/clinic/dispense":
             from .clinic.pharmacy import dispense
-            did = dispense(store, body.get("prescription_id", 0), body.get("items", []))
+            did = dispense(self.store, body.get("prescription_id", 0), body.get("items", []))
             return 201, {"dispense_id": did}
 
         return 404, {"error": "not found"}
@@ -1676,7 +1676,7 @@ def serve(store: Store, library: ManagedLibrary, host: str = "127.0.0.1", port: 
 
     def _stop(*a):
         print("\n收到停止信号，正在关闭...")
-        shutdown_plugins(store)
+        shutdown_plugins(self.store)
         httpd.shutdown()
 
     signal.signal(signal.SIGTERM, _stop)

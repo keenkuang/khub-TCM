@@ -15,6 +15,16 @@ def add_plan(store: Store, pid: int, due_date: str, reason: str = "") -> int:
     return store.conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
 
+def list_plans(store: Store, patient_id: int = 0) -> list[dict]:
+    """按患者列出随访计划。"""
+    sql = "SELECT id, patient_id, due_date, reason, status FROM followup_plans"
+    params: list = []
+    if patient_id:
+        sql += " WHERE patient_id=?"
+        params.append(patient_id)
+    return [dict(r) for r in store.conn.execute(sql + " ORDER BY due_date", params).fetchall()]
+
+
 def scan_due(store: Store, as_of: str | None = None, auto_book: bool = False) -> list[dict]:
     if as_of is None:
         as_of = str(date.today())

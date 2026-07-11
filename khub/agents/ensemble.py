@@ -1,6 +1,7 @@
 """多 Agent 集成——并行执行 + 投票 + 级联。"""
 from __future__ import annotations
 import json, threading
+from typing import Any
 from ..db import Store
 from .store import get_agent
 from .engine import run_with_llm
@@ -54,7 +55,7 @@ def cascade(store: Store, pipeline: list[dict], input_text: str = "",
         aids = step["agent_id"]
         mode = step.get("mode", "single")
         if mode == "vote" and isinstance(aids, list):
-            r = vote(store, aids, prev_output, current_user)
+            r: Any = vote(store, aids, prev_output, current_user)
             prev_output = r.get("consensus", "")
             results.append({"step": step, "result": r, "mode": "vote"})
         elif isinstance(aids, list):

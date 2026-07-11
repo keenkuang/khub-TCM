@@ -19,7 +19,7 @@ router = APIRouter(tags=["course"])
 async def create_course(body: dict, store: Store = Depends(get_store)):
     from ...course.store import add_course
     cid = add_course(store, name=body.get("name", ""), description=body.get("description", ""),
-                     instructor=body.get("instructor", ""), price=body.get("price", 0))
+                     teacher=body.get("instructor", ""), price=body.get("price", 0))
     return {"course_id": cid}
 
 
@@ -43,7 +43,8 @@ async def get_course(course_id: int, store: Store = Depends(get_store)):
 async def add_lesson(course_id: int, body: dict, store: Store = Depends(get_store)):
     from ...course.store import add_lesson as _add_lesson
     lid = _add_lesson(store, course_id, title=body.get("title", ""),
-                      content=body.get("content", ""), sort_order=body.get("sort_order", 0))
+                      content=body.get("content", ""),
+                      lesson_date=body.get("lesson_date", ""))
     return {"lesson_id": lid}
 
 

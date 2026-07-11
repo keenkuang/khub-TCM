@@ -26,7 +26,7 @@ def get_history(store: Store, session_id: int) -> str:
     parts = []
     chars = 0
     for r in rows:
-        content = dec(r["content"]) if isinstance(r["content"], bytes) else r["content"]
+        content = dec(r["content"].decode()) if isinstance(r["content"], bytes) else dec(r["content"] or "")
         line = f"{r['role']}: {content}"
         chars += len(line)
         if chars > _MAX_HISTORY_CHARS:

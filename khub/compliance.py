@@ -2,9 +2,10 @@
 from __future__ import annotations
 import json, os
 from datetime import datetime
+from typing import Any
 
 
-CHECKS = [
+CHECKS: list[dict[str, Any]] = [
     {"id": "SEC_001", "category": "安全", "title": "API 认证", "check": lambda s, e: bool(os.environ.get("KHUB_API_TOKEN")), "severity": "high"},
     {"id": "SEC_002", "category": "安全", "title": "PII 加密", "check": lambda s, e: os.environ.get("KHUB_PII_ENCRYPT") == "1", "severity": "high"},
     {"id": "SEC_003", "category": "安全", "title": "审计日志", "check": lambda s, e: _table_exists(s, "audit_log"), "severity": "medium"},

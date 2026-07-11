@@ -1,6 +1,8 @@
 """0.8.2 数据分析——患者分群 + 疗效分析 + 就诊预测 + 预约趋势。"""
 from __future__ import annotations
 
+from datetime import datetime
+
 from .db import Store
 
 
@@ -9,7 +11,7 @@ def patient_cohorts(store: Store) -> dict:
     patients = [dict(r) for r in store.conn.execute(
         "SELECT id, name, gender, born FROM patients").fetchall()]
     total = len(patients)
-    gender_dist = {}
+    gender_dist: dict[str, int] = {}
     age_groups = {"0-18": 0, "19-35": 0, "36-55": 0, "56+": 0}
     for p in patients:
         g = p.get("gender", "") or ""

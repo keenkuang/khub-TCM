@@ -52,7 +52,7 @@ async def create_prescription(body: dict, store: Store = Depends(get_store)):
 async def list_prescriptions(patient_id: int = Query(0), doctor_id: int = Query(0),
                               store: Store = Depends(get_store)):
     from ...telemedicine import list_prescriptions as _list_prescriptions
-    return {"prescriptions": _list_prescriptions(store, patient_id, doctor_id)}
+    return {"prescriptions": _list_prescriptions(store, patient_id)}
 
 
 @router.get("/api/prescriptions/{prescription_id}")

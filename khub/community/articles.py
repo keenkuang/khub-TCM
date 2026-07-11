@@ -1,6 +1,7 @@
 """社区文章 CRUD。"""
 from __future__ import annotations
 import json
+from typing import Any
 from ..db import Store
 
 
@@ -14,7 +15,7 @@ def create_article(store: Store, title: str, content: str, author_id: int = 0,
 
 def list_articles(store: Store, tag: str = "", is_public: bool = True) -> list[dict]:
     sql = "SELECT * FROM community_articles WHERE status='published' AND is_public=?"
-    params = [1 if is_public else 0]
+    params: list[Any] = [1 if is_public else 0]
     if tag:
         sql += " AND tags LIKE ?"
         params.append(f"%{tag}%")

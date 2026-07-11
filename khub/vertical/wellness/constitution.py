@@ -56,7 +56,7 @@ def assess(answers: dict[str, int]) -> dict:
     scores["平和质"] = scores.pop("ping_he", 0)
 
     # 判定主体质（最高分）
-    main_type = max(scores, key=scores.get)
+    main_type = max(scores, key=lambda k: scores.get(k, 0))
     const = CONSTITUTIONS.get(main_type, CONSTITUTIONS["平和质"])
     return {
         "primary_constitution": main_type,

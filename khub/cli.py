@@ -1268,10 +1268,10 @@ def main(argv=None):
             print(f"  {s['formula']} [{s['source']}]")
     elif args.cmd == "clinical-tracking":
         from .clinical.tracking import evaluate_efficacy
-        e = evaluate_efficacy(store, args.patient_id)
-        print(f"就诊次数：{e['visit_count']}")
-        print(f"随访依从性：{e['followup_compliance']} ({e['adherence_rate']})")
-        print(f"治疗连续性：{e['treatment_continuity']}")
+        eff = evaluate_efficacy(store, args.patient_id)
+        print(f"就诊次数：{eff['visit_count']}")
+        print(f"随访依从性：{eff['followup_compliance']} ({eff['adherence_rate']})")
+        print(f"治疗连续性：{eff['treatment_continuity']}")
     # 0.5.0 knowledge graph
     elif args.cmd == "kg-infer":
         from .knowledge.inference import infer; import json as _j
