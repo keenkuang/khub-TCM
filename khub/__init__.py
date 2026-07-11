@@ -1,2 +1,2 @@
 """khub — 个人知识中枢（knowledge hub）。"""
-__version__ = "4.3.0"
+__version__ = "4.4.0"
